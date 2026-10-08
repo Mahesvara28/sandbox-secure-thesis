@@ -7,8 +7,9 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile
-} from "firebase/auth";
+} from "Firebase/auth";
 import { getFirestore, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
@@ -93,5 +94,12 @@ export const saveUserScore = async (userId: string, tier: string, score: number,
       },
       createdAt: new Date().toISOString()
     });
+  }
+};
+export const saveCompletedMissions = async (uid: string, missions: string[]) => {
+  try {
+    await setDoc(doc(db, "users", uid), { completedMissions: missions }, { merge: true });
+  } catch (error) {
+    console.error("Error saving missions:", error);
   }
 };

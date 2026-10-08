@@ -1,331 +1,1366 @@
 import { useState, useEffect } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import type { User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged } from 'Firebase/auth';
+import type { User as FirebaseUser } from 'Firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, signInWithGoogle, logOut, saveUserScore, db, registerWithEmail, loginWithEmail } from './Firebase';
-import { LayoutDashboard, GraduationCap, Target, ClipboardCheck, LogOut } from 'lucide-react';
-import { BootScreen, AuthScreen, DashboardScreen, AcademyScreen, MissionsScreen, TerminalScreen, ProfileScreen } from './components/Screens';
-import { NetworkMapModal, HintModal, BriefingModal, CheatSheetModal, DidYouKnowModal, EvalModal } from './components/Modals';
-import type { Tier, Mission } from './data/gameData';
 
-type Screen = 'dashboard' | 'academy' | 'missions' | 'terminal' | 'profile';
-type BootStage = 'booting' | 'login' | 'authenticated';
-type AuthMode = 'login' | 'register';
+import {
+  auth,
+  signInWithGoogle,
+  logOut,
+  saveUserScore,
+  db,
+  registerWithEmail,
+  loginWithEmail,
+  saveCompletedMissions
+} from './Firebase';
+
+import {
+  BootScreen,
+  AuthScreen,
+  DashboardScreen,
+  AcademyScreen,
+  MissionsScreen,
+  TerminalScreen,
+  ProfileScreen
+} from './components/Screens';
+
+import OnboardingGuide from './components/OnboardingGuide';
+
+import {
+  NetworkMapModal,
+  HintModal,
+  BriefingModal,
+  CheatSheetModal,
+  EvalModal,
+  VictoryModal,
+  MissionFailedModal
+} from './components/Modals';
+
+import type { Tier, Mission } from './data/gameData';
+import {
+  MISSIONS,
+  TUTORIAL_MISSIONS
+} from './data/gameData';
+
+import {
+  LayoutDashboard,
+  GraduationCap,
+  Target,
+  ClipboardCheck,
+  LogOut
+} from 'lucide-react';
+
+type Screen =
+  | 'dashboard'
+  | 'academy'
+  | 'missions'
+  | 'terminal'
+  | 'profile';
+
+type BootStage =
+  | 'booting'
+  | 'login'
+  | 'authenticated';
+
+type AuthMode =
+  | 'login'
+  | 'register';
+
+  type SavedScoreData = {
+  score?: number;
+  total?: number;
+  preTestScore?: number;
+  preTestTotal?: number;
+  finalScore?: number;
+  finalTotal?: number;
+};
+export interface TierScore {
+  score: number;
+  total: number;
+  preTestScore?: number;
+  preTestTotal?: number;
+  finalScore?: number;
+  finalTotal?: number;
+}
 
 function App() {
-  // --- STATE ---
-  const [screen, setScreen] = useState<Screen>('dashboard');
-  const [bootStage, setBootStage] = useState<BootStage>('booting');
-  const [bootText, setBootText] = useState<string[]>([]);
-  const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const [regUsername, setRegUsername] = useState("");
-  const [regEmail, setRegEmail] = useState("");
-  const [regPassword, setRegPassword] = useState("");
-  const [authError, setAuthError] = useState("");
-  
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [userScores, setUserScores] = useState<Record<string, { score: number; total: number }>>({});
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [screen, setScreen] =
+    useState<Screen>('dashboard');
 
-  const [activeTier, setActiveTier] = useState<Tier | null>(null);
-  const [activeMission, setActiveMission] = useState<Mission | null>(null);
-  const [questStep, setQuestStep] = useState(0);
-  const [msg, setMsg] = useState("");
-  const [sysNonce, setSysNonce] = useState(0);
-  const [isThreatActive, setIsThreatActive] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(60);
+  const [bootStage, setBootStage] =
+    useState<BootStage>('booting');
 
-  // Modal States
-  const [showBriefing, setShowBriefing] = useState(false);
-  const [showHint, setShowHint] = useState(false);
-  const [showMap, setShowMap] = useState(false);
-  const [showCheat, setShowCheat] = useState(false);
-  const [showDidYouKnow, setShowDidYouKnow] = useState(false);
-  const [showEval, setShowEval] = useState(false);
-  const [hintText, setHintText] = useState("");
-  const [currentFact, setCurrentFact] = useState("");
-  const [pendingMission, setPendingMission] = useState<Mission | null>(null);
+  const [bootText, setBootText] =
+    useState<string[]>([]);
 
-  const sendSysMsg = (text: string) => { setMsg(text); setSysNonce(n => n + 1); };
+  const [authMode, setAuthMode] =
+    useState<AuthMode>('login');
 
-  // --- AUTH LISTENER ---
+  const [regUsername, setRegUsername] =
+    useState('');
+
+  const [regEmail, setRegEmail] =
+    useState('');
+
+  const [regPassword, setRegPassword] =
+    useState('');
+
+  const [authError, setAuthError] =
+    useState('');
+
+  const [authSuccess, setAuthSuccess] =
+    useState(false);
+
+  const [isFakeAdmin, setIsFakeAdmin] =
+    useState(false);
+
+  const [user, setUser] =
+    useState<FirebaseUser | null>(null);
+
+  const [userScores, setUserScores] =
+    useState<Record<string, TierScore>>({});
+
+  const [isLoadingAuth, setIsLoadingAuth] =
+    useState(true);
+
+  const [completedMissions, setCompletedMissions] =
+    useState<string[]>([]);
+
+  const [activeTier, setActiveTier] =
+    useState<Tier | null>(null);
+
+  const [activeMission, setActiveMission] =
+    useState<Mission | null>(null);
+
+  const [questStep, setQuestStep] =
+    useState(0);
+
+  const [msg, setMsg] =
+    useState('');
+
+  const [sysNonce, setSysNonce] =
+    useState(0);
+
+  const [isThreatActive, setIsThreatActive] =
+    useState(false);
+
+  const [timeLeft, setTimeLeft] =
+    useState(300);
+
+  const [showVictory, setShowVictory] =
+    useState(false);
+
+  const [showMissionFailed, setShowMissionFailed] =
+    useState(false);
+
+  const [currentPath, setCurrentPath] =
+    useState('/home/operator');
+
+  const [mapAction, setMapAction] =
+    useState<'scan' | 'block' | 'none'>(
+      'none'
+    );
+
+  const [isMuted, setIsMuted] =
+    useState(false);
+
+  const [missionOrigin, setMissionOrigin] =
+    useState<
+      'academy' | 'missions'
+    >('missions');
+
+  const [showBriefing, setShowBriefing] =
+    useState(false);
+
+  const [showHint, setShowHint] =
+    useState(false);
+
+  const [showMap, setShowMap] =
+    useState(false);
+
+  const [showCheat, setShowCheat] =
+    useState(false);
+
+  const [showEval, setShowEval] =
+    useState(false);
+
+  const [hintText, setHintText] =
+    useState('');
+
+  const [pendingMission, setPendingMission] =
+    useState<Mission | null>(null);
+
+ const [showOnboarding, setShowOnboarding] =
+  useState(() => {
+    return localStorage.getItem(
+      'sandboxSecureOnboardingCompleted'
+    ) !== 'true';
+  });
+
+  const sendSysMsg = (
+    text: string
+  ) => {
+    setMsg(text);
+    setSysNonce(
+      n => n + 1
+    );
+  };
+
+  const playSound = (
+    type:
+      | 'keystroke'
+      | 'success'
+      | 'error'
+      | 'scan'
+  ) => {
+    if (isMuted) return;
+
+    const audio = new Audio(
+      `/assets/audio/${type}.mp3`
+    );
+
+    audio.volume = 0.3;
+
+    audio
+      .play()
+      .catch(() => {});
+  };
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      if (u) {
-        const snap = await getDoc(doc(db, "users", u.uid));
-        if (snap.exists()) setUserScores(snap.data().scores || {});
-      } else {
-        setUserScores({});
-      }
-      setIsLoadingAuth(false);
-    });
-    return () => unsub();
-  }, []);
+    const unsub =
+      onAuthStateChanged(
+        auth,
+        async u => {
+          if (
+            !u &&
+            isFakeAdmin
+          ) {
+            setIsLoadingAuth(false);
+            return;
+          }
 
-  // --- BOOT SEQUENCE ---
+          setUser(u);
+
+          if (u) {
+            try {
+              const snap =
+                await getDoc(
+                  doc(
+                    db,
+                    'users',
+                    u.uid
+                  )
+                );
+
+              if (snap.exists()) {
+                const data =
+                  snap.data();
+
+                const savedScores =
+                  data.scores || {};
+
+                const normalizedScores:
+                  Record<
+                    string,
+                    TierScore
+                  > = {};
+
+               Object.entries(
+  savedScores
+).forEach(
+  ([tier, value]) => {
+    const scoreData =
+      value as SavedScoreData;
+
+    normalizedScores[
+      tier
+    ] = {
+                      score:
+                        Number(
+                          scoreData.score ||
+                            scoreData.finalScore ||
+                            0
+                        ),
+                      total:
+                        Number(
+                          scoreData.total ||
+                            scoreData.finalTotal ||
+                            0
+                        ),
+                      preTestScore:
+                        scoreData.preTestScore !==
+                        undefined
+                          ? Number(
+                              scoreData.preTestScore
+                            )
+                          : undefined,
+                      preTestTotal:
+                        scoreData.preTestTotal !==
+                        undefined
+                          ? Number(
+                              scoreData.preTestTotal
+                            )
+                          : undefined,
+                      finalScore:
+                        scoreData.finalScore !==
+                        undefined
+                          ? Number(
+                              scoreData.finalScore
+                            )
+                          : undefined,
+                      finalTotal:
+                        scoreData.finalTotal !==
+                        undefined
+                          ? Number(
+                              scoreData.finalTotal
+                            )
+                          : undefined
+                    };
+                  }
+                );
+
+                setUserScores(
+                  normalizedScores
+                );
+
+                setCompletedMissions(
+                  data.completedMissions ||
+                    []
+                );
+              }
+            } catch (error) {
+              console.error(
+                'Error loading user data:',
+                error
+              );
+            }
+          } else {
+            setUserScores({});
+            setCompletedMissions([]);
+            setIsFakeAdmin(false);
+          }
+
+          setIsLoadingAuth(false);
+        }
+      );
+
+    return () => unsub();
+  }, [isFakeAdmin]);
+
   useEffect(() => {
     const bootLines = [
-      "BIOS DATE 01/15/2026 VER 2.4.1",
-      "CPU: SANDBOX_VIRTUAL_PROCESSOR_9000",
-      "DETECTING PRIMARY MASTER ... SANDBOX_OS_DRIVE",
-      "CHECKING NVRAM ... OK",
-      "LOADING KERNEL ...",
-      "INITIALIZING SECURITY PROTOCOLS ...",
-      "LOADING NETWORK DRIVERS ...",
-      "MOUNTING FILESYSTEMS ...",
-      "STARTING SYSTEM SERVICES ...",
-      "LOADING FIREWALL RULES ...",
-      "ESTABLISHING SECURE CONNECTION ...",
-      "",
-      "SANDBOX_OS v2.4.1 [SECURE MODE]",
-      "================================",
-      "WARNING: AUTHORIZED ACCESS ONLY",
-      "UNAUTHORIZED ACCESS IS PROHIBITED",
-      "ALL ACTIVITIES ARE MONITORED",
-      ""
+      'BIOS DATE 01/15/2026 VER 2.4.1',
+      'CPU: SANDBOX_VIRTUAL_PROCESSOR_9000',
+      'CHECKING NVRAM ... OK',
+      'LOADING KERNEL ...',
+      'WARNING: AUTHORIZED ACCESS ONLY',
+      'ALL ACTIVITIES ARE MONITORED',
+      ''
     ];
 
     let currentLine = 0;
-    const interval = setInterval(() => {
-      if (currentLine < bootLines.length) {
-        setBootText(prev => [...prev, bootLines[currentLine]]);
-        currentLine++;
-      } else {
-        clearInterval(interval);
-        setTimeout(() => setBootStage('login'), 800);
-      }
-    }, 100);
-    return () => clearInterval(interval);
+
+    const interval =
+      setInterval(() => {
+        if (
+          currentLine <
+          bootLines.length
+        ) {
+          setBootText(
+            prev => [
+              ...prev,
+              bootLines[
+                currentLine
+              ]
+            ]
+          );
+
+          currentLine++;
+        } else {
+          clearInterval(
+            interval
+          );
+
+          setTimeout(() => {
+            setBootStage(
+              'login'
+            );
+
+            setIsLoadingAuth(
+              false
+            );
+          }, 800);
+        }
+      }, 100);
+
+    return () =>
+      clearInterval(
+        interval
+      );
   }, []);
 
-  // --- TIMER ---
   useEffect(() => {
-    if (!isThreatActive || timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          setIsThreatActive(false);
-          sendSysMsg("[MISSION FAILED]: Time expired! The data has been exfiltrated.");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [isThreatActive, timeLeft]);
-
-  // --- AUTH HANDLERS ---
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError("");
-    
-    // Default credentials for testing
-    if (regEmail === 'admin@sandbox.secure' && regPassword === 'admin123') {
-      setUser({ uid: 'default-admin-001', email: 'admin@sandbox.secure', displayName: 'System Administrator' } as FirebaseUser);
-      setBootStage('authenticated');
-      return;
-    }
-    
-    if (!regEmail || !regPassword) {
-      setAuthError("Email and password are required.");
+    if (
+      !isThreatActive ||
+      timeLeft <= 0
+    ) {
       return;
     }
 
-    try {
-      await loginWithEmail(regEmail, regPassword);
-      setBootStage('authenticated');
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Login failed. Check your credentials.";
-      setAuthError(errorMessage);
-    }
-  };
+    const timer =
+      setInterval(() => {
+        setTimeLeft(
+          prev => {
+            if (prev <= 1) {
+              setIsThreatActive(
+                false
+              );
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError("");
-    
-    if (!regUsername || !regEmail || !regPassword) {
-      setAuthError("All fields are required.");
-      return;
-    }
-    if (regPassword.length < 6) {
-      setAuthError("Password must be at least 6 characters.");
-      return;
-    }
+              sendSysMsg(
+                '[MISSION FAILED]: Time expired!'
+              );
 
-    try {
-      await registerWithEmail(regEmail, regPassword, regUsername);
-      setBootStage('authenticated');
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Registration failed";
-      setAuthError(errorMessage);
-    }
-  };
+              setShowMissionFailed(
+                true
+              );
 
-  const handleGoogleLogin = async () => {
-    setAuthError("");
-    try {
-      await signInWithGoogle();
-      setBootStage('authenticated');
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Google login failed.";
-      setAuthError(errorMessage);
-    }
-  };
+              return 0;
+            }
 
-  const handleLogout = async () => {
-    await logOut();
-    setBootStage('login');
-    setScreen('dashboard');
-    setRegEmail("");
-    setRegPassword("");
-    setRegUsername("");
-  };
+            return prev - 1;
+          }
+        );
+      }, 1000);
 
-  // --- MISSION HANDLERS ---
-  const startMission = (m: Mission) => {
-    setPendingMission(m);
-    setShowBriefing(true);
-  };
+    return () =>
+      clearInterval(
+        timer
+      );
+  }, [
+    isThreatActive,
+    timeLeft
+  ]);
 
-  const confirmStartMission = () => {
-    if (!pendingMission) return;
-    setActiveMission(pendingMission);
-    setQuestStep(0);
-    setIsThreatActive(pendingMission.timerLimit > 0);
-    setTimeLeft(pendingMission.timerLimit);
-    setScreen('terminal');
-    setShowBriefing(false);
-    sendSysMsg(pendingMission.intro);
-  };
+  const completeOnboarding = () => {
+  localStorage.setItem(
+    'sandboxSecureOnboardingCompleted',
+    'true'
+  );
 
-  const handleCommand = (cmd: string) => {
-    if (!activeMission) return;
-    const input = cmd.trim().toLowerCase();
-    
-    if (questStep >= activeMission.steps.length) {
-      sendSysMsg("[SYSTEM]: Mission complete. Return to dashboard.");
-      return;
-    }
+  setShowOnboarding(false);
+};
+  const handleLogin =
+    async () => {
+      setAuthError('');
 
-    const currentStep = activeMission.steps[questStep];
+      if (
+        regEmail ===
+          'admin@sandbox.secure' &&
+        regPassword ===
+          'admin123'
+      ) {
+        setIsFakeAdmin(true);
 
-    if (input.startsWith(currentStep.cmd)) {
-      if (currentStep.cmd === "block" && !input.includes(activeMission.target)) {
-        sendSysMsg("[ERROR]: Wrong target IP. Check the network map or logs.");
+        setUser({
+          uid: 'default-admin-001',
+          email:
+            'admin@sandbox.secure',
+          displayName:
+            'System Administrator'
+        } as FirebaseUser);
+
+       setBootStage(
+  'authenticated'
+);
+
+if (
+  localStorage.getItem(
+    'sandboxSecureOnboardingCompleted'
+  ) !== 'true'
+) {
+  setShowOnboarding(true);
+}
+
+        setShowOnboarding(
+          true
+        );
+
         return;
       }
-      
-      const isLastStep = questStep === activeMission.steps.length - 1;
+
+      try {
+        await loginWithEmail(
+          regEmail,
+          regPassword
+        );
+
+        setBootStage(
+          'authenticated'
+        );
+
+        setShowOnboarding(
+          true
+        );
+      } catch (
+        error: unknown
+      ) {
+        setAuthError(
+          error instanceof Error
+            ? error.message
+            : 'Login failed.'
+        );
+      }
+    };
+
+  const handleRegister =
+    async () => {
+      setAuthError('');
+      setAuthSuccess(false);
+
+      if (
+        !regUsername ||
+        !regEmail ||
+        !regPassword
+      ) {
+        setAuthError(
+          'All fields are required.'
+        );
+
+        return;
+      }
+
+      if (
+        regPassword.length <
+        6
+      ) {
+        setAuthError(
+          'Password must be at least 6 characters.'
+        );
+
+        return;
+      }
+
+      if (
+        !regEmail.includes(
+          '@'
+        )
+      ) {
+        setAuthError(
+          'Please enter a valid email address.'
+        );
+
+        return;
+      }
+
+      try {
+        await registerWithEmail(
+          regEmail,
+          regPassword,
+          regUsername
+        );
+
+        setAuthSuccess(
+          true
+        );
+
+        setTimeout(() => {
+          setBootStage(
+            'authenticated'
+          );
+
+          setShowOnboarding(
+            true
+          );
+        }, 1500);
+      } catch (
+        error: unknown
+      ) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Registration failed';
+
+        if (
+          errorMessage.includes(
+            'email-already-in-use'
+          )
+        ) {
+          setAuthError(
+            'This email is already registered.'
+          );
+        } else if (
+          errorMessage.includes(
+            'weak-password'
+          )
+        ) {
+          setAuthError(
+            'Password is too weak.'
+          );
+        } else {
+          setAuthError(
+            errorMessage
+          );
+        }
+      }
+    };
+
+  const handleGoogleLogin =
+    async () => {
+      setAuthError('');
+
+      try {
+        await signInWithGoogle();
+
+        setBootStage(
+          'authenticated'
+        );
+
+        setShowOnboarding(
+          true
+        );
+      } catch (
+        error: unknown
+      ) {
+        setAuthError(
+          error instanceof Error
+            ? error.message
+            : 'Google login failed.'
+        );
+      }
+    };
+
+  const handleLogout =
+    async () => {
+      await logOut();
+
+      setBootStage(
+        'login'
+      );
+
+      setScreen(
+        'dashboard'
+      );
+
+      setRegEmail('');
+      setRegPassword('');
+      setRegUsername('');
+
+      setUser(null);
+      setUserScores({});
+      setCompletedMissions([]);
+
+      setIsFakeAdmin(
+        false
+      );
+
+      setShowOnboarding(
+        false
+      );
+    };
+
+  const startMission = (
+    m: Mission
+  ) => {
+    setMissionOrigin(
+      'missions'
+    );
+
+    setPendingMission(m);
+
+    setShowBriefing(
+      true
+    );
+  };
+
+  const startMissionById = (
+    missionId: string
+  ) => {
+    const allMissions = [
+      ...MISSIONS,
+      ...TUTORIAL_MISSIONS
+    ];
+
+    const mission =
+      allMissions.find(
+        m =>
+          m.id ===
+          missionId
+      );
+
+    if (mission) {
+      setMissionOrigin(
+        'academy'
+      );
+
+      setPendingMission(
+        mission
+      );
+
+      setShowBriefing(
+        true
+      );
+    }
+  };
+
+  const confirmStartMission =
+    () => {
+      if (
+        !pendingMission
+      ) {
+        return;
+      }
+
+      setActiveMission(
+        pendingMission
+      );
+
+      setQuestStep(0);
+
+      setIsThreatActive(
+        pendingMission.timerLimit >
+          0
+      );
+
+      setTimeLeft(
+        pendingMission.timerLimit ||
+          300
+      );
+
+      setScreen(
+        'terminal'
+      );
+
+      setShowBriefing(
+        false
+      );
+
+      sendSysMsg(
+        pendingMission.intro
+      );
+    };
+
+  const handleCommand = (
+    cmd: string
+  ) => {
+    if (
+      !activeMission
+    ) {
+      return;
+    }
+
+    const input =
+      cmd.trim();
+
+    if (
+      questStep >=
+      activeMission.steps.length
+    ) {
+      sendSysMsg(
+        '[SYSTEM]: Mission complete.'
+      );
+
+      return;
+    }
+
+    const currentStep =
+      activeMission.steps[
+        questStep
+      ];
+
+    if (
+      input.startsWith(
+        currentStep.cmd
+      )
+    ) {
+      if (
+        currentStep.cmd ===
+          'block' &&
+        !input.includes(
+          activeMission.target
+        )
+      ) {
+        sendSysMsg(
+          '[ERROR]: Wrong target IP.'
+        );
+
+        return;
+      }
+
+      const isLastStep =
+        questStep ===
+        activeMission.steps.length -
+          1;
+
       if (isLastStep) {
-        setIsThreatActive(false);
-        sendSysMsg("[SUCCESS]: Mission objectives complete. Threat neutralized.");
-        // Trigger Did You Know fact
-        if (activeMission.didYouKnow && activeMission.didYouKnow[questStep]) {
-          setCurrentFact(activeMission.didYouKnow[questStep]);
-          setShowDidYouKnow(true);
-        }
+        setIsThreatActive(
+          false
+        );
+
+        sendSysMsg(
+          '[SUCCESS]: Mission objectives complete.'
+        );
+
+        setCompletedMissions(
+          prev => {
+            const newMissions =
+              prev.includes(
+                activeMission.id
+              )
+                ? prev
+                : [
+                    ...prev,
+                    activeMission.id
+                  ];
+
+            if (user) {
+              saveCompletedMissions(
+                user.uid,
+                newMissions
+              );
+            }
+
+            return newMissions;
+          }
+        );
+
+        setTimeout(() => {
+          setShowVictory(
+            true
+          );
+        }, 1000);
       } else {
-        setQuestStep(prev => prev + 1);
-        sendSysMsg(`[OK]: ${input.toUpperCase()} accepted. Proceed to next objective.`);
-        // Trigger Did You Know fact
-        if (activeMission.didYouKnow && activeMission.didYouKnow[questStep]) {
-          setCurrentFact(activeMission.didYouKnow[questStep]);
-          setShowDidYouKnow(true);
-        }
+        setQuestStep(
+          prev =>
+            prev + 1
+        );
+
+        sendSysMsg(
+          `[OK]: ${input.toUpperCase()} accepted.`
+        );
       }
     } else {
-      sendSysMsg(`[INVALID]: Command rejected. Current Objective: ${currentStep.desc}`);
+      sendSysMsg(
+        `[INVALID]: Command rejected. Current Objective: ${currentStep.desc}`
+      );
     }
   };
 
-  // --- QUIZ HANDLER ---
-  const handleQuizComplete = async (tier: Tier, quizScore: number, total: number) => {
-    if (user) {
-      await saveUserScore(user.uid, tier, quizScore, total);
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        setUserScores(userSnap.data().scores || {});
+  const handleQuizComplete =
+    async (
+      tier: Tier,
+      quizScore: number,
+      total: number,
+      isPreTest: boolean = false
+    ) => {
+      const safeTotal =
+        Math.max(
+          0,
+          total
+        );
+
+      const safeScore =
+        Math.min(
+          Math.max(
+            0,
+            quizScore
+          ),
+          safeTotal
+        );
+
+      setUserScores(
+        prev => {
+          const existing =
+            prev[tier] || {
+              score: 0,
+              total: 0
+            };
+
+          const updated:
+            TierScore = {
+            ...existing,
+            score: safeScore,
+            total: safeTotal
+          };
+
+          if (isPreTest) {
+            updated.preTestScore =
+              safeScore;
+
+            updated.preTestTotal =
+              safeTotal;
+          } else {
+            updated.finalScore =
+              safeScore;
+
+            updated.finalTotal =
+              safeTotal;
+          }
+
+          return {
+            ...prev,
+            [tier]: updated
+          };
+        }
+      );
+
+      if (user) {
+        try {
+          await saveUserScore(
+            user.uid,
+            tier,
+            safeScore,
+            safeTotal
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Error saving quiz score:',
+            error
+          );
+        }
       }
-    }
-    setActiveTier(null);
-  };
+    };
 
-  // --- RENDER ---
-  if (isLoadingAuth || bootStage === 'booting') {
-    return <BootScreen bootText={bootText} />;
+  if (
+    isLoadingAuth ||
+    bootStage ===
+      'booting'
+  ) {
+    return (
+      <BootScreen
+        bootText={
+          bootText
+        }
+      />
+    );
   }
 
-  if (bootStage === 'login' || !user) {
+  if (
+    bootStage ===
+      'login' ||
+    !user
+  ) {
     return (
-      <AuthScreen 
-        authMode={authMode} setAuthMode={setAuthMode}
-        regUsername={regUsername} setRegUsername={setRegUsername}
-        regEmail={regEmail} setRegEmail={setRegEmail}
-        regPassword={regPassword} setRegPassword={setRegPassword}
-        authError={authError}
-        handleLogin={handleLogin} handleRegister={handleRegister} handleGoogleLogin={handleGoogleLogin}
+      <AuthScreen
+        authMode={
+          authMode
+        }
+        setAuthMode={
+          setAuthMode
+        }
+        regUsername={
+          regUsername
+        }
+        setRegUsername={
+          setRegUsername
+        }
+        regEmail={
+          regEmail
+        }
+        setRegEmail={
+          setRegEmail
+        }
+        regPassword={
+          regPassword
+        }
+        setRegPassword={
+          setRegPassword
+        }
+        authError={
+          authError
+        }
+        authSuccess={
+          authSuccess
+        }
+        handleLogin={
+          handleLogin
+        }
+        handleRegister={
+          handleRegister
+        }
+        handleGoogleLogin={
+          handleGoogleLogin
+        }
       />
     );
   }
 
   return (
     <div className="h-screen w-screen bg-black text-[#4ade80] font-mono overflow-hidden flex flex-col relative">
-      {/* Navbar */}
+
       <nav className="h-14 border-b border-green-900 flex items-center justify-between px-6 bg-black/90 z-40 shrink-0">
+
         <div className="flex items-center gap-8">
-          <h1 className="text-xl font-black italic text-white glow">SANDBOX<span className="text-green-500">_SECURE</span></h1>
+
+          <h1 className="text-xl font-black italic text-white glow">
+            SANDBOX
+            <span className="text-green-500">
+              _SECURE
+            </span>
+          </h1>
+
           <div className="flex gap-4 text-xs font-bold uppercase">
-            <button onClick={() => setScreen('dashboard')} className={`px-3 py-1 border ${screen === 'dashboard' ? 'border-green-500 text-green-500' : 'border-transparent text-green-900 hover:text-green-500'}`}>
-              <LayoutDashboard size={14} className="inline mr-2"/> Dashboard
+
+            <button
+              onClick={() =>
+                setScreen(
+                  'dashboard'
+                )
+              }
+              className={`px-3 py-1 border ${
+                screen ===
+                'dashboard'
+                  ? 'border-green-500 text-green-500'
+                  : 'border-transparent text-green-900 hover:text-green-500'
+              }`}
+            >
+              <LayoutDashboard
+                size={14}
+                className="inline mr-2"
+              />
+              Dashboard
             </button>
-            <button onClick={() => setScreen('academy')} className={`px-3 py-1 border ${screen === 'academy' ? 'border-green-500 text-green-500' : 'border-transparent text-green-900 hover:text-green-500'}`}>
-              <GraduationCap size={14} className="inline mr-2"/> Academy
+
+            <button
+              onClick={() =>
+                setScreen(
+                  'academy'
+                )
+              }
+              className={`px-3 py-1 border ${
+                screen ===
+                'academy'
+                  ? 'border-green-500 text-green-500'
+                  : 'border-transparent text-green-900 hover:text-green-500'
+              }`}
+            >
+              <GraduationCap
+                size={14}
+                className="inline mr-2"
+              />
+              Academy
             </button>
-            <button onClick={() => setScreen('missions')} className={`px-3 py-1 border ${screen === 'missions' ? 'border-green-500 text-green-500' : 'border-transparent text-green-900 hover:text-green-500'}`}>
-              <Target size={14} className="inline mr-2"/> Missions
+
+            <button
+              onClick={() =>
+                setScreen(
+                  'missions'
+                )
+              }
+              className={`px-3 py-1 border ${
+                screen ===
+                'missions'
+                  ? 'border-green-500 text-green-500'
+                  : 'border-transparent text-green-900 hover:text-green-500'
+              }`}
+            >
+              <Target
+                size={14}
+                className="inline mr-2"
+              />
+              Missions
             </button>
-            <button onClick={() => setScreen('profile')} className={`px-3 py-1 border ${screen === 'profile' ? 'border-green-500 text-green-500' : 'border-transparent text-green-900 hover:text-green-500'}`}>
-              <ClipboardCheck size={14} className="inline mr-2"/> Profile
+
+            <button
+              onClick={() =>
+                setScreen(
+                  'profile'
+                )
+              }
+              className={`px-3 py-1 border ${
+                screen ===
+                'profile'
+                  ? 'border-green-500 text-green-500'
+                  : 'border-transparent text-green-900 hover:text-green-500'
+              }`}
+            >
+              <ClipboardCheck
+                size={14}
+                className="inline mr-2"
+              />
+              Profile
             </button>
+
           </div>
         </div>
-        <div className="flex items-center gap-6 text-xs">
+
+        <div className="flex items-center gap-4 text-xs">
+
           <div className="text-right">
-            <p className="text-green-900 text-[10px]">OPERATOR</p>
-            <p className="text-white truncate max-w-[150px]">{user?.displayName || 'Unknown'}</p>
+
+            <p className="text-green-900 text-[10px]">
+              OPERATOR
+            </p>
+
+            <p className="text-white truncate max-w-[150px]">
+              {user?.displayName ||
+                'Unknown'}
+            </p>
+
           </div>
-          <button onClick={handleLogout} className="border border-red-900 text-red-500 px-3 py-1 hover:bg-red-900/20 flex items-center gap-1">
-            <LogOut size={12} /> Logout
+
+          <button
+            onClick={() =>
+              setIsMuted(
+                !isMuted
+              )
+            }
+            className="border border-green-900 text-green-500 px-2 py-1 hover:bg-green-900/20"
+          >
+            {isMuted
+              ? '🔇'
+              : '🔊'}
           </button>
+
+          <button
+            onClick={
+              handleLogout
+            }
+            className="border border-red-900 text-red-500 px-3 py-1 hover:bg-red-900/20 flex items-center gap-1"
+          >
+            <LogOut
+              size={12}
+            />
+            Logout
+          </button>
+
         </div>
+
       </nav>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        {screen === 'dashboard' && <DashboardScreen user={user} />}
-        {screen === 'academy' && <AcademyScreen activeTier={activeTier} setActiveTier={setActiveTier} userScores={userScores} handleQuizComplete={handleQuizComplete} />}
-        {screen === 'missions' && <MissionsScreen startMission={startMission} />}
-        {screen === 'terminal' && activeMission && (
-          <TerminalScreen 
-            activeMission={activeMission} handleCommand={handleCommand}
-            isThreatActive={isThreatActive} timeLeft={timeLeft} questStep={questStep}
-            msg={msg} sysNonce={sysNonce}
-            setShowHint={setShowHint} setShowMap={setShowMap} setShowCheat={setShowCheat} setHintText={setHintText}
+
+        {screen ===
+          'dashboard' && (
+          <DashboardScreen
+            user={user}
+            userScores={
+              userScores
+            }
+            setScreen={
+              setScreen
+            }
+            onShowGuide={() =>
+              setShowOnboarding(
+                true
+              )
+            }
           />
         )}
-        {screen === 'profile' && <ProfileScreen user={user} userScores={userScores} setShowEval={setShowEval} />}
+
+        {screen ===
+          'academy' && (
+          <AcademyScreen
+            activeTier={
+              activeTier
+            }
+            setActiveTier={
+              setActiveTier
+            }
+            userScores={
+              userScores
+            }
+            handleQuizComplete={
+              handleQuizComplete
+            }
+            onStartMission={
+              startMissionById
+            }
+            completedMissions={
+              completedMissions
+            }
+          />
+        )}
+
+        {screen ===
+          'missions' && (
+          <MissionsScreen
+            startMission={
+              startMission
+            }
+            completedMissions={
+              completedMissions
+            }
+          />
+        )}
+
+        {screen ===
+          'terminal' &&
+          activeMission && (
+            <TerminalScreen
+              activeMission={
+                activeMission
+              }
+              handleCommand={
+                handleCommand
+              }
+              isThreatActive={
+                isThreatActive
+              }
+              timeLeft={
+                timeLeft
+              }
+              questStep={
+                questStep
+              }
+              msg={msg}
+              sysNonce={
+                sysNonce
+              }
+              setShowHint={
+                setShowHint
+              }
+              setShowMap={
+                setShowMap
+              }
+              setHintText={
+                setHintText
+              }
+              currentPath={
+                currentPath
+              }
+              setCurrentPath={
+                setCurrentPath
+              }
+              onMapAction={
+                setMapAction
+              }
+              playSound={
+                playSound
+              }
+            />
+          )}
+
+        {screen ===
+          'profile' && (
+          <ProfileScreen
+            user={user}
+            userScores={
+              userScores
+            }
+            setShowEval={
+              setShowEval
+            }
+          />
+        )}
+
       </main>
 
-      {/* All Modals */}
-      <BriefingModal show={showBriefing} mission={pendingMission} onStart={confirmStartMission} onAbort={() => setShowBriefing(false)} />
-      <HintModal show={showHint} onClose={() => setShowHint(false)} text={hintText} />
-      <NetworkMapModal show={showMap} onClose={() => setShowMap(false)} activeMission={activeMission} />
-      <CheatSheetModal show={showCheat} onClose={() => setShowCheat(false)} />
-      <DidYouKnowModal show={showDidYouKnow} fact={currentFact} onClose={() => setShowDidYouKnow(false)} />
-      <EvalModal show={showEval} onClose={() => setShowEval(false)} />
+      <BriefingModal
+        show={
+          showBriefing
+        }
+        mission={
+          pendingMission
+        }
+        onStart={
+          confirmStartMission
+        }
+        onAbort={() =>
+          setShowBriefing(
+            false
+          )
+        }
+      />
+
+      <HintModal
+        show={
+          showHint
+        }
+        onClose={() =>
+          setShowHint(
+            false
+          )
+        }
+        text={
+          hintText
+        }
+      />
+
+      <NetworkMapModal
+        show={
+          showMap
+        }
+        onClose={() =>
+          setShowMap(
+            false
+          )
+        }
+        activeMission={
+          activeMission
+        }
+        mapAction={
+          mapAction
+        }
+      />
+
+      <CheatSheetModal
+        show={
+          showCheat
+        }
+        onClose={() =>
+          setShowCheat(
+            false
+          )
+        }
+      />
+
+      <EvalModal
+        show={
+          showEval
+        }
+        onClose={() =>
+          setShowEval(
+            false
+          )
+        }
+      />
+
+      <VictoryModal
+        show={
+          showVictory
+        }
+        onClose={() => {
+          setShowVictory(
+            false
+          );
+
+          setScreen(
+            missionOrigin
+          );
+        }}
+        missionTitle={
+          activeMission?.title ||
+          'Unknown'
+        }
+      />
+
+      <MissionFailedModal
+        show={
+          showMissionFailed
+        }
+        onClose={() => {
+          setShowMissionFailed(
+            false
+          );
+
+          setScreen(
+            missionOrigin
+          );
+        }}
+        missionTitle={
+          activeMission?.title ||
+          'Unknown'
+        }
+      />
+
+      {showOnboarding && (
+  <OnboardingGuide
+    onComplete={completeOnboarding}
+  />
+)}
+
     </div>
   );
 }
