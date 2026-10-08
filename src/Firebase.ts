@@ -1,15 +1,19 @@
 import { initializeApp } from "firebase/app";
-import { 
-  getAuth, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
   signOut,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile
 } from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
-
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
@@ -22,47 +26,94 @@ const firebaseConfig = {
   measurementId: "G-L3TW6NCND0"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const googleProvider = new GoogleAuthProvider();
-
-// --- AUTH FUNCTIONS ---
+export const googleProvider =
+  new GoogleAuthProvider();
 
 export const signInWithGoogle = async () => {
-  const result = await signInWithPopup(auth, googleProvider);
-  
-  // If it's a new Google user, create a doc in Firestore for them
-  const userRef = doc(db, "users", result.user.uid);
-  const userSnap = await getDoc(userRef);
+  const result =
+    await signInWithPopup(
+      auth,
+      googleProvider
+    );
+
+  const userRef = doc(
+    db,
+    "users",
+    result.user.uid
+  );
+
+  const userSnap =
+    await getDoc(userRef);
+
   if (!userSnap.exists()) {
     await setDoc(userRef, {
-      username: result.user.displayName,
-      email: result.user.email,
-      createdAt: new Date().toISOString(),
-      scores: {}
+      username:
+        result.user.displayName,
+      email:
+        result.user.email,
+      createdAt:
+        new Date().toISOString(),
+      scores: {},
+      completedMissions: []
     });
   }
+
   return result.user;
 };
 
-export const registerWithEmail = async (email: string, password: string, username: string) => {
-  const result = await createUserWithEmailAndPassword(auth, email, password);
-  await updateProfile(result.user, { displayName: username });
-  
-  // Save user data to Firestore
-  await setDoc(doc(db, "users", result.user.uid), {
-    username: username,
-    email: email,
-    createdAt: new Date().toISOString(),
-    scores: {}
-  });
+export const registerWithEmail = async (
+  email: string,
+  password: string,
+  username: string
+) => {
+  const result =
+    await createUserWithEmailAndPassword(
+      auth,
+      email,
+      password
+    );
+
+  await updateProfile(
+    result.user,
+    {
+      displayName: username
+    }
+  );
+
+  await setDoc(
+    doc(
+      db,
+      "users",
+      result.user.uid
+    ),
+    {
+      username,
+      email,
+      createdAt:
+        new Date().toISOString(),
+      scores: {},
+      completedMissions: []
+    }
+  );
+
   return result.user;
 };
 
-export const loginWithEmail = async (email: string, password: string) => {
-  const result = await signInWithEmailAndPassword(auth, email, password);
+export const loginWithEmail = async (
+  email: string,
+  password: string
+) => {
+  const result =
+    await signInWithEmailAndPassword(
+      auth,
+      email,
+      password
+    );
+
   return result.user;
 };
 
@@ -70,42 +121,172 @@ export const logOut = async () => {
   await signOut(auth);
 };
 
-// --- DATABASE FUNCTIONS ---
+export const getUserProgress = async (
+  userId: string
+) => {
+  const userSnap =
+    await getDoc(
+      doc(db, "users", userId)
+    );
 
-// Final (post-assessment) score. Keeps the best passing result and never
-// touches the pre-test fields stored in the same tier object.
-export const saveUserScore = async (userId: string, tier: string, score: number, total: number) => {
-  const userRef = doc(db, "users", userId);
-  const userSnap = await getDoc(userRef);
-  const previous = userSnap.exists() ? userSnap.data().scores?.[tier] : undefined;
+  if (!userSnap.exists()) {
+    return {
+      scores: {},
+      completedMissions: []
+    };
+  }
 
-  if (previous && typeof previous.finalScore === 'number' && previous.finalScore >= score) {
+  const data =
+    userSnap.data();
+
+  return {
+    scores:
+      data.scores || {},
+    completedMissions:
+      Array.isArray(
+        data.completedMissions
+      )
+        ? data.completedMissions
+        : []
+  };
+};
+
+export const saveUserScore = async (
+  userId: string,
+  tier: string,
+  score: number,
+  total: number
+) => {
+  const safeTotal =
+    Math.max(0, total);
+
+  const safeScore =
+    Math.min(
+      Math.max(0, score),
+      safeTotal
+    );
+
+  const userRef =
+    doc(db, "users", userId);
+
+  const userSnap =
+    await getDoc(userRef);
+
+  const previous =
+    userSnap.exists()
+      ? userSnap.data().scores?.[tier]
+      : undefined;
+
+  const previousFinalScore =
+    previous &&
+    typeof previous.finalScore ===
+      "number"
+      ? previous.finalScore
+      : undefined;
+
+  if (
+    previousFinalScore !==
+      undefined &&
+    previousFinalScore >= safeScore
+  ) {
     return;
   }
 
-  await setDoc(userRef, {
-    scores: {
-      [tier]: {
-        score,
-        total,
-        finalScore: score,
-        finalTotal: total,
-        timestamp: new Date().toISOString()
+  const existingTierData =
+    previous &&
+    typeof previous === "object"
+      ? previous
+      : {};
+
+  await setDoc(
+    userRef,
+    {
+      scores: {
+        [tier]: {
+          ...existingTierData,
+          score: safeScore,
+          total: safeTotal,
+          finalScore: safeScore,
+          finalTotal: safeTotal,
+          timestamp:
+            new Date().toISOString()
+        }
       }
-    }
-  }, { merge: true });
+    },
+    { merge: true }
+  );
 };
 
-// Pre-assessment score, stored separately so it can never count as a pass.
-export const savePreTestScore = async (userId: string, tier: string, preTestScore: number, preTestTotal: number) => {
-  await setDoc(doc(db, "users", userId), {
-    scores: { [tier]: { preTestScore, preTestTotal } }
-  }, { merge: true });
+export const savePreTestScore = async (
+  userId: string,
+  tier: string,
+  preTestScore: number,
+  preTestTotal: number
+) => {
+  const safeTotal =
+    Math.max(0, preTestTotal);
+
+  const safeScore =
+    Math.min(
+      Math.max(0, preTestScore),
+      safeTotal
+    );
+
+  const userRef =
+    doc(db, "users", userId);
+
+  const userSnap =
+    await getDoc(userRef);
+
+  const previous =
+    userSnap.exists()
+      ? userSnap.data().scores?.[tier]
+      : undefined;
+
+  const existingTierData =
+    previous &&
+    typeof previous === "object"
+      ? previous
+      : {};
+
+  await setDoc(
+    userRef,
+    {
+      scores: {
+        [tier]: {
+          ...existingTierData,
+          preTestScore:
+            safeScore,
+          preTestTotal:
+            safeTotal,
+          preTestTimestamp:
+            new Date().toISOString()
+        }
+      }
+    },
+    { merge: true }
+  );
 };
-export const saveCompletedMissions = async (uid: string, missions: string[]) => {
+
+export const saveCompletedMissions = async (
+  uid: string,
+  missions: string[]
+) => {
   try {
-    await setDoc(doc(db, "users", uid), { completedMissions: missions }, { merge: true });
+    await setDoc(
+      doc(db, "users", uid),
+      {
+        completedMissions:
+          missions
+      },
+      { merge: true }
+    );
   } catch (error) {
-    console.error("Error saving missions:", error);
+    console.error(
+      "Error saving missions:",
+      error
+    );
+
+    throw error;
   }
 };

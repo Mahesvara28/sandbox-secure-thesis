@@ -35,19 +35,27 @@ import {
 
 import { TierDashboard } from './TierDashboard';
 
-interface BootScreenProps {
-  bootText?: string[];
-}
+export type TierScoreLike = {
+  score: number;
+  total: number;
+  preTestScore?: number;
+  preTestTotal?: number;
+  finalScore?: number;
+  finalTotal?: number;
+};
 
 export const BootScreen = ({
   bootText = []
-}: BootScreenProps) => {
+}: {
+  bootText?: string[];
+}) => {
   return (
     <div className="min-h-screen bg-black text-green-500 font-mono flex items-center justify-center p-6">
       <div className="w-full max-w-4xl">
         <div className="border border-green-500/40 bg-black shadow-[0_0_40px_rgba(34,197,94,0.08)]">
 
           <div className="border-b border-green-500/30 px-4 py-3 flex items-center justify-between">
+
             <div className="flex items-center gap-2">
               <Terminal size={18} />
               <span className="text-sm tracking-widest">
@@ -59,6 +67,7 @@ export const BootScreen = ({
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
               SYSTEM BOOT
             </div>
+
           </div>
 
           <div className="p-6 min-h-[420px]">
@@ -67,14 +76,17 @@ export const BootScreen = ({
               SANDBOX SECURE TRAINING ENVIRONMENT v1.0
             </div>
 
-            {bootText.map((line, index) => (
-              <div
-                key={`${line}-${index}`}
-                className="text-sm md:text-base leading-7"
-              >
-                {line || '\u00A0'}
-              </div>
-            ))}
+            {bootText.map(
+              (line, index) => (
+                <div
+                  key={`${line}-${index}`}
+                  className="text-sm md:text-base leading-7"
+                >
+                  {line ||
+                    '\u00A0'}
+                </div>
+              )
+            )}
 
             <div className="mt-2 flex items-center gap-2">
               <span className="text-green-500">
@@ -83,11 +95,17 @@ export const BootScreen = ({
 
               <span className="w-2 h-4 bg-green-500 animate-pulse" />
             </div>
+
           </div>
 
           <div className="border-t border-green-500/20 px-4 py-3 text-xs text-green-500/40 flex justify-between">
-            <span>SECURE BOOT</span>
-            <span>TRAINING MODE</span>
+            <span>
+              SECURE BOOT
+            </span>
+
+            <span>
+              TRAINING MODE
+            </span>
           </div>
 
         </div>
@@ -97,10 +115,14 @@ export const BootScreen = ({
 };
 
 interface AuthScreenProps {
-  authMode: 'login' | 'register';
+  authMode:
+    | 'login'
+    | 'register';
 
   setAuthMode: (
-    mode: 'login' | 'register'
+    mode:
+      | 'login'
+      | 'register'
   ) => void;
 
   authError: string;
@@ -125,9 +147,7 @@ interface AuthScreenProps {
   ) => void;
 
   handleLogin: () => Promise<void>;
-
   handleRegister: () => Promise<void>;
-
   handleGoogleLogin: () => Promise<void>;
 }
 
@@ -174,10 +194,13 @@ export const AuthScreen = ({
 
               <button
                 onClick={() =>
-                  setAuthMode('login')
+                  setAuthMode(
+                    'login'
+                  )
                 }
                 className={`flex-1 py-3 text-sm tracking-widest ${
-                  authMode === 'login'
+                  authMode ===
+                  'login'
                     ? 'text-green-400 border-b-2 border-green-400'
                     : 'text-green-500/40'
                 }`}
@@ -187,10 +210,13 @@ export const AuthScreen = ({
 
               <button
                 onClick={() =>
-                  setAuthMode('register')
+                  setAuthMode(
+                    'register'
+                  )
                 }
                 className={`flex-1 py-3 text-sm tracking-widest ${
-                  authMode === 'register'
+                  authMode ===
+                  'register'
                     ? 'text-green-400 border-b-2 border-green-400'
                     : 'text-green-500/40'
                 }`}
@@ -200,7 +226,8 @@ export const AuthScreen = ({
 
             </div>
 
-            {authMode === 'login' ? (
+            {authMode ===
+            'login' ? (
               <div className="space-y-4">
 
                 <div>
@@ -209,14 +236,19 @@ export const AuthScreen = ({
                   </label>
 
                   <input
-                    value={regEmail}
-                    onChange={(e) =>
+                    value={
+                      regEmail
+                    }
+                    onChange={e =>
                       setRegEmail(
                         e.target.value
                       )
                     }
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                    onKeyDown={e => {
+                      if (
+                        e.key ===
+                        'Enter'
+                      ) {
                         handleLogin();
                       }
                     }}
@@ -232,14 +264,19 @@ export const AuthScreen = ({
                   </label>
 
                   <input
-                    value={regPassword}
-                    onChange={(e) =>
+                    value={
+                      regPassword
+                    }
+                    onChange={e =>
                       setRegPassword(
                         e.target.value
                       )
                     }
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                    onKeyDown={e => {
+                      if (
+                        e.key ===
+                        'Enter'
+                      ) {
                         handleLogin();
                       }
                     }}
@@ -250,7 +287,9 @@ export const AuthScreen = ({
                 </div>
 
                 <button
-                  onClick={handleLogin}
+                  onClick={
+                    handleLogin
+                  }
                   className="w-full bg-green-500 text-black font-bold py-3 hover:bg-green-400"
                 >
                   AUTHENTICATE
@@ -271,7 +310,9 @@ export const AuthScreen = ({
                 </div>
 
                 <button
-                  onClick={handleGoogleLogin}
+                  onClick={
+                    handleGoogleLogin
+                  }
                   className="w-full border border-green-500/20 py-3 text-sm hover:border-green-500/50"
                 >
                   CONTINUE WITH GOOGLE
@@ -287,8 +328,10 @@ export const AuthScreen = ({
                   </label>
 
                   <input
-                    value={regUsername}
-                    onChange={(e) =>
+                    value={
+                      regUsername
+                    }
+                    onChange={e =>
                       setRegUsername(
                         e.target.value
                       )
@@ -304,8 +347,10 @@ export const AuthScreen = ({
                   </label>
 
                   <input
-                    value={regEmail}
-                    onChange={(e) =>
+                    value={
+                      regEmail
+                    }
+                    onChange={e =>
                       setRegEmail(
                         e.target.value
                       )
@@ -322,8 +367,10 @@ export const AuthScreen = ({
                   </label>
 
                   <input
-                    value={regPassword}
-                    onChange={(e) =>
+                    value={
+                      regPassword
+                    }
+                    onChange={e =>
                       setRegPassword(
                         e.target.value
                       )
@@ -335,7 +382,9 @@ export const AuthScreen = ({
                 </div>
 
                 <button
-                  onClick={handleRegister}
+                  onClick={
+                    handleRegister
+                  }
                   className="w-full bg-green-500 text-black font-bold py-3 hover:bg-green-400"
                 >
                   CREATE OPERATOR
@@ -374,10 +423,7 @@ interface DashboardScreenProps {
 
   userScores: Record<
     string,
-    {
-      score: number;
-      total: number;
-    }
+    TierScoreLike
   >;
 
   setScreen: (
@@ -399,19 +445,31 @@ export const DashboardScreen = ({
   onShowGuide
 }: DashboardScreenProps) => {
   const scoreEntries =
-    Object.values(userScores);
+    Object.values(
+      userScores
+    ).filter(
+      item =>
+        item.finalScore !==
+          undefined &&
+        item.finalTotal !==
+          undefined
+    );
 
   const totalScore =
     scoreEntries.reduce(
       (sum, item) =>
-        sum + item.score,
+        sum +
+        (item.finalScore ??
+          0),
       0
     );
 
   const totalPossible =
     scoreEntries.reduce(
       (sum, item) =>
-        sum + item.total,
+        sum +
+        (item.finalTotal ??
+          0),
       0
     );
 
@@ -452,7 +510,9 @@ export const DashboardScreen = ({
           </div>
 
           <button
-            onClick={onShowGuide}
+            onClick={
+              onShowGuide
+            }
             className="flex items-center justify-center gap-2 border border-green-500/30 px-5 py-3 text-sm hover:bg-green-500/10"
           >
             <HelpCircle size={17} />
@@ -466,7 +526,6 @@ export const DashboardScreen = ({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
         <div className="border border-green-500/20 bg-[#08100c] p-5">
-
           <p className="text-xs text-green-500/40 tracking-widest">
             TRAINING SCORE
           </p>
@@ -474,11 +533,9 @@ export const DashboardScreen = ({
           <p className="text-3xl font-bold text-green-300 mt-2">
             {percentage}%
           </p>
-
         </div>
 
         <div className="border border-green-500/20 bg-[#08100c] p-5">
-
           <p className="text-xs text-green-500/40 tracking-widest">
             QUIZZES COMPLETED
           </p>
@@ -486,11 +543,9 @@ export const DashboardScreen = ({
           <p className="text-3xl font-bold text-green-300 mt-2">
             {scoreEntries.length}
           </p>
-
         </div>
 
         <div className="border border-green-500/20 bg-[#08100c] p-5">
-
           <p className="text-xs text-green-500/40 tracking-widest">
             ACCESS LEVEL
           </p>
@@ -498,7 +553,6 @@ export const DashboardScreen = ({
           <p className="text-3xl font-bold text-green-300 mt-2">
             OPERATOR
           </p>
-
         </div>
 
       </div>
@@ -517,7 +571,9 @@ export const DashboardScreen = ({
 
           <button
             onClick={() =>
-              setScreen('academy')
+              setScreen(
+                'academy'
+              )
             }
             className="text-left border border-green-500/20 bg-[#08100c] p-6 hover:border-green-500/50 transition"
           >
@@ -542,7 +598,9 @@ export const DashboardScreen = ({
 
           <button
             onClick={() =>
-              setScreen('missions')
+              setScreen(
+                'missions'
+              )
             }
             className="text-left border border-green-500/20 bg-[#08100c] p-6 hover:border-green-500/50 transition"
           >
@@ -567,7 +625,9 @@ export const DashboardScreen = ({
           </button>
 
           <button
-            onClick={onShowGuide}
+            onClick={
+              onShowGuide
+            }
             className="text-left border border-green-500/20 bg-[#08100c] p-6 hover:border-green-500/50 transition"
           >
             <BookOpen
@@ -598,55 +658,89 @@ export const DashboardScreen = ({
   );
 };
 
-type TierScoreLike = {
-  score: number;
-  total: number;
-  preTestScore?: number;
-  preTestTotal?: number;
-  finalScore?: number;
-  finalTotal?: number;
-};
+const TIER_ORDER: Tier[] = [
+  'BEGINNER',
+  'INTERMEDIATE',
+  'EXPERT'
+];
 
-const TIER_ORDER: Tier[] = ['BEGINNER', 'INTERMEDIATE', 'EXPERT'];
 const PASS_MARK = 70;
 
-// A tier counts as passed only when the post-assessment reached the pass mark.
 const isTierPassed = (
-  scores: Record<string, TierScoreLike>,
+  scores: Record<
+    string,
+    TierScoreLike
+  >,
   tier: Tier
 ): boolean => {
-  const entry = scores[tier];
+  const entry =
+    scores[tier];
+
   return (
     !!entry &&
-    entry.finalScore !== undefined &&
+    entry.finalScore !==
+      undefined &&
     !!entry.finalTotal &&
-    (entry.finalScore / entry.finalTotal) * 100 >= PASS_MARK
+    (entry.finalScore /
+      entry.finalTotal) *
+      100 >=
+      PASS_MARK
   );
 };
 
-// Returns the first earlier tier that still has to be passed, or null if unlocked.
 const getLockedBy = (
-  scores: Record<string, TierScoreLike>,
+  scores: Record<
+    string,
+    TierScoreLike
+  >,
   tier: Tier
 ): Tier | null => {
-  const index = TIER_ORDER.indexOf(tier);
-  for (let i = 0; i < index; i++) {
-    if (!isTierPassed(scores, TIER_ORDER[i])) return TIER_ORDER[i];
+  const index =
+    TIER_ORDER.indexOf(
+      tier
+    );
+
+  for (
+    let i = 0;
+    i < index;
+    i++
+  ) {
+    if (
+      !isTierPassed(
+        scores,
+        TIER_ORDER[i]
+      )
+    ) {
+      return TIER_ORDER[i];
+    }
   }
+
   return null;
 };
 
 interface AcademyScreenProps {
   activeTier: Tier | null;
-  setActiveTier: (tier: Tier | null) => void;
-  userScores: Record<string, TierScoreLike>;
+
+  setActiveTier: (
+    tier: Tier | null
+  ) => void;
+
+  userScores: Record<
+    string,
+    TierScoreLike
+  >;
+
   handleQuizComplete: (
     tier: Tier,
     score: number,
     total: number,
     isPreTest?: boolean
   ) => Promise<void>;
-  onStartMission: (missionId: string) => void;
+
+  onStartMission: (
+    missionId: string
+  ) => void;
+
   completedMissions: string[];
 }
 
@@ -658,12 +752,19 @@ export const AcademyScreen = ({
   onStartMission,
   completedMissions
 }: AcademyScreenProps) => {
-
-  if (activeTier && !getLockedBy(userScores, activeTier)) {
-
-    const tierData = TIERS.find(
-      tier => tier.id === activeTier
-    );
+  if (
+    activeTier &&
+    !getLockedBy(
+      userScores,
+      activeTier
+    )
+  ) {
+    const tierData =
+      TIERS.find(
+        tier =>
+          tier.id ===
+          activeTier
+      );
 
     if (!tierData) {
       return (
@@ -680,7 +781,9 @@ export const AcademyScreen = ({
 
             <button
               onClick={() =>
-                setActiveTier(null)
+                setActiveTier(
+                  null
+                )
               }
               className="mt-5 border border-green-500 px-6 py-3 text-sm font-bold uppercase hover:bg-green-500 hover:text-black"
             >
@@ -694,32 +797,38 @@ export const AcademyScreen = ({
 
     return (
       <TierDashboard
-        tierName={activeTier}
-
+        tierName={
+          activeTier
+        }
         preTestQuestions={
           tierData.preTest
         }
-
         postTestQuestions={
           tierData.postTest
         }
-
         onExit={() =>
-          setActiveTier(null)
+          setActiveTier(
+            null
+          )
         }
-
-        onComplete={(score, total, isPreTest) =>
-          handleQuizComplete(activeTier, score, total, isPreTest)
+        onComplete={(
+          score,
+          total,
+          isPreTest
+        ) =>
+          handleQuizComplete(
+            activeTier,
+            score,
+            total,
+            isPreTest
+          )
         }
-
         onStartMission={
           onStartMission
         }
-
         completedMissions={
           completedMissions
         }
-
         userScores={
           userScores
         }
@@ -742,7 +851,8 @@ export const AcademyScreen = ({
       description:
         'Master Linux navigation, system orientation, authentication logs, and basic network investigation.',
       color: 'text-green-400',
-      border: 'border-green-500'
+      border:
+        'border-green-500'
     },
     {
       id: 'INTERMEDIATE',
@@ -751,7 +861,8 @@ export const AcademyScreen = ({
       description:
         'Investigate processes, network services, logs, and simulated security incidents.',
       color: 'text-blue-400',
-      border: 'border-blue-500'
+      border:
+        'border-blue-500'
     },
     {
       id: 'EXPERT',
@@ -760,7 +871,8 @@ export const AcademyScreen = ({
       description:
         'Handle advanced incident response, persistence detection, forensics, and attack correlation.',
       color: 'text-red-400',
-      border: 'border-red-500'
+      border:
+        'border-red-500'
     }
   ];
 
@@ -791,121 +903,179 @@ export const AcademyScreen = ({
 
       <div className="grid gap-6">
 
-        {academyTiers.map(tier => {
+        {academyTiers.map(
+          tier => {
+            const score =
+              userScores[
+                tier.id
+              ];
 
-          const score =
-            userScores[tier.id];
+            const lockedBy =
+              getLockedBy(
+                userScores,
+                tier.id
+              );
 
-          const lockedBy = getLockedBy(userScores, tier.id);
-          const locked = lockedBy !== null;
-          const passed = isTierPassed(userScores, tier.id);
+            const locked =
+              lockedBy !==
+              null;
 
-          const tierMissions =
-            MISSIONS.filter(
-              mission =>
-                mission.tier === tier.id
-            );
+            const passed =
+              isTierPassed(
+                userScores,
+                tier.id
+              );
 
-          const completedCount =
-            tierMissions.filter(
-              mission =>
-                completedMissions.includes(
-                  mission.id
-                )
-            ).length;
+            const tierMissions =
+              MISSIONS.filter(
+                mission =>
+                  mission.tier ===
+                  tier.id
+              );
 
-          return (
-            <div
-              key={tier.id}
-              className={`border ${tier.border} bg-black/60 p-6 ${locked ? 'opacity-60' : ''}`}
-            >
+            const completedCount =
+              tierMissions.filter(
+                mission =>
+                  completedMissions.includes(
+                    mission.id
+                  )
+              ).length;
 
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            return (
+              <div
+                key={
+                  tier.id
+                }
+                className={`border ${tier.border} bg-black/60 p-6 ${
+                  locked
+                    ? 'opacity-60'
+                    : ''
+                }`}
+              >
 
-                <div className="flex gap-4">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
 
-                  <div
-                    className={`w-14 h-14 border ${tier.border} flex items-center justify-center ${tier.color} font-black`}
-                  >
-                    {tier.number}
-                  </div>
+                  <div className="flex gap-4">
 
-                  <div>
-
-                    <h2
-                      className={`text-2xl font-black ${tier.color}`}
+                    <div
+                      className={`w-14 h-14 border ${tier.border} flex items-center justify-center ${tier.color} font-black`}
                     >
-                      {tier.title} CERTIFICATION
-                    </h2>
+                      {
+                        tier.number
+                      }
+                    </div>
 
-                    <p className="text-green-600 text-sm mt-1 max-w-2xl">
-                      {tier.description}
-                    </p>
+                    <div>
 
-                    {locked && (
-                      <p className="text-xs text-yellow-500 mt-2">
-                        Pass the {lockedBy} post-assessment ({PASS_MARK}%) to unlock this tier.
+                      <h2
+                        className={`text-2xl font-black ${tier.color}`}
+                      >
+                        {
+                          tier.title
+                        }{' '}
+                        CERTIFICATION
+                      </h2>
+
+                      <p className="text-green-600 text-sm mt-1 max-w-2xl">
+                        {
+                          tier.description
+                        }
                       </p>
-                    )}
 
-                    <div className="flex flex-wrap gap-4 mt-4 text-xs">
+                      {locked && (
+                        <p className="text-xs text-yellow-500 mt-2">
+                          Pass the{' '}
+                          {
+                            lockedBy
+                          }{' '}
+                          post-assessment (
+                          {
+                            PASS_MARK
+                          }
+                          %) to unlock this tier.
+                        </p>
+                      )}
 
-                      <span className="text-green-700">
-                        MISSIONS:{' '}
-                        <span className="text-white">
-                          {completedCount}/
-                          {tierMissions.length}
+                      <div className="flex flex-wrap gap-4 mt-4 text-xs">
+
+                        <span className="text-green-700">
+                          MISSIONS:{' '}
+                          <span className="text-white">
+                            {
+                              completedCount
+                            }
+                            /
+                            {
+                              tierMissions.length
+                            }
+                          </span>
                         </span>
-                      </span>
 
-                      <span className="text-green-700">
-                        PRE-TEST:{' '}
-                        <span className="text-white">
-                          {score && score.preTestScore !== undefined
-                            ? `${score.preTestScore}/${score.preTestTotal}`
-                            : 'NOT TAKEN'}
+                        <span className="text-green-700">
+                          PRE-TEST:{' '}
+                          <span className="text-white">
+                            {score &&
+                            score.preTestScore !==
+                              undefined
+                              ? `${score.preTestScore}/${score.preTestTotal}`
+                              : 'NOT TAKEN'}
+                          </span>
                         </span>
-                      </span>
 
-                      <span className="text-green-700">
-                        STATUS:{' '}
-                        <span className={passed ? 'text-green-400' : locked ? 'text-yellow-500' : 'text-white'}>
-                          {locked ? 'LOCKED' : passed ? 'PASSED' : 'OPEN'}
+                        <span className="text-green-700">
+                          STATUS:{' '}
+                          <span
+                            className={
+                              passed
+                                ? 'text-green-400'
+                                : locked
+                                  ? 'text-yellow-500'
+                                  : 'text-white'
+                            }
+                          >
+                            {locked
+                              ? 'LOCKED'
+                              : passed
+                                ? 'PASSED'
+                                : 'OPEN'}
+                          </span>
                         </span>
-                      </span>
+
+                      </div>
 
                     </div>
 
                   </div>
 
+                  {locked ? (
+                    <div className="border border-green-900 px-6 py-3 text-xs font-black uppercase text-green-800 whitespace-nowrap flex items-center gap-2 cursor-not-allowed">
+                      <Lock
+                        size={14}
+                      />
+                      Locked
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() =>
+                        setActiveTier(
+                          tier.id
+                        )
+                      }
+                      className={`border ${tier.border} px-6 py-3 text-xs font-black uppercase ${tier.color} hover:bg-white hover:text-black transition-colors whitespace-nowrap`}
+                    >
+                      {score
+                        ? 'Continue Tier'
+                        : 'Enter Tier'}{' '}
+                      →
+                    </button>
+                  )}
+
                 </div>
 
-                {locked ? (
-                  <div className="border border-green-900 px-6 py-3 text-xs font-black uppercase text-green-800 whitespace-nowrap flex items-center gap-2 cursor-not-allowed">
-                    <Lock size={14} />
-                    Locked
-                  </div>
-                ) : (
-                  <button
-                    onClick={() =>
-                      setActiveTier(
-                        tier.id
-                      )
-                    }
-                    className={`border ${tier.border} px-6 py-3 text-xs font-black uppercase ${tier.color} hover:bg-white hover:text-black transition-colors whitespace-nowrap`}
-                  >
-                    {score
-                      ? 'Continue Tier'
-                      : 'Enter Tier'}{' '}
-                    →
-                  </button>
-                )}
-
               </div>
-
-            </div>
-          );
-        })}
+            );
+          }
+        )}
 
       </div>
 
@@ -925,7 +1095,6 @@ export const MissionsScreen = ({
   startMission,
   completedMissions = []
 }: MissionsScreenProps) => {
-
   const missions = [
     ...TUTORIAL_MISSIONS,
     ...MISSIONS
@@ -962,8 +1131,10 @@ export const MissionsScreen = ({
       <div className="space-y-4">
 
         {missions.map(
-          (mission, index) => {
-
+          (
+            mission,
+            index
+          ) => {
             const completed =
               completedMissions.includes(
                 mission.id
@@ -971,7 +1142,9 @@ export const MissionsScreen = ({
 
             return (
               <div
-                key={mission.id}
+                key={
+                  mission.id
+                }
                 className={`border bg-[#08100c] p-5 ${
                   completed
                     ? 'border-green-500/40'
@@ -986,10 +1159,13 @@ export const MissionsScreen = ({
                     <div className="w-10 h-10 shrink-0 border border-green-500/30 flex items-center justify-center text-green-400 font-mono">
 
                       {completed ? (
-                        <CheckCircle2 size={20} />
+                        <CheckCircle2
+                          size={20}
+                        />
                       ) : (
                         String(
-                          index + 1
+                          index +
+                            1
                         ).padStart(
                           2,
                           '0'
@@ -1001,21 +1177,29 @@ export const MissionsScreen = ({
                     <div>
 
                       <h2 className="text-lg font-bold text-green-300">
-                        {mission.title}
+                        {
+                          mission.title
+                        }
                       </h2>
 
                       <p className="text-xs text-green-500/40 mt-1">
-                        {mission.scenario}
+                        {
+                          mission.scenario
+                        }
                       </p>
 
                       <p className="text-sm text-green-500/50 mt-3">
-                        {mission.intro}
+                        {
+                          mission.intro
+                        }
                       </p>
 
                       <div className="flex flex-wrap gap-4 mt-4 text-xs text-green-500/40">
 
                         <span className="flex items-center gap-1">
-                          <Clock size={13} />
+                          <Clock
+                            size={13}
+                          />
 
                           {Math.floor(
                             mission.timerLimit /
@@ -1025,7 +1209,9 @@ export const MissionsScreen = ({
                         </span>
 
                         <span className="flex items-center gap-1">
-                          <Target size={13} />
+                          <Target
+                            size={13}
+                          />
 
                           {
                             mission.steps
@@ -1048,13 +1234,13 @@ export const MissionsScreen = ({
                     }
                     className="shrink-0 flex items-center justify-center gap-2 border border-green-500 px-5 py-2 text-xs font-bold uppercase hover:bg-green-500 hover:text-black"
                   >
-
-                    <Play size={13} />
+                    <Play
+                      size={13}
+                    />
 
                     {completed
                       ? 'Replay'
                       : 'Deploy'}
-
                   </button>
 
                 </div>
@@ -1078,13 +1264,9 @@ interface TerminalScreenProps {
   ) => void;
 
   isThreatActive: boolean;
-
   timeLeft: number;
-
   questStep: number;
-
   msg: string;
-
   sysNonce: number;
 
   setShowHint: (
@@ -1137,7 +1319,6 @@ export const TerminalScreen = ({
   onMapAction,
   playSound
 }: TerminalScreenProps) => {
-
   const [command, setCommand] =
     useState('');
 
@@ -1153,49 +1334,56 @@ export const TerminalScreen = ({
       questStep
     ];
 
-  const executeCommand = () => {
+  const executeCommand =
+    () => {
+      const trimmed =
+        command.trim();
 
-    const trimmed =
-      command.trim();
+      if (!trimmed) {
+        return;
+      }
 
-    if (!trimmed) return;
+      playSound(
+        'keystroke'
+      );
 
-    playSound('keystroke');
+      setHistory(
+        prev => [
+          ...prev,
+          `operator@secure:${currentPath}$ ${trimmed}`
+        ]
+      );
 
-    setHistory(prev => [
-      ...prev,
-      `operator@secure:${currentPath}$ ${trimmed}`
-    ]);
+      handleCommand(
+        trimmed
+      );
 
-    handleCommand(
-      trimmed
-    );
-
-    setCommand('');
-  };
+      setCommand('');
+    };
 
   const handleKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>
   ) => {
-
-    if (event.key === 'Enter') {
+    if (
+      event.key ===
+      'Enter'
+    ) {
       executeCommand();
     }
-
   };
 
-  const showCurrentHint = () => {
+  const showCurrentHint =
+    () => {
+      if (currentStep) {
+        setHintText(
+          currentStep.hint
+        );
 
-    if (currentStep) {
-
-      setHintText(
-        currentStep.hint
-      );
-
-      setShowHint(true);
-    }
-
-  };
+        setShowHint(
+          true
+        );
+      }
+    };
 
   return (
     <div className="space-y-4">
@@ -1211,7 +1399,9 @@ export const TerminalScreen = ({
             </div>
 
             <h1 className="text-xl font-bold text-green-300 mt-1">
-              {activeMission.title}
+              {
+                activeMission.title
+              }
             </h1>
 
           </div>
@@ -1220,7 +1410,9 @@ export const TerminalScreen = ({
 
             <div className="text-xs text-green-500/50">
               OBJECTIVE{' '}
-              {questStep + 1}/
+              {questStep +
+                1}
+              /
               {
                 activeMission.steps
                   .length
@@ -1229,7 +1421,8 @@ export const TerminalScreen = ({
 
             <div
               className={`flex items-center gap-2 text-sm font-mono ${
-                timeLeft <= 30
+                timeLeft <=
+                30
                   ? 'text-red-400'
                   : 'text-green-400'
               }`}
@@ -1238,7 +1431,8 @@ export const TerminalScreen = ({
               <Clock size={16} />
 
               {Math.floor(
-                timeLeft / 60
+                timeLeft /
+                  60
               )
                 .toString()
                 .padStart(
@@ -1248,7 +1442,10 @@ export const TerminalScreen = ({
 
               :
 
-              {(timeLeft % 60)
+              {(
+                timeLeft %
+                60
+              )
                 .toString()
                 .padStart(
                   2,
@@ -1275,11 +1472,8 @@ export const TerminalScreen = ({
             </div>
 
             <div className="flex items-center gap-2 text-[10px] text-green-500/40">
-
               <span className="w-2 h-2 rounded-full bg-green-500" />
-
               ONLINE
-
             </div>
 
           </div>
@@ -1287,19 +1481,25 @@ export const TerminalScreen = ({
           <div className="h-[520px] overflow-y-auto p-4 font-mono text-sm">
 
             {history.map(
-              (line, index) => (
+              (
+                line,
+                index
+              ) => (
                 <div
                   key={`${line}-${index}`}
                   className="text-green-400/80 leading-6"
                 >
-                  {line || '\u00A0'}
+                  {line ||
+                    '\u00A0'}
                 </div>
               )
             )}
 
             {msg && (
               <div className="mt-2 text-green-300 whitespace-pre-wrap">
-                {msg}
+                {
+                  msg
+                }
               </div>
             )}
 
@@ -1307,11 +1507,15 @@ export const TerminalScreen = ({
 
               <span className="text-green-500 mr-2">
                 operator@secure:
-                {currentPath}$
+                {
+                  currentPath
+                }$
               </span>
 
               <input
-                value={command}
+                value={
+                  command
+                }
                 onChange={e =>
                   setCommand(
                     e.target.value
@@ -1340,8 +1544,10 @@ export const TerminalScreen = ({
             </div>
 
             <p className="text-sm text-green-300 leading-6">
-              {currentStep?.desc ||
-                'MISSION COMPLETE'}
+              {
+                currentStep?.desc ||
+                'MISSION COMPLETE'
+              }
             </p>
 
           </div>
@@ -1353,8 +1559,10 @@ export const TerminalScreen = ({
             </div>
 
             <div className="border border-green-500/10 bg-black p-3 font-mono text-xs text-green-400 break-all">
-              {currentStep?.cmd ||
-                'MISSION COMPLETE'}
+              {
+                currentStep?.cmd ||
+                'MISSION COMPLETE'
+              }
             </div>
 
           </div>
@@ -1376,7 +1584,9 @@ export const TerminalScreen = ({
 
             <button
               onClick={() =>
-                setShowMap(true)
+                setShowMap(
+                  true
+                )
               }
               className="border border-green-500/20 bg-[#08100c] p-3 text-xs text-green-400 hover:border-green-500/50"
             >
@@ -1424,7 +1634,9 @@ export const TerminalScreen = ({
                 </span>
 
                 <span className="text-green-300 truncate ml-4">
-                  {currentPath}
+                  {
+                    currentPath
+                  }
                 </span>
 
               </div>
@@ -1436,7 +1648,9 @@ export const TerminalScreen = ({
                 </span>
 
                 <span className="text-green-300">
-                  {sysNonce}
+                  {
+                    sysNonce
+                  }
                 </span>
 
               </div>
@@ -1457,19 +1671,25 @@ export const TerminalScreen = ({
 
             <button
               onClick={() =>
-                onMapAction('scan')
+                onMapAction(
+                  'scan'
+                )
               }
             />
 
             <button
               onClick={() =>
-                onMapAction('block')
+                onMapAction(
+                  'block'
+                )
               }
             />
 
             <button
               onClick={() =>
-                onMapAction('none')
+                onMapAction(
+                  'none'
+                )
               }
             />
 
@@ -1488,10 +1708,7 @@ interface ProfileScreenProps {
 
   userScores: Record<
     string,
-    {
-      score: number;
-      total: number;
-    }
+    TierScoreLike
   >;
 
   setShowEval?: (
@@ -1504,21 +1721,32 @@ export const ProfileScreen = ({
   userScores,
   setShowEval
 }: ProfileScreenProps) => {
-
   const scoreEntries =
-    Object.values(userScores);
+    Object.values(
+      userScores
+    ).filter(
+      item =>
+        item.finalScore !==
+          undefined &&
+        item.finalTotal !==
+          undefined
+    );
 
   const totalScore =
     scoreEntries.reduce(
       (sum, item) =>
-        sum + item.score,
+        sum +
+        (item.finalScore ??
+          0),
       0
     );
 
   const totalPossible =
     scoreEntries.reduce(
       (sum, item) =>
-        sum + item.total,
+        sum +
+        (item.finalTotal ??
+          0),
       0
     );
 
@@ -1539,12 +1767,10 @@ export const ProfileScreen = ({
         <div className="flex flex-col md:flex-row items-center md:items-start gap-5">
 
           <div className="w-20 h-20 rounded-full border border-green-500/30 flex items-center justify-center bg-black">
-
             <User
               size={34}
               className="text-green-400"
             />
-
           </div>
 
           <div className="text-center md:text-left">
@@ -1554,13 +1780,17 @@ export const ProfileScreen = ({
             </div>
 
             <h1 className="text-2xl font-bold text-green-300 mt-1">
-              {user?.displayName ||
-                'Operator'}
+              {
+                user?.displayName ||
+                'Operator'
+              }
             </h1>
 
             <p className="text-sm text-green-500/40 mt-1">
-              {user?.email ||
-                'No email available'}
+              {
+                user?.email ||
+                'No email available'
+              }
             </p>
 
           </div>
@@ -1587,7 +1817,9 @@ export const ProfileScreen = ({
           </div>
 
           <div className="text-3xl font-bold text-green-300 mt-3">
-            {totalScore}
+            {
+              totalScore
+            }
           </div>
 
         </div>
@@ -1608,7 +1840,9 @@ export const ProfileScreen = ({
           </div>
 
           <div className="text-3xl font-bold text-green-300 mt-3">
-            {percentage}%
+            {
+              percentage
+            }%
           </div>
 
         </div>
@@ -1629,7 +1863,9 @@ export const ProfileScreen = ({
           </div>
 
           <div className="text-3xl font-bold text-green-300 mt-3">
-            {scoreEntries.length}
+            {
+              scoreEntries.length
+            }
           </div>
 
         </div>
@@ -1660,7 +1896,10 @@ export const ProfileScreen = ({
             </span>
 
             <span className="text-green-300 text-right break-all">
-              {user?.email || 'N/A'}
+              {
+                user?.email ||
+                'N/A'
+              }
             </span>
 
           </div>
@@ -1672,7 +1911,10 @@ export const ProfileScreen = ({
             </span>
 
             <span className="text-green-300 text-right max-w-[60%] truncate">
-              {user?.uid || 'N/A'}
+              {
+                user?.uid ||
+                'N/A'
+              }
             </span>
 
           </div>
@@ -1721,7 +1963,9 @@ export const ProfileScreen = ({
 
             <button
               onClick={() =>
-                setShowEval(true)
+                setShowEval(
+                  true
+                )
               }
               className="border border-green-500/30 px-5 py-3 text-xs text-green-400 hover:bg-green-500/10"
             >

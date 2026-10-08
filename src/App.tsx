@@ -1,18 +1,17 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
 
 import {
   auth,
   signInWithGoogle,
   logOut,
   saveUserScore,
-  db,
   registerWithEmail,
   loginWithEmail,
   saveCompletedMissions,
-  savePreTestScore
+  savePreTestScore,
+  getUserProgress
 } from './Firebase';
 
 import {
@@ -37,7 +36,11 @@ import {
   MissionFailedModal
 } from './components/Modals';
 
-import type { Tier, Mission } from './data/gameData';
+import type {
+  Tier,
+  Mission
+} from './data/gameData';
+
 import {
   MISSIONS,
   TUTORIAL_MISSIONS
@@ -83,7 +86,7 @@ export interface TierScore {
   preTestTotal?: number;
   finalScore?: number;
   finalTotal?: number;
-}
+};
 
 function App() {
   const [screen, setScreen] =
@@ -159,9 +162,9 @@ function App() {
     useState('/home/operator');
 
   const [mapAction, setMapAction] =
-    useState<'scan' | 'block' | 'none'>(
-      'none'
-    );
+    useState<
+      'scan' | 'block' | 'none'
+    >('none');
 
   const [isMuted, setIsMuted] =
     useState(false);
@@ -213,9 +216,10 @@ function App() {
   ) => {
     if (isMuted) return;
 
-    const audio = new Audio(
-      `/assets/audio/${type}.mp3`
-    );
+    const audio =
+      new Audio(
+        `/assets/audio/${type}.mp3`
+      );
 
     audio.volume = 0.3;
 
@@ -224,19 +228,29 @@ function App() {
       .catch(() => {});
   };
 
-  // Show the onboarding guide exactly once per account (per browser).
-  // Called from the login/register handlers (event-driven) instead of an
-  // effect, so no setState happens synchronously inside an effect body.
-  // The flag is saved the moment the guide opens, so it can never repeat.
-  const maybeShowOnboarding = (uid: string) => {
-    const key = `sandboxSecureOnboardingCompleted-${uid}`;
+  const maybeShowOnboarding = (
+    uid: string
+  ) => {
+    const key =
+      `sandboxSecureOnboardingCompleted-${uid}`;
 
     try {
-      if (localStorage.getItem(key) === 'true') return;
-      localStorage.setItem(key, 'true');
+      if (
+        localStorage.getItem(
+          key
+        ) === 'true'
+      ) {
+        return;
+      }
+
+      localStorage.setItem(
+        key,
+        'true'
+      );
     } catch {
-      /* storage blocked: show it this once */
-    }
+  console.error('An error occurred.');
+}
+  
 
     setShowOnboarding(true);
   };
@@ -245,109 +259,114 @@ function App() {
     const unsub =
       onAuthStateChanged(
         auth,
-        async u => {
+        async currentUser => {
           if (
-            !u &&
+            !currentUser &&
             isFakeAdmin
           ) {
-            setIsLoadingAuth(false);
+            setIsLoadingAuth(
+              false
+            );
+
             return;
           }
 
-          setUser(u);
+          setUser(
+            currentUser
+          );
 
-          if (u) {
+          if (currentUser) {
             try {
-              const snap =
-                await getDoc(
-                  doc(
-                    db,
-                    'users',
-                    u.uid
-                  )
+              const progress =
+                await getUserProgress(
+                  currentUser.uid
                 );
 
-              if (snap.exists()) {
-                const data =
-                  snap.data();
+              const savedScores =
+                progress.scores;
 
-                const savedScores =
-                  data.scores || {};
+              const normalizedScores:
+                Record<
+                  string,
+                  TierScore
+                > = {};
 
-                const normalizedScores:
-                  Record<
-                    string,
-                    TierScore
-                  > = {};
+              Object.entries(
+                savedScores
+              ).forEach(
+                ([tier, value]) => {
+                  const scoreData =
+                    value as SavedScoreData;
 
-                Object.entries(
-                  savedScores
-                ).forEach(
-                  ([tier, value]) => {
-                    const scoreData =
-                      value as SavedScoreData;
+                  normalizedScores[
+                    tier
+                  ] = {
+                    score:
+                      Number(
+                        scoreData.score ??
+                          scoreData.finalScore ??
+                          0
+                      ),
 
-                    normalizedScores[
-                      tier
-                    ] = {
-                      score:
-                        Number(
-                          scoreData.score ||
-                            scoreData.finalScore ||
-                            0
-                        ),
-                      total:
-                        Number(
-                          scoreData.total ||
-                            scoreData.finalTotal ||
-                            0
-                        ),
-                      preTestScore:
-                        scoreData.preTestScore !==
-                        undefined
-                          ? Number(
-                              scoreData.preTestScore
-                            )
-                          : undefined,
-                      preTestTotal:
-                        scoreData.preTestTotal !==
-                        undefined
-                          ? Number(
-                              scoreData.preTestTotal
-                            )
-                          : undefined,
-                      finalScore:
-                        scoreData.finalScore !==
-                        undefined
-                          ? Number(
-                              scoreData.finalScore
-                            )
-                          : undefined,
-                      finalTotal:
-                        scoreData.finalTotal !==
-                        undefined
-                          ? Number(
-                              scoreData.finalTotal
-                            )
-                          : undefined
-                    };
-                  }
-                );
+                    total:
+                      Number(
+                        scoreData.total ??
+                          scoreData.finalTotal ??
+                          0
+                      ),
 
-                setUserScores(
-                  normalizedScores
-                );
+                    preTestScore:
+                      scoreData.preTestScore !==
+                      undefined
+                        ? Number(
+                            scoreData.preTestScore
+                          )
+                        : undefined,
 
-                setCompletedMissions(
-                  data.completedMissions ||
-                    []
-                );
-              }
-            } catch (error) {
+                    preTestTotal:
+                      scoreData.preTestTotal !==
+                      undefined
+                        ? Number(
+                            scoreData.preTestTotal
+                          )
+                        : undefined,
+
+                    finalScore:
+                      scoreData.finalScore !==
+                      undefined
+                        ? Number(
+                            scoreData.finalScore
+                          )
+                        : undefined,
+
+                    finalTotal:
+                      scoreData.finalTotal !==
+                      undefined
+                        ? Number(
+                            scoreData.finalTotal
+                          )
+                        : undefined
+                  };
+                }
+              );
+
+              setUserScores(
+                normalizedScores
+              );
+
+              setCompletedMissions(
+                progress.completedMissions
+              );
+            } catch (
+              error
+            ) {
               console.error(
-                'Error loading user data:',
+                'Error loading user progress:',
                 error
               );
+
+              setUserScores({});
+              setCompletedMissions([]);
             }
           } else {
             setUserScores({});
@@ -355,11 +374,14 @@ function App() {
             setIsFakeAdmin(false);
           }
 
-          setIsLoadingAuth(false);
+          setIsLoadingAuth(
+            false
+          );
         }
       );
 
-    return () => unsub();
+    return () =>
+      unsub();
   }, [isFakeAdmin]);
 
   useEffect(() => {
@@ -466,7 +488,9 @@ function App() {
         regPassword ===
           'admin123'
       ) {
-        setIsFakeAdmin(true);
+        setIsFakeAdmin(
+          true
+        );
 
         setUser({
           uid: 'default-admin-001',
@@ -661,13 +685,15 @@ function App() {
     };
 
   const startMission = (
-    m: Mission
+    mission: Mission
   ) => {
     setMissionOrigin(
       'missions'
     );
 
-    setPendingMission(m);
+    setPendingMission(
+      mission
+    );
 
     setShowBriefing(
       true
@@ -802,28 +828,52 @@ function App() {
           '[SUCCESS]: Mission objectives complete.'
         );
 
+        const missionId =
+          activeMission.id;
+
         setCompletedMissions(
           prev => {
-            const newMissions =
+            if (
               prev.includes(
-                activeMission.id
+                missionId
               )
-                ? prev
-                : [
-                    ...prev,
-                    activeMission.id
-                  ];
-
-            if (user) {
-              saveCompletedMissions(
-                user.uid,
-                newMissions
-              );
+            ) {
+              return prev;
             }
 
-            return newMissions;
+            return [
+              ...prev,
+              missionId
+            ];
           }
         );
+
+        if (
+          user &&
+          !isFakeAdmin
+        ) {
+          const updatedMissions =
+            completedMissions.includes(
+              missionId
+            )
+              ? completedMissions
+              : [
+                  ...completedMissions,
+                  missionId
+                ];
+
+          saveCompletedMissions(
+            user.uid,
+            updatedMissions
+          ).catch(
+            error => {
+              console.error(
+                'Error saving mission progress:',
+                error
+              );
+            }
+          );
+        }
 
         setTimeout(() => {
           setShowVictory(
@@ -847,48 +897,175 @@ function App() {
     }
   };
 
-  const handleQuizComplete = async (
-    tier: Tier,
-    quizScore: number,
-    total: number,
-    isPreTest: boolean = false
-  ) => {
-    const safeTotal = Math.max(0, total);
-    const safeScore = Math.min(Math.max(0, quizScore), safeTotal);
+  const handleQuizComplete =
+    async (
+      tier: Tier,
+      quizScore: number,
+      total: number,
+      isPreTest: boolean = false
+    ) => {
+      const safeTotal =
+        Math.max(
+          0,
+          total
+        );
 
-    setUserScores(prev => {
-      const existing = prev[tier] || { score: 0, total: 0 };
+      const safeScore =
+        Math.min(
+          Math.max(
+            0,
+            quizScore
+          ),
+          safeTotal
+        );
 
-      // Pre-test results are stored separately and never count as a pass.
-      const updated: TierScore = isPreTest
-        ? {
-            ...existing,
-            preTestScore: safeScore,
-            preTestTotal: safeTotal
-          }
-        : {
-            ...existing,
-            score: Math.max(existing.score, safeScore),
-            total: safeTotal,
-            finalScore: Math.max(existing.finalScore ?? 0, safeScore),
-            finalTotal: safeTotal
+      setUserScores(
+        prev => {
+          const existing =
+            prev[tier] || {
+              score: 0,
+              total: 0
+            };
+
+          const updated:
+            TierScore =
+            isPreTest
+              ? {
+                  ...existing,
+                  preTestScore:
+                    safeScore,
+                  preTestTotal:
+                    safeTotal
+                }
+              : {
+                  ...existing,
+                  score:
+                    Math.max(
+                      existing.score,
+                      safeScore
+                    ),
+                  total:
+                    safeTotal,
+                  finalScore:
+                    Math.max(
+                      existing.finalScore ??
+                        0,
+                      safeScore
+                    ),
+                  finalTotal:
+                    safeTotal
+                };
+
+          return {
+            ...prev,
+            [tier]: updated
           };
-
-      return { ...prev, [tier]: updated };
-    });
-
-    if (user && !isFakeAdmin) {
-      try {
-        if (isPreTest) {
-          await savePreTestScore(user.uid, tier, safeScore, safeTotal);
-        } else {
-          await saveUserScore(user.uid, tier, safeScore, safeTotal);
         }
-      } catch (error) {
-        console.error('Error saving quiz score:', error);
+      );
+
+      if (
+        user &&
+        !isFakeAdmin
+      ) {
+        try {
+          if (isPreTest) {
+            await savePreTestScore(
+              user.uid,
+              tier,
+              safeScore,
+              safeTotal
+            );
+          } else {
+            await saveUserScore(
+              user.uid,
+              tier,
+              safeScore,
+              safeTotal
+            );
+          }
+
+          const progress =
+            await getUserProgress(
+              user.uid
+            );
+
+          const normalizedScores:
+            Record<
+              string,
+              TierScore
+            > = {};
+
+          Object.entries(
+            progress.scores
+          ).forEach(
+            ([tierName, value]) => {
+              const scoreData =
+                value as SavedScoreData;
+
+              normalizedScores[
+                tierName
+              ] = {
+                score:
+                  Number(
+                    scoreData.score ??
+                      scoreData.finalScore ??
+                      0
+                  ),
+                total:
+                  Number(
+                    scoreData.total ??
+                      scoreData.finalTotal ??
+                      0
+                  ),
+                preTestScore:
+                  scoreData.preTestScore !==
+                  undefined
+                    ? Number(
+                        scoreData.preTestScore
+                      )
+                    : undefined,
+                preTestTotal:
+                  scoreData.preTestTotal !==
+                  undefined
+                    ? Number(
+                        scoreData.preTestTotal
+                      )
+                    : undefined,
+                finalScore:
+                  scoreData.finalScore !==
+                  undefined
+                    ? Number(
+                        scoreData.finalScore
+                      )
+                    : undefined,
+                finalTotal:
+                  scoreData.finalTotal !==
+                  undefined
+                    ? Number(
+                        scoreData.finalTotal
+                      )
+                    : undefined
+              };
+            }
+          );
+
+          setUserScores(
+            normalizedScores
+          );
+
+          setCompletedMissions(
+            progress.completedMissions
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Error saving quiz score:',
+            error
+          );
+        }
       }
-    }
-  };
+    };
 
   if (
     isLoadingAuth ||
