@@ -6,7 +6,9 @@ import {
   Play,
   Shield,
   Trophy,
-  XCircle
+  XCircle,
+  ArrowLeft,
+  BookOpen
 } from 'lucide-react';
 
 import type {
@@ -49,6 +51,10 @@ interface TierDashboardProps {
     {
       score: number;
       total: number;
+      preTestScore?: number;
+      preTestTotal?: number;
+      finalScore?: number;
+      finalTotal?: number;
     }
   >;
 }
@@ -58,7 +64,8 @@ type Stage =
   | 'pretest'
   | 'missions'
   | 'finaltest'
-  | 'complete';
+  | 'complete'
+  | 'review';
 
 export const TierDashboard = ({
   tierName,
@@ -94,7 +101,7 @@ export const TierDashboard = ({
     setPreTestScore
   ] = useState<number | null>(
     savedTierScore
-      ? savedTierScore.score
+      ? (savedTierScore.preTestScore ?? savedTierScore.score)
       : null
   );
 
@@ -102,6 +109,14 @@ export const TierDashboard = ({
     finalScore,
     setFinalScore
   ] = useState<number | null>(
+    null
+  );
+
+  // Answers from the post-assessment, kept so they can be reviewed again
+  const [
+    finalAnswers,
+    setFinalAnswers
+  ] = useState<(number | null)[] | null>(
     null
   );
 
@@ -301,6 +316,13 @@ export const TierDashboard = ({
       <div className="h-full overflow-y-auto p-6">
 
         <div className="max-w-5xl mx-auto">
+
+          <button
+            onClick={onExit}
+            className="text-xs text-green-600 hover:text-green-300 mb-6"
+          >
+            ← BACK TO TIERS
+          </button>
 
           <div className="border border-green-500/30 bg-black/60 p-6 mb-6">
 
@@ -520,7 +542,8 @@ export const TierDashboard = ({
         }
         onComplete={(
           score,
-          total
+          total,
+          answers
         ) => {
 
           const safeScore =
@@ -528,6 +551,10 @@ export const TierDashboard = ({
               score,
               total
             );
+
+          if (answers) {
+            setFinalAnswers(answers);
+          }
 
           setFinalScore(safeScore);
 
@@ -541,6 +568,28 @@ export const TierDashboard = ({
         }
         onExit={() =>
           setStage('missions')
+        }
+      />
+    );
+  }
+
+  if (stage === 'review') {
+    return (
+      <QuizModule
+        title={`${tierName} Post-Assessment`}
+        questions={
+          postTestQuestions
+        }
+        reviewAnswers={
+          finalAnswers ?? undefined
+        }
+        continueLabel="Back to Results"
+        onComplete={() => {}}
+        onContinueAfterComplete={() =>
+          setStage('complete')
+        }
+        onExit={() =>
+          setStage('complete')
         }
       />
     );
@@ -679,6 +728,20 @@ export const TierDashboard = ({
 
             <div className="mt-6 flex flex-col md:flex-row gap-3">
 
+              {passed && finalAnswers && (
+                <button
+                  onClick={() =>
+                    setStage(
+                      'review'
+                    )
+                  }
+                  className="flex-1 border border-green-500 px-5 py-3 text-xs font-bold uppercase text-green-400 hover:bg-green-500 hover:text-black flex items-center justify-center gap-2"
+                >
+                  <BookOpen size={14} />
+                  Review Answers
+                </button>
+              )}
+
               <button
                 onClick={() =>
                   setStage(
@@ -690,14 +753,17 @@ export const TierDashboard = ({
                 Review Missions
               </button>
 
-              {passed && (
-                <button
-                  onClick={onExit}
-                  className="flex-1 bg-green-500 text-black px-5 py-3 text-xs font-black uppercase hover:bg-green-400"
-                >
-                  Return to Academy
-                </button>
-              )}
+              <button
+                onClick={onExit}
+                className={`flex-1 px-5 py-3 text-xs font-black uppercase flex items-center justify-center gap-2 ${
+                  passed
+                    ? 'bg-green-500 text-black hover:bg-green-400'
+                    : 'border border-green-500/30 text-green-400 hover:bg-green-500/10'
+                }`}
+              >
+                <ArrowLeft size={14} />
+                Back to Tiers
+              </button>
 
             </div>
 

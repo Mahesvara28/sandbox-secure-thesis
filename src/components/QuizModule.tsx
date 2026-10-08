@@ -20,11 +20,14 @@ interface QuizModuleProps {
   questions: Question[];
   onComplete: (
     score: number,
-    total: number
+    total: number,
+    answers?: (number | null)[]
   ) => void;
   onExit: () => void;
   showReviewAfterComplete?: boolean;
   onContinueAfterComplete?: () => void;
+  reviewAnswers?: (number | null)[];
+  continueLabel?: string;
 }
 
 export const QuizModule = ({
@@ -33,7 +36,9 @@ export const QuizModule = ({
   onComplete,
   onExit,
   showReviewAfterComplete = false,
-  onContinueAfterComplete
+  onContinueAfterComplete,
+  reviewAnswers,
+  continueLabel = 'Continue'
 }: QuizModuleProps) => {
   const [currentIndex, setCurrentIndex] =
     useState(0);
@@ -44,17 +49,28 @@ export const QuizModule = ({
   const [answers, setAnswers] =
     useState<(number | null)[]>(
       () =>
-        Array(questions.length).fill(null)
+        reviewAnswers ?? Array(questions.length).fill(null)
     );
 
   const [isFinished, setIsFinished] =
-    useState(false);
+    useState(Boolean(reviewAnswers));
 
   const [finalScore, setFinalScore] =
-    useState(0);
+    useState(() =>
+      reviewAnswers
+        ? reviewAnswers.reduce<number>(
+            (total, answer, index) =>
+              answer !== null &&
+              answer === questions[index]?.correctAnswer
+                ? total + 1
+                : total,
+            0
+          )
+        : 0
+    );
 
   const [showReview, setShowReview] =
-    useState(false);
+    useState(Boolean(reviewAnswers));
 
   if (questions.length === 0) {
     return (
@@ -156,7 +172,8 @@ export const QuizModule = ({
 
     onComplete(
       safeScore,
-      questions.length
+      questions.length,
+      updatedAnswers
     );
   };
 
@@ -218,7 +235,7 @@ export const QuizModule = ({
               }
               className="border border-green-500 px-5 py-2 text-green-500 hover:bg-green-500 hover:text-black flex items-center gap-2"
             >
-              Continue
+              {continueLabel}
               <ArrowRight
                 size={16}
               />
