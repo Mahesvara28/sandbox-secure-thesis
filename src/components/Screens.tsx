@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { User as FirebaseUser } from 'Firebase/auth';
+import type { User as FirebaseUser } from 'firebase/auth';
 
 import {
   Terminal,
@@ -18,7 +18,8 @@ import {
   Database,
   Eye,
   BarChart3,
-  HelpCircle
+  HelpCircle,
+  Lock
 } from 'lucide-react';
 
 import type {
@@ -597,31 +598,55 @@ export const DashboardScreen = ({
   );
 };
 
+type TierScoreLike = {
+  score: number;
+  total: number;
+  preTestScore?: number;
+  preTestTotal?: number;
+  finalScore?: number;
+  finalTotal?: number;
+};
+
+const TIER_ORDER: Tier[] = ['BEGINNER', 'INTERMEDIATE', 'EXPERT'];
+const PASS_MARK = 70;
+
+// A tier counts as passed only when the post-assessment reached the pass mark.
+const isTierPassed = (
+  scores: Record<string, TierScoreLike>,
+  tier: Tier
+): boolean => {
+  const entry = scores[tier];
+  return (
+    !!entry &&
+    entry.finalScore !== undefined &&
+    !!entry.finalTotal &&
+    (entry.finalScore / entry.finalTotal) * 100 >= PASS_MARK
+  );
+};
+
+// Returns the first earlier tier that still has to be passed, or null if unlocked.
+const getLockedBy = (
+  scores: Record<string, TierScoreLike>,
+  tier: Tier
+): Tier | null => {
+  const index = TIER_ORDER.indexOf(tier);
+  for (let i = 0; i < index; i++) {
+    if (!isTierPassed(scores, TIER_ORDER[i])) return TIER_ORDER[i];
+  }
+  return null;
+};
+
 interface AcademyScreenProps {
   activeTier: Tier | null;
-
-  setActiveTier: (
-    tier: Tier | null
-  ) => void;
-
-  userScores: Record<
-    string,
-    {
-      score: number;
-      total: number;
-    }
-  >;
-
+  setActiveTier: (tier: Tier | null) => void;
+  userScores: Record<string, TierScoreLike>;
   handleQuizComplete: (
     tier: Tier,
     score: number,
-    total: number
+    total: number,
+    isPreTest?: boolean
   ) => Promise<void>;
-
-  onStartMission: (
-    missionId: string
-  ) => void;
-
+  onStartMission: (missionId: string) => void;
   completedMissions: string[];
 }
 
@@ -634,7 +659,7 @@ export const AcademyScreen = ({
   completedMissions
 }: AcademyScreenProps) => {
 
-  if (activeTier) {
+  if (activeTier && !getLockedBy(userScores, activeTier)) {
 
     const tierData = TIERS.find(
       tier => tier.id === activeTier
@@ -683,15 +708,8 @@ export const AcademyScreen = ({
           setActiveTier(null)
         }
 
-        onComplete={(
-          score,
-          total
-        ) =>
-          handleQuizComplete(
-            activeTier,
-            score,
-            total
-          )
+        onComplete={(score, total, isPreTest) =>
+          handleQuizComplete(activeTier, score, total, isPreTest)
         }
 
         onStartMission={
@@ -778,6 +796,10 @@ export const AcademyScreen = ({
           const score =
             userScores[tier.id];
 
+          const lockedBy = getLockedBy(userScores, tier.id);
+          const locked = lockedBy !== null;
+          const passed = isTierPassed(userScores, tier.id);
+
           const tierMissions =
             MISSIONS.filter(
               mission =>
@@ -795,7 +817,7 @@ export const AcademyScreen = ({
           return (
             <div
               key={tier.id}
-              className={`border ${tier.border} bg-black/60 p-6`}
+              className={`border ${tier.border} bg-black/60 p-6 ${locked ? 'opacity-60' : ''}`}
             >
 
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
@@ -820,6 +842,12 @@ export const AcademyScreen = ({
                       {tier.description}
                     </p>
 
+                    {locked && (
+                      <p className="text-xs text-yellow-500 mt-2">
+                        Pass the {lockedBy} post-assessment ({PASS_MARK}%) to unlock this tier.
+                      </p>
+                    )}
+
                     <div className="flex flex-wrap gap-4 mt-4 text-xs">
 
                       <span className="text-green-700">
@@ -833,9 +861,16 @@ export const AcademyScreen = ({
                       <span className="text-green-700">
                         PRE-TEST:{' '}
                         <span className="text-white">
-                          {score
-                            ? `${score.score}/${score.total}`
+                          {score && score.preTestScore !== undefined
+                            ? `${score.preTestScore}/${score.preTestTotal}`
                             : 'NOT TAKEN'}
+                        </span>
+                      </span>
+
+                      <span className="text-green-700">
+                        STATUS:{' '}
+                        <span className={passed ? 'text-green-400' : locked ? 'text-yellow-500' : 'text-white'}>
+                          {locked ? 'LOCKED' : passed ? 'PASSED' : 'OPEN'}
                         </span>
                       </span>
 
@@ -845,19 +880,26 @@ export const AcademyScreen = ({
 
                 </div>
 
-                <button
-                  onClick={() =>
-                    setActiveTier(
-                      tier.id
-                    )
-                  }
-                  className={`border ${tier.border} px-6 py-3 text-xs font-black uppercase ${tier.color} hover:bg-white hover:text-black transition-colors whitespace-nowrap`}
-                >
-                  {score
-                    ? 'Continue Tier'
-                    : 'Enter Tier'}{' '}
-                  →
-                </button>
+                {locked ? (
+                  <div className="border border-green-900 px-6 py-3 text-xs font-black uppercase text-green-800 whitespace-nowrap flex items-center gap-2 cursor-not-allowed">
+                    <Lock size={14} />
+                    Locked
+                  </div>
+                ) : (
+                  <button
+                    onClick={() =>
+                      setActiveTier(
+                        tier.id
+                      )
+                    }
+                    className={`border ${tier.border} px-6 py-3 text-xs font-black uppercase ${tier.color} hover:bg-white hover:text-black transition-colors whitespace-nowrap`}
+                  >
+                    {score
+                      ? 'Continue Tier'
+                      : 'Enter Tier'}{' '}
+                    →
+                  </button>
+                )}
 
               </div>
 

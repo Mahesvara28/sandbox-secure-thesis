@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { onAuthStateChanged } from 'Firebase/auth';
-import type { User as FirebaseUser } from 'Firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
+import type { User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
 import {
@@ -11,7 +11,8 @@ import {
   db,
   registerWithEmail,
   loginWithEmail,
-  saveCompletedMissions
+  saveCompletedMissions,
+  savePreTestScore
 } from './Firebase';
 
 import {
@@ -66,7 +67,7 @@ type AuthMode =
   | 'login'
   | 'register';
 
-  type SavedScoreData = {
+type SavedScoreData = {
   score?: number;
   total?: number;
   preTestScore?: number;
@@ -74,6 +75,7 @@ type AuthMode =
   finalScore?: number;
   finalTotal?: number;
 };
+
 export interface TierScore {
   score: number;
   total: number;
@@ -190,12 +192,8 @@ function App() {
   const [pendingMission, setPendingMission] =
     useState<Mission | null>(null);
 
- const [showOnboarding, setShowOnboarding] =
-  useState(() => {
-    return localStorage.getItem(
-      'sandboxSecureOnboardingCompleted'
-    ) !== 'true';
-  });
+  const [showOnboarding, setShowOnboarding] =
+    useState(false);
 
   const sendSysMsg = (
     text: string
@@ -224,6 +222,23 @@ function App() {
     audio
       .play()
       .catch(() => {});
+  };
+
+  // Show the onboarding guide exactly once per account (per browser).
+  // Called from the login/register handlers (event-driven) instead of an
+  // effect, so no setState happens synchronously inside an effect body.
+  // The flag is saved the moment the guide opens, so it can never repeat.
+  const maybeShowOnboarding = (uid: string) => {
+    const key = `sandboxSecureOnboardingCompleted-${uid}`;
+
+    try {
+      if (localStorage.getItem(key) === 'true') return;
+      localStorage.setItem(key, 'true');
+    } catch {
+      /* storage blocked: show it this once */
+    }
+
+    setShowOnboarding(true);
   };
 
   useEffect(() => {
@@ -265,16 +280,16 @@ function App() {
                     TierScore
                   > = {};
 
-               Object.entries(
-  savedScores
-).forEach(
-  ([tier, value]) => {
-    const scoreData =
-      value as SavedScoreData;
+                Object.entries(
+                  savedScores
+                ).forEach(
+                  ([tier, value]) => {
+                    const scoreData =
+                      value as SavedScoreData;
 
-    normalizedScores[
-      tier
-    ] = {
+                    normalizedScores[
+                      tier
+                    ] = {
                       score:
                         Number(
                           scoreData.score ||
@@ -441,14 +456,6 @@ function App() {
     timeLeft
   ]);
 
-  const completeOnboarding = () => {
-  localStorage.setItem(
-    'sandboxSecureOnboardingCompleted',
-    'true'
-  );
-
-  setShowOnboarding(false);
-};
   const handleLogin =
     async () => {
       setAuthError('');
@@ -469,37 +476,30 @@ function App() {
             'System Administrator'
         } as FirebaseUser);
 
-       setBootStage(
-  'authenticated'
-);
+        setBootStage(
+          'authenticated'
+        );
 
-if (
-  localStorage.getItem(
-    'sandboxSecureOnboardingCompleted'
-  ) !== 'true'
-) {
-  setShowOnboarding(true);
-}
-
-        setShowOnboarding(
-          true
+        maybeShowOnboarding(
+          'default-admin-001'
         );
 
         return;
       }
 
       try {
-        await loginWithEmail(
-          regEmail,
-          regPassword
-        );
+        const loggedIn =
+          await loginWithEmail(
+            regEmail,
+            regPassword
+          );
 
         setBootStage(
           'authenticated'
         );
 
-        setShowOnboarding(
-          true
+        maybeShowOnboarding(
+          loggedIn.uid
         );
       } catch (
         error: unknown
@@ -553,11 +553,12 @@ if (
       }
 
       try {
-        await registerWithEmail(
-          regEmail,
-          regPassword,
-          regUsername
-        );
+        const created =
+          await registerWithEmail(
+            regEmail,
+            regPassword,
+            regUsername
+          );
 
         setAuthSuccess(
           true
@@ -568,8 +569,8 @@ if (
             'authenticated'
           );
 
-          setShowOnboarding(
-            true
+          maybeShowOnboarding(
+            created.uid
           );
         }, 1500);
       } catch (
@@ -609,14 +610,15 @@ if (
       setAuthError('');
 
       try {
-        await signInWithGoogle();
+        const googleUser =
+          await signInWithGoogle();
 
         setBootStage(
           'authenticated'
         );
 
-        setShowOnboarding(
-          true
+        maybeShowOnboarding(
+          googleUser.uid
         );
       } catch (
         error: unknown
@@ -845,82 +847,48 @@ if (
     }
   };
 
-  const handleQuizComplete =
-    async (
-      tier: Tier,
-      quizScore: number,
-      total: number,
-      isPreTest: boolean = false
-    ) => {
-      const safeTotal =
-        Math.max(
-          0,
-          total
-        );
+  const handleQuizComplete = async (
+    tier: Tier,
+    quizScore: number,
+    total: number,
+    isPreTest: boolean = false
+  ) => {
+    const safeTotal = Math.max(0, total);
+    const safeScore = Math.min(Math.max(0, quizScore), safeTotal);
 
-      const safeScore =
-        Math.min(
-          Math.max(
-            0,
-            quizScore
-          ),
-          safeTotal
-        );
+    setUserScores(prev => {
+      const existing = prev[tier] || { score: 0, total: 0 };
 
-      setUserScores(
-        prev => {
-          const existing =
-            prev[tier] || {
-              score: 0,
-              total: 0
-            };
-
-          const updated:
-            TierScore = {
+      // Pre-test results are stored separately and never count as a pass.
+      const updated: TierScore = isPreTest
+        ? {
             ...existing,
-            score: safeScore,
-            total: safeTotal
-          };
-
-          if (isPreTest) {
-            updated.preTestScore =
-              safeScore;
-
-            updated.preTestTotal =
-              safeTotal;
-          } else {
-            updated.finalScore =
-              safeScore;
-
-            updated.finalTotal =
-              safeTotal;
+            preTestScore: safeScore,
+            preTestTotal: safeTotal
           }
-
-          return {
-            ...prev,
-            [tier]: updated
+        : {
+            ...existing,
+            score: Math.max(existing.score, safeScore),
+            total: safeTotal,
+            finalScore: Math.max(existing.finalScore ?? 0, safeScore),
+            finalTotal: safeTotal
           };
-        }
-      );
 
-      if (user) {
-        try {
-          await saveUserScore(
-            user.uid,
-            tier,
-            safeScore,
-            safeTotal
-          );
-        } catch (
-          error
-        ) {
-          console.error(
-            'Error saving quiz score:',
-            error
-          );
+      return { ...prev, [tier]: updated };
+    });
+
+    if (user && !isFakeAdmin) {
+      try {
+        if (isPreTest) {
+          await savePreTestScore(user.uid, tier, safeScore, safeTotal);
+        } else {
+          await saveUserScore(user.uid, tier, safeScore, safeTotal);
         }
+      } catch (error) {
+        console.error('Error saving quiz score:', error);
       }
-    };
+    }
+  };
 
   if (
     isLoadingAuth ||
@@ -1356,10 +1324,14 @@ if (
       />
 
       {showOnboarding && (
-  <OnboardingGuide
-    onComplete={completeOnboarding}
-  />
-)}
+        <OnboardingGuide
+          onComplete={() =>
+            setShowOnboarding(
+              false
+            )
+          }
+        />
+      )}
 
     </div>
   );
