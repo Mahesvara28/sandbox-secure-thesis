@@ -4,10 +4,23 @@ export type Tier = 'BEGINNER' | 'INTERMEDIATE' | 'EXPERT';
 
 export interface LevelData { id: string; title: string; description: string; }
 export interface TierConfig { id: Tier; levels: LevelData[]; preTest: Question[]; postTest: Question[]; }
+export interface MissionEvidence {
+  id: string;
+  kind: 'file' | 'host' | 'ip' | 'port' | 'event';
+  label: string;
+  value: string;
+  detail: string;
+  command?: string;
+}
 
 export interface Mission {
   id: string; title: string; tier: Tier; scenario: string; intro: string; timerLimit: number;
-  logs: string[]; target: string; steps: { desc: string; cmd: string; hint: string }[];
+  category?: 'files' | 'network' | 'logs' | 'response';
+  evidence?: MissionEvidence[];
+  learningGoal: string;
+  difficulty: 'guided' | 'standard' | 'advanced';
+  topology: { label: string; address: string; role: string; status: string; linksTo?: string }[];
+  logs: string[]; target: string; steps: { desc: string; cmd: string; hint: string | string[]; target?: string; inspectEvidenceId?: string; }[];
   realWorld: string;
   briefing: { concept: string; commands: string[]; objective: string; };
   didYouKnow: string[];
@@ -23,7 +36,14 @@ export const TUTORIAL_MISSIONS: Mission[] = [
       'You have just received access to the Sandbox Secure training server. Before investigating security incidents, you need to understand how to navigate the Linux filesystem.',
     intro:
       'HANDLER: Welcome, Operator. Every investigation starts with knowing where you are and what is around you.',
-    timerLimit: 300,
+    timerLimit: 0,
+    category: 'files',
+    learningGoal: 'Use a small set of terminal commands to find your way around a simulated Linux system.',
+    difficulty: 'guided',
+    topology: [
+      { label: 'Training workstation', address: 'operator session', role: 'Your starting point', status: 'READY' },
+      { label: 'Log directory', address: '/var/log', role: 'Practice evidence location', status: 'AVAILABLE', linksTo: 'Training workstation' }
+    ],
     logs: [
       'Training environment initialized.',
       'User session: operator',
@@ -42,9 +62,9 @@ export const TUTORIAL_MISSIONS: Mission[] = [
         hint: 'Use ls to inspect the contents of the current directory.'
       },
       {
-        desc: 'Enter the logs directory.',
-        cmd: 'cd logs',
-        hint: 'Use cd to move into another directory.'
+        desc: 'Enter the system log directory where investigation evidence is stored.',
+        cmd: 'cd /var/log',
+        hint: ['Use the directory path shown in the objective.', 'The system keeps its log directory beneath /var.', 'Submit: cd /var/log']
       },
       {
         desc: 'Confirm that you are now inside the logs directory.',
@@ -70,6 +90,192 @@ export const TUTORIAL_MISSIONS: Mission[] = [
       'The ~ symbol is commonly used as a shortcut for the current user\'s home directory.',
       'Security investigations often begin by locating and reading system logs.'
     ]
+  },
+  {
+    id: 't2',
+    title: 'Practice: Search a Text Record',
+    tier: 'BEGINNER',
+    scenario: 'A training folder contains a short activity record. Practice locating it and searching for a word the handler has flagged.',
+    intro: 'HANDLER: This is a practice exercise outside the certification path. Find the record, search it, and report the clue you found.',
+    timerLimit: 0,
+    category: 'files',
+    learningGoal: 'Practice locating a text record and searching it for a specific clue.',
+    difficulty: 'guided',
+    topology: [
+      { label: 'Training workstation', address: 'operator session', role: 'Your starting point', status: 'READY' },
+      { label: 'Practice records', address: '/home/operator/practice', role: 'Text evidence for this exercise', status: 'AVAILABLE', linksTo: 'Training workstation' }
+    ],
+    logs: [
+      'Training exercise initialized.',
+      'Practice record: activity.txt',
+      'Search clue: warning'
+    ],
+    target: 'practice records',
+    steps: [
+      { desc: 'List the items in your current folder.', cmd: 'ls', hint: 'Use ls to see the available files and folders.' },
+      { desc: 'Enter the practice folder.', cmd: 'cd /home/operator/practice', hint: ['Use cd to move into a folder.', 'The practice folder is under /home/operator.', 'Submit: cd /home/operator/practice'] },
+      { desc: 'Search activity.txt for the word warning.', cmd: 'grep warning activity.txt', hint: ['grep searches text for a word or phrase.', 'Use warning as the search word and activity.txt as the file.', 'Submit: grep warning activity.txt'] },
+      { desc: 'Read the full record so you can put the matching line in context.', cmd: 'cat activity.txt', hint: 'Use cat followed by the filename to display its text.' }
+    ],
+    realWorld: 'Analysts search text records for useful clues, then read surrounding context before drawing a conclusion.',
+    briefing: {
+      concept: 'Finding and checking text evidence',
+      commands: ['ls', 'cd', 'grep', 'cat'],
+      objective: 'Locate a practice record, search for a clue, and read the record in context.'
+    },
+    didYouKnow: [
+      'A matching word is a lead to review, not proof of what happened.',
+      'Reading surrounding lines helps avoid taking a clue out of context.'
+    ]
+  },
+  {
+    id: 't3',
+    title: 'Practice: Is This Service Expected?',
+    tier: 'BEGINNER',
+    category: 'network',
+    scenario: 'A small office server has three recorded services. Check the server and the unfamiliar service, then decide whether the evidence supports an alert.',
+    intro: 'HANDLER: Explore the host and service cards first. An unfamiliar port deserves a check, but a port number alone does not prove a compromise.',
+    timerLimit: 0,
+    learningGoal: 'Connect a host address to its services and compare a port with the approved baseline.',
+    difficulty: 'guided',
+    topology: [
+      { label: 'Office web server', address: '10.20.0.15', role: 'Hosts the staff portal', status: 'MONITORING', linksTo: 'Staff network' },
+      { label: 'Staff network', address: '10.20.0.0/24', role: 'Approved internal segment', status: 'TRUSTED' }
+    ],
+    evidence: [
+      { id: 't3-host', kind: 'host', label: 'Office web server', value: '10.20.0.15', detail: 'Inventory record: internal staff portal. The address belongs to the approved 10.20.0.0/24 network.', command: 'nmap 10.20.0.15' },
+      { id: 't3-443', kind: 'port', label: 'Port 443', value: 'HTTPS · approved', detail: 'The baseline lists HTTPS on port 443 as an expected staff portal service.', command: 'nmap 10.20.0.15' },
+      { id: 't3-8448', kind: 'port', label: 'Port 8448', value: 'Unknown service · review', detail: 'Port 8448 is not listed in the approved baseline. This is a configuration difference to investigate, not proof of malicious activity.', command: 'nmap 10.20.0.15' }
+    ],
+    logs: ['[INVENTORY] Staff portal: 10.20.0.15', '[BASELINE] Expected service: HTTPS on port 443', '[SCAN] Additional listener recorded on port 8448'],
+    target: '10.20.0.15',
+    steps: [
+      { desc: 'Inspect the server inventory card and confirm its address.', cmd: 'inspect t3-host', hint: 'Select the Office web server card in the evidence board.', inspectEvidenceId: 't3-host' },
+      { desc: 'Inspect the expected HTTPS port and compare it with the baseline.', cmd: 'inspect t3-443', hint: 'Select the port 443 card. The baseline tells you whether it is expected.', inspectEvidenceId: 't3-443' },
+      { desc: 'Inspect the additional listener and note why it needs review.', cmd: 'inspect t3-8448', hint: 'Select port 8448 and compare its status with the approved baseline.', inspectEvidenceId: 't3-8448' },
+      { desc: 'Report the finding without claiming an attack is confirmed.', cmd: 'report unexpected-port', hint: ['A port outside the baseline is a configuration difference.', 'Report that port 8448 needs review; do not claim it proves an attack.', 'Submit: report unexpected-port'] }
+    ],
+    realWorld: 'Defenders compare discovered services with an approved inventory. Unexpected listeners are investigated and verified before response actions are taken.',
+    briefing: { concept: 'Hosts, ports, services, and baselines', commands: ['nmap [host]', 'report [finding]'], objective: 'Inspect the host, compare its services with the baseline, and state a measured conclusion.' },
+    didYouKnow: ['An IP address identifies a network interface, while a port points to a service on that host.', 'A baseline is a reference for what should normally be present.']
+  },
+  {
+    id: 't4',
+    title: 'Practice: Find the Unusual File',
+    tier: 'BEGINNER',
+    category: 'files',
+    scenario: 'A scheduled maintenance folder contains one file that the team does not recognize. Inspect the file details and decide whether it should be escalated.',
+    intro: 'HANDLER: The file card gives you a simulated directory listing. Inspect the entries and use the evidence, not the filename alone, to choose what to report.',
+    timerLimit: 0,
+    learningGoal: 'Compare file names, locations, and ownership clues before escalating an unfamiliar file.',
+    difficulty: 'guided',
+    topology: [{ label: 'Maintenance server', address: '10.20.0.22', role: 'Scheduled task host', status: 'UNDER REVIEW' }],
+    evidence: [
+      { id: 't4-backup', kind: 'file', label: 'backup.sh', value: '/opt/maintenance/backup.sh', detail: 'Owner: administrator · Last changed: 3 days ago · Listed in the approved maintenance inventory.', command: 'ls /opt/maintenance' },
+      { id: 't4-update', kind: 'file', label: 'update-check.sh', value: '/tmp/update-check.sh', detail: 'Owner: unknown · Last changed: today · The temporary directory and missing inventory entry make this file worth investigating. The details do not prove it ran.', command: 'find /tmp -name update-check.sh' }
+    ],
+    logs: ['[INVENTORY] Approved: /opt/maintenance/backup.sh', '[FILE] /tmp/update-check.sh created today', '[OWNER] No approved owner listed'],
+    target: 'update-check.sh',
+    steps: [
+      { desc: 'Inspect the approved backup file as a point of comparison.', cmd: 'inspect t4-backup', hint: 'Select backup.sh to see its location and inventory status.', inspectEvidenceId: 't4-backup' },
+      { desc: 'Inspect the unfamiliar file and compare its location and owner.', cmd: 'inspect t4-update', hint: 'Select update-check.sh. Check its path, owner, and inventory status.', inspectEvidenceId: 't4-update' },
+      { desc: 'Report why the file deserves follow-up without claiming it executed.', cmd: 'report unverified-file', hint: ['The path and missing owner are reasons to investigate.', 'The evidence does not show whether the script ran.', 'Submit: report unverified-file'] }
+    ],
+    realWorld: 'File paths, owners, timestamps, and approved inventories help analysts decide what to investigate. A suspicious-looking name alone is not enough to establish impact.',
+    briefing: { concept: 'File context and evidence-based escalation', commands: ['find [path] -name [file]', 'report [finding]'], objective: 'Inspect two file records, compare their context, and report a supported conclusion.' },
+    didYouKnow: ['Temporary folders can contain legitimate files as well as suspicious ones.', 'Ownership and change time are clues to check, not proof of intent.']
+  },
+  {
+    id: 't5',
+    title: 'Practice: Put the Alert in Order',
+    tier: 'BEGINNER',
+    category: 'logs',
+    scenario: 'A training alert contains a failed sign-in, a successful sign-in, and a later password reset. Inspect the events and report what the timeline supports.',
+    intro: 'HANDLER: Events can look related because they are close together. Read each record, put them in order, and separate what happened from what you suspect.',
+    timerLimit: 0,
+    learningGoal: 'Build a short event timeline and distinguish observed facts from a possible explanation.',
+    difficulty: 'standard',
+    topology: [{ label: 'Training account', address: 'operator-demo', role: 'Account in the activity records', status: 'UNDER REVIEW' }, { label: 'Sign-in service', address: '10.20.0.5:22', role: 'Recorded authentication service', status: 'MONITORING' }],
+    evidence: [
+      { id: 't5-fail', kind: 'event', label: 'Failed sign-in', value: '09:02 · source 203.0.113.18', detail: 'Observed fact: an authentication failure was recorded at 09:02 from this source. It does not show that access succeeded.' },
+      { id: 't5-success', kind: 'event', label: 'Successful sign-in', value: '09:06 · source 203.0.113.18', detail: 'Observed fact: a successful sign-in was recorded four minutes later from the same source. The records do not identify the person using that address.' },
+      { id: 't5-reset', kind: 'event', label: 'Password reset', value: '09:11 · account operator-demo', detail: 'Observed fact: a password reset was recorded five minutes later. More context is needed to establish why it happened or who initiated it.' }
+    ],
+    logs: ['[09:02] Failed sign-in for operator-demo from 203.0.113.18', '[09:06] Successful sign-in for operator-demo from 203.0.113.18', '[09:11] Password reset for operator-demo'],
+    target: 'timeline',
+    steps: [
+      { desc: 'Inspect the failed sign-in and note its time and source.', cmd: 'inspect t5-fail', hint: 'Select the failed sign-in event card.', inspectEvidenceId: 't5-fail' },
+      { desc: 'Inspect the later successful sign-in and compare its source.', cmd: 'inspect t5-success', hint: 'Select the successful sign-in event. Compare its time and source with the first event.', inspectEvidenceId: 't5-success' },
+      { desc: 'Inspect the password reset as the final event in the sequence.', cmd: 'inspect t5-reset', hint: 'Select the password reset card and add it to your timeline.', inspectEvidenceId: 't5-reset' },
+      { desc: 'Report the sequence while making clear that the user identity is unconfirmed.', cmd: 'report related-events', hint: ['The records show a sequence of events from the same source address.', 'A shared source and close timing support further investigation, not identity attribution.', 'Submit: report related-events'] }
+    ],
+    realWorld: 'Timelines help analysts compare events and form hypotheses. Correlation is useful, but a shared address or close timestamp does not prove who caused an event.',
+    briefing: { concept: 'Timelines and cautious conclusions', commands: ['inspect evidence', 'report [finding]'], objective: 'Inspect events in order and report only what the records support.' },
+    didYouKnow: ['A single IP can be shared by many people or devices.', 'State observations separately from possible explanations.']
+  },
+  {
+    id: 't6',
+    title: 'Practice: Check a New Remote Service',
+    tier: 'BEGINNER',
+    category: 'network',
+    scenario: 'A branch file server has a newly reported remote-access service. Compare its host, approved services, and the unfamiliar listener before deciding what to report.',
+    intro: 'HANDLER: Verify which host is in scope, check its expected services, then examine the new listener. An unexpected service needs review; it does not identify who enabled it.',
+    timerLimit: 0,
+    learningGoal: 'Read host and service evidence, compare an exposed port with its baseline, and write a cautious finding.',
+    difficulty: 'standard',
+    topology: [
+      { label: 'Branch file server', address: '10.20.0.44', role: 'Stores shared team files', status: 'UNDER REVIEW', linksTo: 'Branch office network' },
+      { label: 'Branch office network', address: '10.20.0.0/24', role: 'Approved internal segment', status: 'TRUSTED' }
+    ],
+    evidence: [
+      { id: 't6-host', kind: 'host', label: 'Branch file server', value: '10.20.0.44', detail: 'Inventory record: branch file server on the approved 10.20.0.0/24 network. This is the host in scope for this check.' },
+      { id: 't6-445', kind: 'port', label: 'Port 445', value: 'SMB · approved', detail: 'The baseline lists SMB file sharing on port 445 for this server. This expected listener provides a useful comparison.' },
+      { id: 't6-3389', kind: 'port', label: 'Port 3389', value: 'Remote desktop · newly observed', detail: 'Remote desktop is not listed in the approved baseline for this server. Confirm with the system owner before taking action; the scan alone does not show who enabled it or whether it was used.' }
+    ],
+    logs: ['[INVENTORY] Branch file server: 10.20.0.44', '[BASELINE] Expected service: SMB on port 445', '[SCAN] TCP 3389 listener observed; change record not attached'],
+    target: '10.20.0.44',
+    steps: [
+      { desc: 'Inspect the host card and confirm which server is in scope.', cmd: 'inspect t6-host', hint: 'Start with the Branch file server card and note its address.', inspectEvidenceId: 't6-host' },
+      { desc: 'Inspect the expected file-sharing service as a baseline comparison.', cmd: 'inspect t6-445', hint: 'Check the port 445 card to see what the inventory expects.', inspectEvidenceId: 't6-445' },
+      { desc: 'Inspect the newly observed remote-access port and note what is still unknown.', cmd: 'inspect t6-3389', hint: 'Compare port 3389 with the approved baseline. The observation does not identify who enabled it.', inspectEvidenceId: 't6-3389' },
+      { desc: 'Report the baseline difference without claiming unauthorized access occurred.', cmd: 'report unapproved-remote-service', hint: ['The listener differs from the approved baseline.', 'The evidence does not show who enabled it or whether it was used.', 'Submit: report unapproved-remote-service'] }
+    ],
+    realWorld: 'A network scan shows reachable services at the time of collection. Analysts compare these observations with asset records and change approvals before labeling a service unauthorized.',
+    briefing: { concept: 'Service baselines and remote access', commands: ['inspect evidence', 'report [finding]'], objective: 'Compare one host with its approved services and document the observed difference.' },
+    didYouKnow: ['Port 3389 is commonly associated with Microsoft Remote Desktop, though port numbers can be reassigned.', 'A service being reachable does not prove that anyone connected to it.']
+  },
+  {
+    id: 't7',
+    title: 'Practice: Reconcile a Split Timeline',
+    tier: 'BEGINNER',
+    category: 'logs',
+    scenario: 'A short incident packet includes events from two systems whose clocks may not match. Inspect each event, account for the recorded offset, and state what the sequence supports.',
+    intro: 'HANDLER: Build the sequence from the records. One system reports a clock offset, and a shared address can represent more than one user. Keep those limits in your conclusion.',
+    timerLimit: 0,
+    learningGoal: 'Order records from separate sources, notice a clock difference, and separate a plausible relationship from confirmed causation.',
+    difficulty: 'standard',
+    topology: [
+      { label: 'Authentication server', address: '10.20.0.5', role: 'Records account sign-ins', status: 'LOGS AVAILABLE', linksTo: 'Application server' },
+      { label: 'Application server', address: '10.20.0.18', role: 'Records web requests', status: 'CLOCK OFFSET NOTED', linksTo: 'Authentication server' }
+    ],
+    evidence: [
+      { id: 't7-fail', kind: 'event', label: 'Failed sign-in', value: '09:02 · auth server · 203.0.113.18', detail: 'Observed fact: an authentication failure for the training account was recorded at 09:02 by the auth server. A failed attempt does not establish successful access.' },
+      { id: 't7-success', kind: 'event', label: 'Successful sign-in', value: '09:06 · auth server · 203.0.113.18', detail: 'Observed fact: a successful sign-in for the training account was recorded four minutes later from the same source address. The logs do not identify the person using that address.' },
+      { id: 't7-offset', kind: 'event', label: 'Application clock note', value: 'App server clock was 2 minutes slow', detail: 'The application server reports a two-minute clock lag relative to the reference clock. Its displayed request times should be adjusted before comparing them with authentication events.' },
+      { id: 't7-request', kind: 'event', label: 'Web request', value: '09:05 app time · 203.0.113.18 · HTTP 200', detail: 'Observed fact: the application log records a request with HTTP 200 at 09:05 local time. With the noted offset, this is about 09:07 reference time. HTTP 200 alone does not show what data was returned or who sent the request.' }
+    ],
+    logs: ['[AUTH 09:02] Failed sign-in for training account from 203.0.113.18', '[AUTH 09:06] Successful sign-in for training account from 203.0.113.18', '[APP CLOCK] Application host is 2 minutes slow', '[APP 09:05] Request from 203.0.113.18 returned HTTP 200'],
+    target: 'timeline',
+    steps: [
+      { desc: 'Inspect the failed sign-in and note its source and recorded time.', cmd: 'inspect t7-fail', hint: 'Select the failed sign-in event card. Record that it is an attempt, not a successful login.', inspectEvidenceId: 't7-fail' },
+      { desc: 'Inspect the later successful sign-in and compare the source address.', cmd: 'inspect t7-success', hint: 'Compare its source with the failed attempt, while remembering that an IP does not identify a person.', inspectEvidenceId: 't7-success' },
+      { desc: 'Inspect the application clock note before comparing timestamps.', cmd: 'inspect t7-offset', hint: 'Check whether the application log uses the same clock as the authentication server.', inspectEvidenceId: 't7-offset' },
+      { desc: 'Inspect the web request and adjust its time using the clock offset.', cmd: 'inspect t7-request', hint: 'Add two minutes to the application time, then compare the corrected time and source with the auth events.', inspectEvidenceId: 't7-request' },
+      { desc: 'Report a possible relationship while stating what remains unconfirmed.', cmd: 'report related-events-needs-validation', hint: ['The records may be related after correcting the clock offset.', 'The address and timing do not prove a shared actor or successful impact.', 'Submit: report related-events-needs-validation'] }
+    ],
+    realWorld: 'Correlating events across systems requires normalizing clocks and checking data from independent sources. A close timeline supports a hypothesis but does not establish causation or identity.',
+    briefing: { concept: 'Timeline correlation and clock normalization', commands: ['inspect evidence', 'report [finding]'], objective: 'Reconcile the clock offset and report the relationship the evidence does and does not support.' },
+    didYouKnow: ['NTP helps systems synchronize time, but offset and drift can still occur.', 'NAT and shared gateways can make many users appear under one public IP address.']
   }
 ];
 
@@ -83,7 +289,14 @@ export const MISSIONS: Mission[] = [
       'You are beginning your first security investigation. Before looking for an attacker, establish basic information about the system and locate the available evidence.',
     intro:
       'HANDLER: Rookie, lesson one: never investigate blindly. First establish who you are, where you are, and what evidence is available.',
-    timerLimit: 360,
+    timerLimit: 0,
+    learningGoal: 'Build a basic system picture before investigating an alert: identify the account, location, and available evidence.',
+    difficulty: 'guided',
+    topology: [
+      { label: 'Operator workstation', address: '192.168.1.50', role: 'Investigation console', status: 'TRUSTED' },
+      { label: 'Sandbox server', address: '192.168.1.10', role: 'System under investigation', status: 'MONITORING', linksTo: 'Operator workstation' },
+      { label: 'System logs', address: '/var/log', role: 'Authentication evidence', status: 'AVAILABLE', linksTo: 'Sandbox server' }
+    ],
     logs: [
       '[SYSTEM] Sandbox Secure workstation online.',
       '[AUTH] User operator logged in.',
@@ -150,13 +363,23 @@ export const MISSIONS: Mission[] = [
       'The security team noticed repeated login failures on the training server. Your job is to inspect the authentication log and determine whether the activity is suspicious.',
     intro:
       'HANDLER: We have our first alert. Someone may be attempting to gain access to the server. Do not block anything yet. First, understand the evidence.',
-    timerLimit: 420,
+    timerLimit: 0,
+    learningGoal: 'Compare authentication, system, and web records to identify a suspicious sequence while separating evidence from assumptions.',
+    difficulty: 'guided',
+    topology: [
+      { label: 'Operator workstation', address: '192.168.1.50', role: 'Investigation console', status: 'TRUSTED' },
+      { label: 'Sandbox server', address: '192.168.1.10', role: 'SSH service under review', status: 'MONITORING', linksTo: 'Operator workstation' },
+      { label: 'External host', address: '198.51.100.23', role: 'Source in authentication and web records', status: 'UNVERIFIED', linksTo: 'Sandbox server' },
+      { label: 'System logs', address: '/var/log', role: 'Three records to compare', status: 'AVAILABLE', linksTo: 'Sandbox server' }
+    ],
     logs: [
       '[ALERT] Multiple failed SSH authentication attempts.',
-      '[AUTH] Repeated failures detected.',
-      '[SOURCE] 185.22.14.99'
+      '[AUTH] Several failures target the root account within seconds.',
+      '[EVIDENCE] Compare auth.log, syslog, and access.log before concluding.',
+      '[CAUTION] A separate failed sign-in from the office workstation may be a typo, not an attack.',
+      '[CAUTION] The system journal clock is about two minutes fast; correlate event order, not exact matching times.'
     ],
-    target: '185.22.14.99',
+    target: '198.51.100.23',
     steps: [
       {
         desc: 'Navigate to the authentication logs.',
@@ -171,12 +394,22 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Read the authentication log.',
         cmd: 'cat auth.log',
-        hint: 'Use cat auth.log to inspect authentication events.'
+        hint: 'Use cat auth.log to inspect sign-in attempts and their source addresses.'
       },
       {
-        desc: 'Identify the source IP responsible for the repeated failures.',
-        cmd: 'cat auth.log',
-        hint: 'Look through the log output for repeated failed login attempts and their source IP.'
+        desc: 'Read the system log and look for activity around the same time.',
+        cmd: 'cat syslog',
+        hint: ['System logs can record services starting and account sessions.', 'Compare the timestamps and source with the authentication entries.', 'Submit: cat syslog']
+      },
+      {
+        desc: 'Read the web access log and compare its source address with the other records.',
+        cmd: 'cat access.log',
+        hint: ['Web access logs record requests made to the site.', 'Look for the address already present in the authentication records.', 'Submit: cat access.log']
+      },
+      {
+        desc: 'Report the repeated access pattern and note that the records do not identify the person behind the source address.',
+        cmd: 'report correlated-suspicious-activity',
+        hint: ['Compare timestamps and the source address across all three files.', 'The records support suspicious activity and a possible sequence, but not a person’s identity or confirmed impact.', 'Submit: report correlated-suspicious-activity']
       },
       {
         desc: 'Return to your home directory.',
@@ -188,9 +421,9 @@ export const MISSIONS: Mission[] = [
       'Repeated authentication failures can indicate password guessing or brute-force activity. Analysts normally investigate the frequency, source, targeted account, and timing before deciding how to respond.',
     briefing: {
       concept: 'Authentication Logs and Suspicious Login Activity',
-      commands: ['cd', 'ls', 'cat'],
+      commands: ['cd', 'ls', 'cat', 'report [finding]'],
       objective:
-        'Analyze authentication events and identify the source of repeated failed login attempts.'
+        'Compare three log files, identify the source and sequence of suspicious activity, and state what the records do and do not prove.'
     },
     didYouKnow: [
       'A failed login is not automatically an attack. Analysts look for patterns and unusual frequency.',
@@ -201,19 +434,26 @@ export const MISSIONS: Mission[] = [
 
   {
     id: 'm3',
-    title: 'Operation: Suspicious Connection',
+    title: 'Network Basics: Meet a Host and Service',
     tier: 'BEGINNER',
     scenario:
       'The authentication investigation identified a suspicious source. Network telemetry now shows that the same address may be communicating with the server.',
     intro:
       'HANDLER: Good work identifying the source. Now we move from authentication evidence to network evidence. Your job is to determine what the host is exposing.',
-    timerLimit: 420,
+    timerLimit: 0,
+    learningGoal: 'Learn how hosts, reachability, ports, and services relate before deciding whether a connection is unexpected.',
+    difficulty: 'guided',
+    topology: [
+      { label: 'Operator workstation', address: '192.168.1.50', role: 'Authorized investigation host', status: 'TRUSTED' },
+      { label: 'Sandbox server', address: '192.168.1.10', role: 'Protected host', status: 'MONITORING', linksTo: 'Operator workstation' },
+      { label: 'Unknown external host', address: '198.51.100.23', role: 'Observed network peer', status: 'UNDER REVIEW', linksTo: 'Sandbox server' }
+    ],
     logs: [
-      '[NET] Connection observed from 185.22.14.99.',
+      '[NET] Connection observed from 198.51.100.23.',
       '[NET] SSH traffic detected.',
       '[ALERT] Unexpected external host communicating with server.'
     ],
-    target: '185.22.14.99',
+    target: '198.51.100.23',
     steps: [
       {
         desc: 'Check the current simulated network status.',
@@ -222,30 +462,36 @@ export const MISSIONS: Mission[] = [
       },
       {
         desc: 'Test connectivity to the suspicious host.',
-        cmd: 'ping 185.22.14.99',
+        cmd: 'ping 198.51.100.23',
         hint: 'Use ping to test whether the simulated host responds.'
       },
       {
         desc: 'Perform a basic scan of the suspicious host.',
-        cmd: 'nmap 185.22.14.99',
+        cmd: 'nmap 198.51.100.23',
         hint: 'Use nmap followed by the target IP address.'
       },
       {
-        desc: 'Review the scan result and identify the exposed service.',
-        cmd: 'nmap 185.22.14.99',
-        hint: 'Look for the open port associated with remote administration.'
+        desc: 'Interpret the scan carefully: identify the service shown, without assuming an open service proves malicious activity.',
+        cmd: 'report ssh-service',
+        hint: ['Read the port and service columns in the scan output.', 'Port 22 is commonly used for secure remote administration.', 'Submit: report ssh-service']
       },
       {
         desc: 'Block the suspicious address after collecting the evidence.',
-        cmd: 'block 185.22.14.99',
-        hint: 'Use block followed by the suspicious IP address.'
+        cmd: 'block 198.51.100.23',
+        target: '198.51.100.23',
+        hint: ['Contain only the host supported by your evidence.', 'Use the block command with the observed address.', 'Submit: block 198.51.100.23']
+      },
+      {
+        desc: 'Open the Map and confirm the source is marked contained, then check status again.',
+        cmd: 'status',
+        hint: ['A response action is not complete until you check its effect.', 'Open Map and confirm 198.51.100.23 is marked CONTAINED, then use the status command.', 'Submit: status']
       }
     ],
     realWorld:
       'Network reconnaissance helps defenders understand which services are exposed. In a real environment, defenders must verify the target and authorization before performing scans.',
     briefing: {
       concept: 'Basic Network Investigation and Containment',
-      commands: ['status', 'ping', 'nmap [IP]', 'block [IP]'],
+      commands: ['status', 'ping', 'nmap [IP]', 'report [finding]', 'block [IP]'],
       objective:
         'Correlate a suspicious IP with network activity, identify exposed services, and contain the simulated threat.'
     },
@@ -264,7 +510,14 @@ export const MISSIONS: Mission[] = [
       'The server has been experiencing unusually high CPU usage. The security team suspects that an unauthorized program may be running in the background.',
     intro:
       'HANDLER: We have contained the suspicious network source, but something may already be running on the server. Now we investigate processes.',
-    timerLimit: 480,
+    timerLimit: 900,
+    learningGoal: 'Use process details and context—not CPU usage alone—to identify and safely stop a confirmed unwanted process.',
+    difficulty: 'standard',
+    topology: [
+      { label: 'Sandbox server', address: '192.168.1.10', role: 'Host with elevated CPU activity', status: 'INVESTIGATING' },
+      { label: 'Apache service', address: 'PID 1477', role: 'Expected parent process', status: 'EXPECTED', linksTo: 'Sandbox server' },
+      { label: 'Unknown process', address: 'PID 2214', role: 'High CPU process in /tmp', status: 'SUSPICIOUS', linksTo: 'Sandbox server' }
+    ],
     logs: [
       '[SYSTEM] CPU utilization above normal threshold.',
       '[ALERT] Unusual process activity detected.',
@@ -278,9 +531,9 @@ export const MISSIONS: Mission[] = [
         hint: 'Use ps aux to view running processes.'
       },
       {
-        desc: 'Identify the process using unusually high CPU.',
-        cmd: 'ps aux',
-        hint: 'Look for the process with abnormal CPU usage.'
+        desc: 'Identify the high-CPU process, then treat it as suspicious rather than proven malicious until you inspect its details.',
+        cmd: 'report pid-2214-needs-review',
+        hint: ['Compare CPU use and executable location with expected services.', 'High CPU is a clue; inspect the PID and path before taking action.', 'Submit: report pid-2214-needs-review']
       },
       {
         desc: 'Investigate the suspicious process ID.',
@@ -288,7 +541,12 @@ export const MISSIONS: Mission[] = [
         hint: 'Use ps -p followed by the suspicious PID.'
       },
       {
-        desc: 'Terminate the confirmed malicious process.',
+        desc: 'Record the process path and PID before stopping it.',
+        cmd: 'preserve ps-pid-2214-process-path',
+        hint: ['Preserve the command output as a simulated case note.', 'Real responders document process details before containment when circumstances permit.', 'Submit: preserve ps-pid-2214-process-path']
+      },
+      {
+        desc: 'Stop the confirmed unwanted process in the training simulation.',
         cmd: 'kill 2214',
         hint: 'Use kill followed by the process ID.'
       },
@@ -307,7 +565,7 @@ export const MISSIONS: Mission[] = [
       'During incident response, analysts examine processes for unusual names, locations, resource usage, and parent-child relationships. A suspicious process should be investigated before termination whenever possible.',
     briefing: {
       concept: 'Process Investigation and Malware Identification',
-      commands: ['ps aux', 'ps -p [PID]', 'kill [PID]'],
+      commands: ['ps aux', 'ps -p [PID]', 'preserve [evidence]', 'kill [PID]'],
       objective:
         'Identify an abnormal process, investigate its PID, terminate the simulated malicious process, and verify the result.'
     },
@@ -326,7 +584,16 @@ export const MISSIONS: Mission[] = [
       'A suspicious process has been removed, but the system is still communicating with an unknown service. You must determine which network service is exposed and contain the threat.',
     intro:
       'HANDLER: Removing malware is only part of incident response. We need to understand the network exposure and prevent further communication.',
-    timerLimit: 480,
+    timerLimit: 900,
+    learningGoal: 'Compare listening services with an approved baseline, then contain the confirmed suspicious source and verify the result.',
+    difficulty: 'standard',
+    topology: [
+      { label: 'Operator workstation', address: '192.168.1.50', role: 'Authorized response console', status: 'TRUSTED' },
+      { label: 'Sandbox server', address: '192.168.1.10', role: 'Protected host', status: 'INVESTIGATING', linksTo: 'Operator workstation' },
+      { label: 'Approved services', address: 'TCP 22, 80', role: 'SSH and HTTP baseline', status: 'EXPECTED', linksTo: 'Sandbox server' },
+      { label: 'Unknown service', address: 'TCP 4444', role: 'Unapproved listener', status: 'SUSPICIOUS', linksTo: 'Sandbox server' },
+      { label: 'External host', address: '198.51.100.23', role: 'Known suspicious source', status: 'UNDER REVIEW', linksTo: 'Sandbox server' }
+    ],
     logs: [
       '[NET] Unexpected listening service detected.',
       '[NET] TCP port 4444 exposed.',
@@ -345,9 +612,9 @@ export const MISSIONS: Mission[] = [
         hint: 'Use netstat -tuln to inspect listening ports.'
       },
       {
-        desc: 'Identify the unexpected listening port.',
-        cmd: 'netstat -tuln',
-        hint: 'Look for the port that does not belong to the normal services.'
+        desc: 'Compare the listening ports with the approved baseline: SSH and HTTP are expected; port 4444 is not.',
+        cmd: 'report unapproved-port-4444',
+        hint: ['Compare every LISTEN entry with the expected-services list.', 'Port 4444 is the entry missing from the baseline.', 'Submit: report unapproved-port-4444']
       },
       {
         desc: 'Scan the local system to confirm the exposed service.',
@@ -355,23 +622,39 @@ export const MISSIONS: Mission[] = [
         hint: 'Use nmap localhost to perform a simulated local scan.'
       },
       {
+        desc: 'Preserve a note of the listener inventory before changing the simulated network state.',
+        cmd: 'preserve netstat port-4444-listener',
+        hint: ['Record the source and observed fact before response.', 'Preserving evidence first helps explain what changed and why.', 'Submit: preserve netstat port-4444-listener']
+      },
+      {
+        desc: 'Disable the unapproved simulated listener after confirming it is outside the server baseline.',
+        cmd: 'disable-service 4444',
+        hint: ['A listener can represent a legitimate service, so compare it with the approved baseline first.', 'The training action accepts a port number with the disable-service command.', 'Submit: disable-service 4444']
+      },
+      {
         desc: 'Block the malicious network connection.',
-        cmd: 'block 185.22.14.99',
-        hint: 'Contain the known suspicious source after confirming the evidence.'
+        cmd: 'block 198.51.100.23',
+        target: '198.51.100.23',
+        hint: ['The port identifies a service; the observed source IP identifies the peer to contain.', 'Block the known suspicious source, not the port number.', 'Submit: block 198.51.100.23']
       },
       {
         desc: 'Check the network status again.',
         cmd: 'status',
         hint: 'Verify that the suspicious connection has been contained.'
+      },
+      {
+        desc: 'Verify that the unapproved listener is no longer present.',
+        cmd: 'netstat -tuln',
+        hint: ['Review the current listening-service list after the change.', 'The 4444/tcp entry should be absent.', 'Submit: netstat -tuln']
       }
     ],
     realWorld:
       'Containment prevents a security incident from spreading or continuing while responders investigate the root cause. Network isolation and firewall rules are common containment techniques.',
     briefing: {
       concept: 'Network Exposure and Incident Containment',
-      commands: ['status', 'netstat -tuln', 'nmap localhost', 'block [IP]'],
+      commands: ['status', 'netstat -tuln', 'nmap localhost', 'preserve [evidence]', 'disable-service [port]', 'block [IP]'],
       objective:
-        'Identify an unexpected network service and contain communication from the suspicious source.'
+        'Compare listeners against the baseline, disable the unapproved simulated service, contain the supported source, and verify both changes.'
     },
     didYouKnow: [
       'A listening port means a service is waiting for network connections.',
@@ -388,7 +671,15 @@ export const MISSIONS: Mission[] = [
       'The web server is receiving unusual requests. Your task is to analyze the access logs and determine what type of attack is being attempted.',
     intro:
       'HANDLER: The network is contained, but another alert just came in. The web server is receiving suspicious requests. Investigate the logs.',
-    timerLimit: 480,
+    timerLimit: 900,
+    learningGoal: 'Use web access logs to identify suspicious input while distinguishing evidence of an attempt from proof of a successful compromise.',
+    difficulty: 'standard',
+    topology: [
+      { label: 'Client host', address: '203.0.113.77', role: 'Source of unusual HTTP requests', status: 'UNDER REVIEW' },
+      { label: 'Web server', address: '192.168.1.10', role: 'Apache service', status: 'MONITORING', linksTo: 'Client host' },
+      { label: 'Application logs', address: '/var/log/apache2/access.log', role: 'Request evidence', status: 'AVAILABLE', linksTo: 'Web server' },
+      { label: 'Database', address: 'Sandbox data store', role: 'Potentially exposed resource', status: 'NO CONFIRMED ACCESS', linksTo: 'Web server' }
+    ],
     logs: [
       '[WEB] Unusual HTTP request detected.',
       '[WEB] Request contains database keywords.',
@@ -417,9 +708,9 @@ export const MISSIONS: Mission[] = [
         hint: 'grep searches text for a specified pattern.'
       },
       {
-        desc: 'Identify the type of attack represented by the request.',
-        cmd: "grep 'UNION' access.log",
-        hint: 'A UNION SELECT statement inside user-controlled input is a common SQL injection indicator.'
+        desc: 'Classify the evidence as an attempted SQL injection. A log entry shows a request pattern, not proof that data was accessed.',
+        cmd: 'report sql-injection-attempt',
+        hint: ['Inspect where the UNION SELECT text appears in the request.', 'User-controlled input containing SQL syntax is an injection indicator; the response code alone does not confirm impact.', 'Submit: report sql-injection-attempt']
       },
       {
         desc: 'Return to your home directory.',
@@ -431,7 +722,7 @@ export const MISSIONS: Mission[] = [
       'SQL injection occurs when untrusted input is interpreted as part of a database query. Defenders use parameterized queries, input validation, least privilege, and monitoring to reduce the risk.',
     briefing: {
       concept: 'Web Logs and SQL Injection Detection',
-      commands: ['cd', 'ls', 'cat', 'grep'],
+      commands: ['cd', 'ls', 'cat', 'grep', 'report [finding]'],
       objective:
         'Analyze HTTP access logs and recognize evidence of a SQL injection attempt.'
     },
@@ -450,11 +741,20 @@ export const MISSIONS: Mission[] = [
       'Three different alerts have appeared: failed authentication, suspicious network activity, and a malicious web request. Your task is to correlate the evidence and determine whether they belong to the same incident.',
     intro:
       'HANDLER: Rookie missions are over. Real incidents rarely arrive as one clean alert. Correlate the evidence and build the timeline.',
-    timerLimit: 600,
+    timerLimit: 1500,
+    learningGoal: 'Correlate independent sources and timestamps, separate confirmed facts from assumptions, and build a defensible incident timeline.',
+    difficulty: 'advanced',
+    topology: [
+      { label: 'Operator workstation', address: '192.168.1.50', role: 'Investigation console', status: 'TRUSTED' },
+      { label: 'Sandbox server', address: '192.168.1.10', role: 'System with related alerts', status: 'INVESTIGATING', linksTo: 'Operator workstation' },
+      { label: 'External host', address: '198.51.100.23', role: 'Failed SSH source', status: 'UNVERIFIED', linksTo: 'Sandbox server' },
+      { label: 'Web client', address: '203.0.113.77', role: 'Source of suspicious request', status: 'NEEDS CORRELATION', linksTo: 'Sandbox server' },
+      { label: 'Process evidence', address: 'PID 2214', role: 'Abnormal activity after alerts', status: 'SUSPICIOUS', linksTo: 'Sandbox server' }
+    ],
     logs: [
-      '[03:21] Failed SSH authentication from 185.22.14.99.',
-      '[03:24] Connection detected from 185.22.14.99.',
-      '[03:31] Suspicious web request detected.',
+      '[03:21] Failed SSH authentication from 198.51.100.23.',
+      '[03:24] Successful SSH authentication from 198.51.100.23.',
+      '[03:31] SQL-like web request from 203.0.113.77.',
       '[03:32] Process 2214 begins abnormal activity.'
     ],
     target: 'incident_correlation',
@@ -470,14 +770,24 @@ export const MISSIONS: Mission[] = [
         hint: 'Look for the suspicious source and timing.'
       },
       {
+        desc: 'Filter the SSH service journal to the relevant time window and compare event order.',
+        cmd: 'journalctl -u ssh --since 03:23:00 --until 03:27:00',
+        hint: ['Use the service and time filters to narrow the journal.', 'The system journal clock is about two minutes fast; the matching authentication events appear later here. Compare their order rather than assuming exact timestamps align.', 'Submit: journalctl -u ssh --since 03:23:00 --until 03:27:00']
+      },
+      {
+        desc: 'Record the authentication observation and cite its source file.',
+        cmd: 'record-evidence auth.log repeated-failures-and-later-success',
+        hint: ['Capture what the log shows without naming an attacker.', 'Keep observations separate from interpretation.', 'Submit: record-evidence auth.log repeated-failures-and-later-success']
+      },
+      {
         desc: 'Inspect the system processes.',
         cmd: 'ps aux',
         hint: 'Look for abnormal processes that appeared after the authentication activity.'
       },
       {
         desc: 'Inspect current network activity.',
-        cmd: 'netstat -tuln',
-        hint: 'Look for unexpected listening services.'
+        cmd: 'ss -tuln',
+        hint: 'Use ss -tuln to inspect listening sockets, then compare them with the expected services.'
       },
       {
         desc: 'Review the web-server evidence.',
@@ -490,9 +800,19 @@ export const MISSIONS: Mission[] = [
         hint: 'Look for suspicious requests and correlate their timing.'
       },
       {
-        desc: 'Identify the likely attack chain.',
-        cmd: 'cat access.log',
-        hint: 'Connect the authentication, network, process, and web evidence into one timeline.'
+        desc: 'Record the web observation and note that this source address differs from the SSH source.',
+        cmd: 'record-evidence access.log sql-like-request-from-separate-address',
+        hint: ['Cite access.log and the source address it records.', 'A separate address is a reason not to assume one shared actor.', 'Submit: record-evidence access.log sql-like-request-from-separate-address']
+      },
+      {
+        desc: 'Rate confidence and submit a cautious assessment: the timeline merits follow-up, but different source addresses do not prove a shared actor.',
+        cmd: 'assess medium correlation-unconfirmed',
+        hint: ['Medium confidence reflects multiple suspicious observations but incomplete linkage.', 'Different source IPs, possible shared networks, and clock differences limit attribution.', 'Submit: assess medium correlation-unconfirmed']
+      },
+      {
+        desc: 'Submit the finding while keeping possible correlation separate from confirmed attribution or impact.',
+        cmd: 'report correlation-unconfirmed',
+        hint: ['Compare timestamps and source addresses across the four evidence sources.', 'A close timeline supports investigation, but the web request uses a different source address.', 'Submit: report correlation-unconfirmed']
       },
       {
         desc: 'Return to the operator home directory.',
@@ -504,7 +824,7 @@ export const MISSIONS: Mission[] = [
       'Incident responders correlate multiple evidence sources to reconstruct what happened. A single alert may be harmless, but several related events can reveal a larger attack chain.',
     briefing: {
       concept: 'Incident Correlation and Attack Timeline',
-      commands: ['cat', 'ps aux', 'netstat -tuln', 'cd'],
+      commands: ['cat', 'journalctl [time filters]', 'ps aux', 'ss -tuln', 'record-evidence [source] [fact]', 'assess [confidence] [finding]', 'report [finding]', 'cd'],
       objective:
         'Correlate authentication, process, network, and web evidence to reconstruct a simulated security incident.'
     },
@@ -523,7 +843,15 @@ export const MISSIONS: Mission[] = [
       'The malicious process was removed, but the security team suspects the attacker created a way to return after the system restarts. Investigate possible persistence mechanisms.',
     intro:
       'HANDLER: Killing the process did not end the incident. Something may be allowing the attacker to return. Find the persistence mechanism.',
-    timerLimit: 600,
+    timerLimit: 1500,
+    learningGoal: 'Investigate multiple persistence locations and distinguish expected automation from unauthorized mechanisms.',
+    difficulty: 'advanced',
+    topology: [
+      { label: 'Sandbox server', address: '192.168.1.10', role: 'Previously compromised host', status: 'INVESTIGATING' },
+      { label: 'Scheduled tasks', address: 'cron', role: 'Automation review', status: 'SUSPICIOUS ENTRY', linksTo: 'Sandbox server' },
+      { label: 'SSH access', address: '~/.ssh/authorized_keys', role: 'Remote access review', status: 'UNKNOWN KEY', linksTo: 'Sandbox server' },
+      { label: 'Temporary storage', address: '/tmp/.cache', role: 'Executable review', status: 'SUSPICIOUS FILE', linksTo: 'Sandbox server' }
+    ],
     logs: [
       '[ALERT] Suspicious scheduled task detected.',
       '[AUTH] Unexpected SSH key discovered.',
@@ -552,9 +880,14 @@ export const MISSIONS: Mission[] = [
         hint: 'Use find to locate files by name.'
       },
       {
-        desc: 'Read the suspicious file location information.',
-        cmd: 'find / -name cryptominer.exe',
-        hint: 'Determine where the suspicious executable was placed.'
+        desc: 'Check the executable metadata and compare its owner, permissions, and location with the baseline.',
+        cmd: 'stat /tmp/.cache/cryptominer.exe',
+        hint: ['stat displays file metadata such as owner, mode, and modification time.', 'Metadata makes a file worth reviewing but does not prove it executed.', 'Submit: stat /tmp/.cache/cryptominer.exe']
+      },
+      {
+        desc: 'Summarize the persistence evidence: a suspicious scheduled script, an unknown SSH key, and an executable in temporary storage.',
+        cmd: 'report cron-key-and-temp-file',
+        hint: ['Compare the scheduled command, key entries, and discovered file path.', 'More than one mechanism may enable return access; include all three findings.', 'Submit: report cron-key-and-temp-file']
       },
       {
         desc: 'Verify that the suspicious process is no longer active.',
@@ -566,7 +899,7 @@ export const MISSIONS: Mission[] = [
       'Persistence allows an attacker or malicious program to survive reboots or regain access later. Defenders investigate scheduled tasks, startup mechanisms, unauthorized accounts, SSH keys, and suspicious files.',
     briefing: {
       concept: 'Persistence Detection',
-      commands: ['ps aux', 'crontab -l', 'cat', 'find'],
+      commands: ['ps aux', 'crontab -l', 'cat', 'find', 'stat [file]', 'report [finding]'],
       objective:
         'Investigate multiple persistence mechanisms and identify how the simulated attacker could regain access.'
     },
@@ -584,11 +917,22 @@ export const MISSIONS: Mission[] = [
     scenario:
       'The Sandbox Secure server has suffered a multi-stage intrusion. You must investigate the evidence, identify the attack, contain the threat, remove malicious activity, and verify that the system is stable.',
     intro:
-      'HANDLER: Final operation. You are no longer following a checklist. Apply everything you learned and work the incident from detection to verification.',
-    timerLimit: 900,
+      'HANDLER: Final operation. Apply what you have learned: collect evidence, separate facts from assumptions, contain the supported threat, and verify the system state.',
+    timerLimit: 2100,
+    learningGoal: 'Run a careful incident-response cycle: establish scope, collect evidence, correlate facts, contain the confirmed threat, and verify system state.',
+    difficulty: 'advanced',
+    topology: [
+      { label: 'Operator workstation', address: '192.168.1.50', role: 'Authorized response console', status: 'TRUSTED' },
+      { label: 'Sandbox server', address: '192.168.1.10', role: 'Multi-stage incident host', status: 'INCIDENT ACTIVE', linksTo: 'Operator workstation' },
+      { label: 'External host', address: '198.51.100.23', role: 'Repeated SSH failures', status: 'UNVERIFIED', linksTo: 'Sandbox server' },
+      { label: 'Unknown process', address: 'PID 2214', role: 'High CPU executable', status: 'SUSPICIOUS', linksTo: 'Sandbox server' },
+      { label: 'Web application', address: 'HTTP 80', role: 'SQL-like input in access logs', status: 'ATTEMPT OBSERVED', linksTo: 'Sandbox server' },
+      { label: 'Scheduled task', address: '/tmp/.cache/update.sh', role: 'Possible persistence', status: 'SUSPICIOUS', linksTo: 'Sandbox server' },
+      { label: 'SSH access key', address: '~/.ssh/authorized_keys', role: 'Unfamiliar remote access entry', status: 'UNVERIFIED', linksTo: 'Sandbox server' }
+    ],
     logs: [
-      '[03:21] Multiple failed SSH logins from 185.22.14.99.',
-      '[03:24] Successful authentication event.',
+      '[03:21] Multiple failed SSH logins from 198.51.100.23.',
+      '[03:24] Successful SSH authentication from 198.51.100.23.',
       '[03:26] Unexpected network connection detected.',
       '[03:28] Suspicious process 2214 created.',
       '[03:31] Web server receives SQL injection attempt.',
@@ -648,14 +992,45 @@ export const MISSIONS: Mission[] = [
         hint: 'Inspect scheduled tasks for suspicious entries.'
       },
       {
+        desc: 'Check authorized SSH keys for an unfamiliar route back into the host.',
+        cmd: 'cat ~/.ssh/authorized_keys',
+        hint: ['Compare key comments with the known operator and backup accounts.', 'One key is labeled as coming from an unknown external host.', 'Submit: cat ~/.ssh/authorized_keys']
+      },
+      {
+        desc: 'Record a careful assessment before response: suspicious access and persistence are supported, but the web request source differs and impact is not confirmed.',
+        cmd: 'report suspicious-activity-impact-unconfirmed',
+        hint: ['Separate observed facts from assumptions before changing the system.', 'The logs support suspicious activity; they do not establish that database data was accessed or who controlled both sources.', 'Submit: report suspicious-activity-impact-unconfirmed']
+      },
+      {
+        desc: 'Preserve the key process, network, and persistence evidence before making response changes.',
+        cmd: 'preserve case-evidence-before-containment',
+        hint: ['The assessment is recorded. Capture the simulated case evidence before response actions.', 'Evidence preservation helps explain what was present before containment.', 'Submit: preserve case-evidence-before-containment']
+      },
+      {
         desc: 'Terminate the confirmed malicious process.',
         cmd: 'kill 2214',
         hint: 'Remove the malicious process after collecting the evidence.'
       },
       {
         desc: 'Contain the known suspicious source.',
-        cmd: 'block 185.22.14.99',
-        hint: 'Block the identified malicious IP.'
+        cmd: 'block 198.51.100.23',
+        target: '198.51.100.23',
+        hint: ['Use the source supported by repeated authentication evidence.', 'Do not use the web request source as a substitute; the logs show a different address.', 'Submit: block 198.51.100.23']
+      },
+      {
+        desc: 'Disable the confirmed unapproved listener discovered during investigation.',
+        cmd: 'disable-service 4444',
+        hint: ['The 4444/tcp listener was absent from the approved baseline.', 'Use the simulated disable-service action for port 4444.', 'Submit: disable-service 4444']
+      },
+      {
+        desc: 'Remove the confirmed unauthorized scheduled task from the simulated host.',
+        cmd: 'remove-persistence cron',
+        hint: ['The cron list showed an unknown script running from temporary storage.', 'Use the simulated persistence action with the cron target.', 'Submit: remove-persistence cron']
+      },
+      {
+        desc: 'Remove the unfamiliar SSH key after recording it as evidence.',
+        cmd: 'remove-persistence ssh-key',
+        hint: ['Preserve the finding in your report before changing access controls.', 'Use the simulated persistence action with the ssh-key target.', 'Submit: remove-persistence ssh-key']
       },
       {
         desc: 'Verify the process is no longer active.',
@@ -666,6 +1041,21 @@ export const MISSIONS: Mission[] = [
         desc: 'Verify the network is contained.',
         cmd: 'status',
         hint: 'Check the final network state.'
+      },
+      {
+        desc: 'Verify that the unapproved service is no longer listening.',
+        cmd: 'netstat -tuln',
+        hint: ['Review the resulting service list after the simulated change.', 'The 4444/tcp entry should no longer be present.', 'Submit: netstat -tuln']
+      },
+      {
+        desc: 'Verify that the unauthorized scheduled task is gone.',
+        cmd: 'crontab -l',
+        hint: ['Review the task list after the simulated removal.', 'The /tmp/.cache/update.sh entry should be absent.', 'Submit: crontab -l']
+      },
+      {
+        desc: 'Verify that the unfamiliar SSH key is no longer authorized.',
+        cmd: 'cat ~/.ssh/authorized_keys',
+        hint: ['Review the remaining authorized keys after the simulated removal.', 'The unknown external-host key should be absent.', 'Submit: cat ~/.ssh/authorized_keys']
       },
       {
         desc: 'Return to the operator home directory.',
@@ -685,8 +1075,13 @@ export const MISSIONS: Mission[] = [
         'netstat -tuln',
         'grep',
         'crontab -l',
+        'report [finding]',
         'kill [PID]',
         'block [IP]',
+        'disable-service [port]',
+        'remove-persistence [cron|ssh-key]',
+        'netstat -tuln',
+        'crontab -l',
         'status'
       ],
       objective:
@@ -703,90 +1098,101 @@ export const MISSIONS: Mission[] = [
 
 // --- QUIZ DATA (10 Questions Each) ---
 export const BEGINNER_PRETEST: Question[] = [
-  { id: 1, question: "Which command shows your CURRENT location?", options: ["ls", "pwd", "cd", "mkdir"], correctAnswer: 1, explanation: "pwd displays your current location." },
-  { id: 2, question: "What does the 'ls' command do?", options: ["Creates a file", "Lists files", "Deletes files", "Changes directory"], correctAnswer: 1, explanation: "ls lists directory contents." },
-  { id: 3, question: "To move INTO a directory called 'Docs', you type:", options: ["ls Docs", "mkdir Docs", "cd Docs", "rm Docs"], correctAnswer: 2, explanation: "cd changes directory." },
-  { id: 4, question: "Which command displays file contents?", options: ["cat", "dog", "read", "show"], correctAnswer: 0, explanation: "cat reads and displays file contents." },
-  { id: 5, question: "What does 'whoami' return?", options: ["Password", "Current username", "IP address", "Home directory"], correctAnswer: 1, explanation: "whoami displays the current username." },
-  { id: 6, question: "To go BACK to the parent directory, you type:", options: ["cd ..", "cd back", "cd /", "cd ~"], correctAnswer: 0, explanation: "cd .. moves up one level." },
-  { id: 7, question: "Which command creates a NEW directory?", options: ["touch", "mkdir", "newdir", "create"], correctAnswer: 1, explanation: "mkdir creates a new folder." },
-  { id: 8, question: "What is the root directory symbol?", options: ["#", "/", "~", "*"], correctAnswer: 1, explanation: "/ represents the root directory." },
-  { id: 9, question: "To see hidden files, you use:", options: ["ls -a", "ls -h", "ls -l", "ls -all"], correctAnswer: 0, explanation: "ls -a shows all files including hidden ones." },
-  { id: 10, question: "Which key combination cancels a running command?", options: ["Ctrl + Z", "Ctrl + C", "Ctrl + X", "Alt + F4"], correctAnswer: 1, explanation: "Ctrl + C sends an interrupt signal." }
+  { id: 1, question: "Which command shows the folder you are currently in?", options: ["ls", "pwd", "cd", "mkdir"], correctAnswer: 1, explanation: "pwd shows your current location." },
+  { id: 2, question: "Which command lists the files in a folder?", options: ["ls", "ping", "whoami", "cd"], correctAnswer: 0, explanation: "ls lists files and folders." },
+  { id: 3, question: "Which command moves you into a folder named logs?", options: ["ls logs", "cd logs", "pwd logs", "ping logs"], correctAnswer: 1, explanation: "cd changes your current folder." },
+  { id: 4, question: "A text file contains a record of recent activity. What can you use to read it?", options: ["cat filename", "cd filename", "ping filename", "mkdir filename"], correctAnswer: 0, explanation: "cat displays the text inside a file. Replace filename with the file's name." },
+  { id: 5, question: "What does an IP address help identify?", options: ["A device or network connection", "A file", "A password", "A running program"], correctAnswer: 0, explanation: "An IP address identifies a device or interface on a network." },
+  { id: 6, question: "What is a network port most like?", options: ["A doorway for a service on a device", "A folder name", "A person's name", "A password"], correctAnswer: 0, explanation: "Ports help direct network traffic to services on a device." },
+  { id: 7, question: "If a device replies to a ping, what do you know?", options: ["It responded to a reachability check", "It is definitely safe", "It has no open services", "Who owns it"], correctAnswer: 0, explanation: "A reply shows it was reachable at that moment; it does not prove the device is safe." },
+  { id: 8, question: "You find a network service that was not expected. What should you do?", options: ["Investigate it and compare it with the normal setup", "Assume a crime happened", "Delete every file", "Ignore all other evidence"], correctAnswer: 0, explanation: "An unexpected service is a reason to investigate, not proof of an attack." },
+  { id: 9, question: "Many failed sign-in attempts are:", options: ["A pattern worth checking", "Proof that someone got in", "Proof of who tried", "Always harmless"], correctAnswer: 0, explanation: "Failed attempts can be a warning, but more evidence is needed." },
+  { id: 10, question: "Why check the evidence before blocking a device?", options: ["To make sure the action is justified and avoid blocking legitimate users", "To identify a person from an address", "Because all connections are dangerous", "To erase the records"], correctAnswer: 0, explanation: "Evidence helps make a careful decision and avoid disrupting legitimate activity." }
 ];
 
 // NEW: Distinct Post-Test Questions
 export const BEGINNER_POSTTEST: Question[] = [
-  { id: 1, question: "You are lost in the filesystem. Which command tells you exactly where you are?", options: ["whereami", "pwd", "locate", "find ."], correctAnswer: 1, explanation: "pwd is the standard command to print working directory." },
-  { id: 2, question: "What does 'cd ~' do?", options: ["Deletes home", "Goes to root", "Goes to home directory", "Creates home"], correctAnswer: 2, explanation: "cd ~ takes you to your home directory." },
-  { id: 3, question: "To view a file called 'notes.txt', you type:", options: ["open notes.txt", "cat notes.txt", "view notes.txt", "read notes.txt"], correctAnswer: 1, explanation: "cat displays the contents of text files." },
-  { id: 4, question: "Which command lists files with detailed info (size, date)?", options: ["ls -l", "ls -d", "ls -i", "ls -s"], correctAnswer: 0, explanation: "ls -l shows long format with permissions and dates." },
-  { id: 5, question: "What does the tilde (~) symbol represent?", options: ["Root directory", "Current directory", "Home directory", "Parent directory"], correctAnswer: 2, explanation: "~ is a shortcut for the current user's home directory." },
-  { id: 6, question: "To create an empty file called 'test.txt', you use:", options: ["mkdir test.txt", "touch test.txt", "new test.txt", "create test.txt"], correctAnswer: 1, explanation: "touch creates an empty file." },
-  { id: 7, question: "What does 'cd -' do?", options: ["Goes to home", "Goes to previous directory", "Goes to root", "Deletes directory"], correctAnswer: 1, explanation: "cd - takes you back to the last directory you were in." },
-  { id: 8, question: "Which command removes (deletes) a file?", options: ["del", "remove", "rm", "delete"], correctAnswer: 2, explanation: "rm (remove) deletes files." },
-  { id: 9, question: "To copy a file, you use:", options: ["cp", "copy", "mv", "clone"], correctAnswer: 0, explanation: "cp (copy) duplicates files." },
-  { id: 10, question: "What does 'clear' do in the terminal?", options: ["Deletes all files", "Clears the screen", "Exits terminal", "Resets password"], correctAnswer: 1, explanation: "clear removes previous commands from view." }
+  { id: 1, question: "A command prompt shows /home/operator. What does pwd tell you?", options: ["Your current folder", "The files in that folder", "The devices on the network", "The current time"], correctAnswer: 0, explanation: "pwd reports the folder you are currently working in." },
+  { id: 2, question: "You want to see which files are in the current folder. Which command helps?", options: ["ls", "cd", "ping", "whoami"], correctAnswer: 0, explanation: "ls displays the files and folders in your current location." },
+  { id: 3, question: "You need to enter a folder called reports. Which command should you use?", options: ["cd reports", "ls reports", "pwd reports", "cat reports"], correctAnswer: 0, explanation: "cd reports moves you into that folder." },
+  { id: 4, question: "You are given a text file called notes.txt. What does cat notes.txt do?", options: ["Shows the text in the file", "Moves into a folder", "Deletes the file", "Checks a network connection"], correctAnswer: 0, explanation: "cat displays the contents of a text file." },
+  { id: 5, question: "A device's IP address is similar to:", options: ["Its address on a network", "A program's name", "A file's contents", "A sign-in password"], correctAnswer: 0, explanation: "An IP address is used to address a device or network interface." },
+  { id: 6, question: "A port helps a device direct traffic to:", options: ["A particular service", "A folder", "A person", "A password"], correctAnswer: 0, explanation: "Ports identify service endpoints on a device." },
+  { id: 7, question: "A device answers a ping. What is the safest conclusion?", options: ["It was reachable at that time", "It is safe to use", "It has no security issues", "Its owner is known"], correctAnswer: 0, explanation: "Ping can show reachability, but it does not establish safety or identity." },
+  { id: 8, question: "A service is available on a device. Does that alone prove an attack?", options: ["No; check whether the service is expected", "Yes, every service is an attack", "Yes, the owner is identified", "No; all services are harmless"], correctAnswer: 0, explanation: "Compare the service with what should normally be available." },
+  { id: 9, question: "Several failed sign-ins appear in the records. What is a good next step?", options: ["Check for related evidence and patterns", "Assume a sign-in succeeded", "Name the person responsible", "Delete the records"], correctAnswer: 0, explanation: "Failed attempts are worth checking, but do not prove that access succeeded." },
+  { id: 10, question: "Before blocking a network address, what should you consider?", options: ["Whether the evidence supports the action and what it may disrupt", "Whether the address reveals a person's name", "Whether every network service should be shut down", "Whether the records can be erased"], correctAnswer: 0, explanation: "Use evidence to scope a response and reduce disruption to legitimate users." }
 ];
 
 export const INTERMEDIATE_PRETEST: Question[] = [
-  { id: 1, question: "Which command shows active network connections?", options: ["ifconfig", "netstat", "ipconfig", "network"], correctAnswer: 1, explanation: "netstat displays network connections." },
-  { id: 2, question: "To search for text within a file, you use:", options: ["find", "search", "grep", "locate"], correctAnswer: 2, explanation: "grep searches for patterns in files." },
-  { id: 3, question: "What does 'ps aux' show?", options: ["User accounts", "Running processes", "System uptime", "Disk space"], correctAnswer: 1, explanation: "ps aux lists all running processes." },
-  { id: 4, question: "To kill a process with PID 1234, you type:", options: ["kill 1234", "stop 1234", "end 1234", "terminate 1234"], correctAnswer: 0, explanation: "kill sends a termination signal to the PID." },
-  { id: 5, question: "Which command shows disk usage?", options: ["du", "df", "disk", "space"], correctAnswer: 1, explanation: "df shows available disk space." },
-  { id: 6, question: "To view the last 10 lines of a log file:", options: ["head", "tail", "last", "end"], correctAnswer: 1, explanation: "tail displays the last lines of a file." },
-  { id: 7, question: "What does 'chmod 755' do?", options: ["Deletes file", "Changes permissions", "Copies file", "Renames file"], correctAnswer: 1, explanation: "chmod changes file permissions." },
-  { id: 8, question: "Which command finds files by name?", options: ["grep", "search", "find", "locate"], correctAnswer: 2, explanation: "find searches for files in a hierarchy." },
-  { id: 9, question: "To check which ports are listening:", options: ["netstat -tuln", "port -list", "check ports", "listen -a"], correctAnswer: 0, explanation: "netstat -tuln shows listening ports." },
-  { id: 10, question: "What does 'top' command show?", options: ["Highest files", "Real-time processes", "Top directories", "System temp"], correctAnswer: 1, explanation: "top displays real-time process info." }
+  { id: 1, question: "A process uses high CPU. What should you do next?", options: ["Inspect its PID, command, and context", "Kill it immediately", "Block the server", "Assume it is malware"], correctAnswer: 0, explanation: "High resource use is a clue to investigate, not proof of malicious activity." },
+  { id: 2, question: "What does 'ps aux' show?", options: ["Running processes", "Open ports", "Web requests", "User passwords"], correctAnswer: 0, explanation: "It lists running processes and details such as user and CPU use." },
+  { id: 3, question: "Why inspect one process with 'ps -p [PID]'?", options: ["To review details for a specific process", "To scan a network", "To read a web log", "To block an address"], correctAnswer: 0, explanation: "A focused check helps verify a process before acting." },
+  { id: 4, question: "An unapproved port appears in a scan. What does that prove?", options: ["A service needs investigation", "An attacker is identified", "Data was stolen", "The service is malware"], correctAnswer: 0, explanation: "A deviation from baseline is a lead, not proof of impact or attribution." },
+  { id: 5, question: "What is a listening port?", options: ["A service endpoint waiting for connections", "A user account", "A log timestamp", "A process ID"], correctAnswer: 0, explanation: "A listening port is associated with a service ready to accept connections." },
+  { id: 6, question: "Why compare open services with a baseline?", options: ["To distinguish expected services from unexpected changes", "Every open port is malicious", "To identify a person", "To encrypt traffic"], correctAnswer: 0, explanation: "Configuration context helps determine what is unusual." },
+  { id: 7, question: "A request contains 'UNION SELECT'. What is the cautious conclusion?", options: ["A SQL injection pattern was attempted", "Database theft is confirmed", "The source identity is known", "The server is safe"], correctAnswer: 0, explanation: "The pattern indicates an attempt; it does not establish impact." },
+  { id: 8, question: "What does 'grep' do?", options: ["Searches text for a pattern", "Stops a process", "Scans a host", "Changes directory"], correctAnswer: 0, explanation: "grep finds matching text in a file." },
+  { id: 9, question: "When should you block a source address?", options: ["After evidence supports its relevance and action is appropriate", "Before checking logs", "Whenever any port is open", "After deleting evidence"], correctAnswer: 0, explanation: "Containment should be scoped and evidence based." },
+  { id: 10, question: "What should follow a containment action?", options: ["Verify the resulting state", "Assume success", "Clear the logs", "End the investigation"], correctAnswer: 0, explanation: "A follow-up check confirms whether the action had its intended effect." }
 ];
 
 // NEW: Distinct Post-Test Questions
 export const INTERMEDIATE_POSTTEST: Question[] = [
-  { id: 1, question: "To monitor network traffic in real-time:", options: ["ping", "tcpdump", "netcat", "traceroute"], correctAnswer: 1, explanation: "tcpdump captures network packets." },
-  { id: 2, question: "Which command compresses a file?", options: ["zip", "compress", "tar", "All of the above"], correctAnswer: 3, explanation: "All these commands can compress files." },
-  { id: 3, question: "To change file ownership:", options: ["chown", "chmod", "chgrp", "owner"], correctAnswer: 0, explanation: "chown modifies file ownership." },
-  { id: 4, question: "What does 'ssh user@host' do?", options: ["Copies files", "Secure remote connection", "Scans host", "Pings host"], correctAnswer: 1, explanation: "SSH provides encrypted remote login." },
-  { id: 5, question: "To extract a tar.gz file:", options: ["tar -xzvf file.tar.gz", "unzip file.tar.gz", "extract file.tar.gz", "open file.tar.gz"], correctAnswer: 0, explanation: "tar -xzvf extracts compressed archives." },
-  { id: 6, question: "Which command shows running services?", options: ["systemctl list-units", "services --list", "show services", "list-services"], correctAnswer: 0, explanation: "systemctl manages systemd services." },
-  { id: 7, question: "To schedule a task to run later:", options: ["schedule", "cron", "timer", "at"], correctAnswer: 3, explanation: "at schedules one-time tasks." },
-  { id: 8, question: "What does 'wc -l' do?", options: ["Counts words", "Counts lines", "Counts characters", "Lists files"], correctAnswer: 1, explanation: "wc -l counts lines in a file." },
-  { id: 9, question: "To redirect output to a file (overwrite):", options: ["command >> file", "command > file", "command | file", "command & file"], correctAnswer: 1, explanation: "> redirects and overwrites. >> appends." },
-  { id: 10, question: "Which command checks system uptime?", options: ["time", "uptime", "date", "clock"], correctAnswer: 1, explanation: "uptime shows how long the system has been running." }
+  { id: 1, question: "A process is high-CPU and runs from a hidden temporary path. What is the best response?", options: ["Inspect details and preserve evidence before scoped action", "Kill it before checking", "Ignore the path", "Block every port"], correctAnswer: 0, explanation: "Context and evidence should guide a measured response." },
+  { id: 2, question: "An unexpected port appears in a scan. What should you compare it against?", options: ["The approved service baseline", "The operator username", "The number of logs", "The web page title"], correctAnswer: 0, explanation: "A baseline helps identify which services are expected." },
+  { id: 3, question: "A SQL-like pattern appears in a log with HTTP status 200. What can you conclude?", options: ["The request was logged; impact needs more evidence", "Data theft is confirmed", "The database is offline", "The source identity is known"], correctAnswer: 0, explanation: "An HTTP status alone does not show whether sensitive data was returned." },
+  { id: 4, question: "Why can blocking an IP have operational risk?", options: ["It may interrupt legitimate traffic if misattributed", "It deletes a process", "It proves attribution", "It closes every service"], correctAnswer: 0, explanation: "Containment can affect legitimate users and should be scoped." },
+  { id: 5, question: "What should follow a successful process termination?", options: ["Check that the PID is no longer running", "Run an unrelated scan", "Clear logs", "Assume all persistence is removed"], correctAnswer: 0, explanation: "Verification confirms only the state you checked." },
+  { id: 6, question: "What is the difference between an IP and a port?", options: ["An IP identifies a host/interface; a port identifies a service endpoint", "They are the same", "A port identifies a person", "An IP is a process ID"], correctAnswer: 0, explanation: "A host address and service endpoint are separate network details." },
+  { id: 7, question: "What does an unknown listener establish?", options: ["It differs from the known baseline and needs investigation", "It proves a breach", "It proves the owner is malicious", "It cannot be legitimate"], correctAnswer: 0, explanation: "Unexpected configuration is a finding; attribution and impact need more evidence." },
+  { id: 8, question: "Why preserve logs before making changes?", options: ["They may help reconstruct events", "They stop malware automatically", "They are always complete", "They reveal passwords"], correctAnswer: 0, explanation: "Logs are evidence that may support later analysis." },
+  { id: 9, question: "How should repeated failed logins be treated?", options: ["As a pattern to investigate with context", "As proof of a successful intrusion", "As proof of a person's identity", "As harmless every time"], correctAnswer: 0, explanation: "Frequency, source, timing, and related events all matter." },
+  { id: 10, question: "What best indicates that containment worked?", options: ["A follow-up check shows the unwanted connection is absent", "The command was typed", "An alert disappeared", "The timer stopped"], correctAnswer: 0, explanation: "Check the resulting state instead of assuming success." }
 ];
 
 export const EXPERT_PRETEST: Question[] = [
-  { id: 1, question: "Which tool is used for port scanning?", options: ["nmap", "ping", "traceroute", "netstat"], correctAnswer: 0, explanation: "nmap is the industry-standard port scanner." },
-  { id: 2, question: "What is SQL Injection?", options: ["Database backup", "Code injection via inputs", "SQL optimization", "Database encryption"], correctAnswer: 1, explanation: "SQLi exploits vulnerabilities via user inputs." },
-  { id: 3, question: "To analyze packet captures:", options: ["Wireshark", "Notepad", "grep", "cat"], correctAnswer: 0, explanation: "Wireshark is a network protocol analyzer." },
-  { id: 4, question: "What does 'iptables -A INPUT -p tcp --dport 22 -j DROP' do?", options: ["Allows SSH", "Blocks SSH", "Forwards SSH", "Logs SSH"], correctAnswer: 1, explanation: "This rule drops all incoming TCP traffic on port 22." },
-  { id: 5, question: "Which command finds SUID binaries?", options: ["find / -perm -4000", "ls -suid", "search suid", "find -suid"], correctAnswer: 0, explanation: "find / -perm -4000 searches for SUID files." },
-  { id: 6, question: "What is a reverse shell?", options: ["Backwards terminal", "Shell connecting back to attacker", "Encrypted shell", "Root shell"], correctAnswer: 1, explanation: "A reverse shell connects from victim to attacker." },
-  { id: 7, question: "To check for vulnerable software versions:", options: ["nmap -sV", "ping -v", "version check", "apt list"], correctAnswer: 0, explanation: "nmap -sV performs version detection." },
-  { id: 8, question: "What does 'john --wordlist=pw.txt hash.txt' do?", options: ["Encrypts", "Cracks hashes", "Creates passwords", "Deletes hashes"], correctAnswer: 1, explanation: "John the Ripper cracks password hashes." },
-  { id: 9, question: "Which file contains hashed passwords in Linux?", options: ["/etc/passwd", "/etc/shadow", "/etc/passwords", "/var/log/auth"], correctAnswer: 1, explanation: "/etc/shadow stores encrypted passwords." },
-  { id: 10, question: "What is privilege escalation?", options: ["Updating software", "Gaining higher access", "Creating users", "Installing programs"], correctAnswer: 1, explanation: "Privilege escalation gains elevated permissions." }
+  { id: 1, question: "Several alerts appear close together. What should an analyst do first?", options: ["Build a timeline and compare independent evidence", "Assume one actor caused all alerts", "Delete the logs", "Block every address"], correctAnswer: 0, explanation: "A timeline tests whether events are related without assuming attribution." },
+  { id: 2, question: "Events are close in time but have different source addresses. What is supported?", options: ["A relationship is possible but unconfirmed", "They are certainly the same actor", "One event is false", "The server is safe"], correctAnswer: 0, explanation: "Timing is useful, but differences require additional evidence." },
+  { id: 3, question: "A request contains SQL syntax. What does that directly show?", options: ["The request pattern was attempted", "Data was stolen", "The sender is identified", "The query succeeded"], correctAnswer: 0, explanation: "A request is evidence of an attempt, not necessarily impact or identity." },
+  { id: 4, question: "Why inspect a process's parent and executable path?", options: ["They add context about how and where it started", "They reveal the source IP", "They prove intent alone", "They show HTTP status"], correctAnswer: 0, explanation: "Process relationships and locations help assess suspicious behavior." },
+  { id: 5, question: "A cron entry runs a script from /tmp. What is a sound conclusion?", options: ["Suspicious persistence evidence needs validation", "Cron is always malicious", "The attacker is identified", "The script definitely ran"], correctAnswer: 0, explanation: "Cron is legitimate, but an unexpected script path merits investigation." },
+  { id: 6, question: "An unfamiliar SSH key is found. What may it indicate?", options: ["A possible route for persistent access", "A confirmed active session", "A known person's identity", "A disabled account"], correctAnswer: 0, explanation: "An unfamiliar key may enable access, but use and ownership need investigation." },
+  { id: 7, question: "Why preserve evidence before eradication when feasible?", options: ["It supports scope and root-cause analysis", "It guarantees recovery", "It prevents every future attack", "It proves attribution"], correctAnswer: 0, explanation: "Evidence helps explain what happened and what remains affected." },
+  { id: 8, question: "Which statement separates observation from inference?", options: ["Observation: log records failed logins; inference: the host may be targeted", "Observation: a named attacker caused it", "Inference: the log line exists", "They are interchangeable"], correctAnswer: 0, explanation: "Analysis distinguishes what evidence shows from what it suggests." },
+  { id: 9, question: "What should guide containment scope?", options: ["Evidence, risk, and operational impact", "The shortest command", "The loudest alert", "Blocking all traffic"], correctAnswer: 0, explanation: "Containment should reduce risk while accounting for service impact." },
+  { id: 10, question: "What makes an incident report useful?", options: ["Evidence, timeline, uncertainty, actions, and verification", "Only a command list", "Attribution without sources", "A screenshot alone"], correctAnswer: 0, explanation: "A useful report communicates findings and their limits." }
 ];
 
 // NEW: Distinct Post-Test Questions
 export const EXPERT_POSTTEST: Question[] = [
-  { id: 1, question: "To exploit a buffer overflow, you need:", options: ["Source code", "Binary and memory control", "Password", "Network access"], correctAnswer: 1, explanation: "Buffer overflows require controlling memory." },
-  { id: 2, question: "What does 'msfconsole' launch?", options: ["MySQL", "Metasploit Framework", "Microsoft Console", "Message Console"], correctAnswer: 1, explanation: "msfconsole is the Metasploit console." },
-  { id: 3, question: "To perform a man-in-the-middle attack:", options: ["arpspoof", "ping", "traceroute", "netstat"], correctAnswer: 0, explanation: "arpspoof sends fake ARP replies." },
-  { id: 4, question: "What is Cross-Site Scripting (XSS)?", options: ["Database attack", "Injecting scripts into webpages", "Network sniffing", "Password cracking"], correctAnswer: 1, explanation: "XSS injects client-side scripts into web pages." },
-  { id: 5, question: "To crack WPA2 WiFi password:", options: ["aircrack-ng", "nmap", "wireshark", "ping"], correctAnswer: 0, explanation: "aircrack-ng cracks WiFi encryption keys." },
-  { id: 6, question: "What does 'hydra -l admin -P passwords.txt ssh://target' do?", options: ["Scans ports", "Brute-force SSH login", "Copies files", "Pings target"], correctAnswer: 1, explanation: "Hydra performs brute-force attacks." },
-  { id: 7, question: "Which tool fuzzes web applications?", options: ["Burp Suite", "Wireshark", "nmap", "tcpdump"], correctAnswer: 0, explanation: "Burp Suite is used for web app testing." },
-  { id: 8, question: "What is a rootkit?", options: ["Antivirus", "Malware that hides its presence", "Firewall", "Backup tool"], correctAnswer: 1, explanation: "Rootkits are malicious software designed to remain hidden." },
-  { id: 9, question: "To analyze malware behavior:", options: ["Run it directly", "Use sandbox/VM", "Delete it", "Ignore it"], correctAnswer: 1, explanation: "Analyzing malware in a sandbox prevents infection." },
-  { id: 10, question: "What does 'nikto -h target' do?", options: ["Pings target", "Scans for web vulnerabilities", "Copies files", "Traces route"], correctAnswer: 1, explanation: "Nikto scans web servers for dangerous files." }
+  { id: 1, question: "Failed SSH attempts, a later process, and a web request appear close together. What is the strongest conclusion?", options: ["They are suspicious; a shared actor remains unconfirmed", "One attacker definitely caused all events", "The web request proves the process is malicious", "No incident occurred"], correctAnswer: 0, explanation: "The sequence supports a hypothesis, but not attribution by itself." },
+  { id: 2, question: "Why state uncertainty in an incident report?", options: ["It separates supported findings from open questions", "It makes evidence unnecessary", "It proves an alert is false", "It reduces accuracy"], correctAnswer: 0, explanation: "Clear uncertainty keeps hypotheses from being presented as facts." },
+  { id: 3, question: "A process is absent after termination. What does that verify?", options: ["It is not currently listed as running", "All persistence is removed", "No data was accessed", "The source is identified"], correctAnswer: 0, explanation: "One check verifies a specific state, not all recovery outcomes." },
+  { id: 4, question: "A blocked address disappears from active connections. What still needs review?", options: ["Other indicators and persistence mechanisms", "Nothing; everything is resolved", "The user's identity", "Whether the request happened"], correctAnswer: 0, explanation: "Containment is one phase; broader checks are still needed." },
+  { id: 5, question: "Why compare timestamps across log, process, and network evidence?", options: ["To form and test a possible sequence", "To prove common causation", "To identify a person from an IP", "To replace evidence collection"], correctAnswer: 0, explanation: "A timeline helps with correlation but does not prove causation." },
+  { id: 6, question: "Which finding suggests a possible persistence path?", options: ["An unfamiliar key and scheduled script outside the baseline", "A normal SSH service", "One failed login", "An expected web port"], correctAnswer: 0, explanation: "Unexpected access mechanisms and tasks may enable return access." },
+  { id: 7, question: "Why does HTTP 200 not prove a SQL injection succeeded?", options: ["It records an HTTP response, not database impact", "200 always means blocked", "Logs are not evidence", "SQL cannot appear in requests"], correctAnswer: 0, explanation: "Additional application or database evidence is needed to assess impact." },
+  { id: 8, question: "Which action best balances evidence and containment?", options: ["Record relevant details, apply scoped containment, then verify", "Delete every suspicious file immediately", "Shut down all systems without assessment", "Wait without documenting"], correctAnswer: 0, explanation: "A measured response preserves evidence while limiting ongoing risk." },
+  { id: 9, question: "What is eradication intended to do after containment?", options: ["Remove the confirmed cause or persistence mechanism", "Prove attribution", "Replace the timeline", "Close all ports"], correctAnswer: 0, explanation: "Eradication addresses the cause after limiting ongoing activity." },
+  { id: 10, question: "What belongs in a final response summary?", options: ["Scope, timeline, evidence, actions, verification, and uncertainty", "Only the final command", "Only a threat label", "A claim every risk is gone"], correctAnswer: 0, explanation: "A clear report includes what is known, done, verified, and still open." }
 ];
 
+const balanceAnswerPositions = (questions: Question[]): Question[] => {
+  const positions = [2, 0, 3, 1, 1, 3, 0, 2, 3, 1];
+  return questions.map((question, index) => {
+    const options = [...question.options];
+    const targetPosition = positions[index % positions.length] % options.length;
+    const [correctOption] = options.splice(question.correctAnswer, 1);
+    options.splice(targetPosition, 0, correctOption);
+    return { ...question, options, correctAnswer: targetPosition };
+  });
+};
+
 export const TIERS: TierConfig[] = [
-  { id: 'BEGINNER', levels: [{ id: 'b1', title: 'Linux Navigation', description: 'Master pwd, ls, and cd.' }], preTest: BEGINNER_PRETEST, postTest: BEGINNER_POSTTEST },
-  { id: 'INTERMEDIATE', levels: [{ id: 'i1', title: 'Firewall Management', description: 'Configure iptables rules.' }], preTest: INTERMEDIATE_PRETEST, postTest: INTERMEDIATE_POSTTEST },
-  { id: 'EXPERT', levels: [{ id: 'e1', title: 'Web App Scanning', description: 'Find SQL injection vulnerabilities.' }], preTest: EXPERT_PRETEST, postTest: EXPERT_POSTTEST },
+  { id: 'BEGINNER', levels: [{ id: 'b1', title: 'System and Network Foundations', description: 'Navigate the simulated system, read basic evidence, and learn what hosts, addresses, ports, and services represent.' }], preTest: balanceAnswerPositions(BEGINNER_PRETEST), postTest: balanceAnswerPositions(BEGINNER_POSTTEST) },
+  { id: 'INTERMEDIATE', levels: [{ id: 'i1', title: 'Evidence and Containment', description: 'Inspect processes and services, interpret logs, take scoped response actions, and verify their effects.' }], preTest: balanceAnswerPositions(INTERMEDIATE_PRETEST), postTest: balanceAnswerPositions(INTERMEDIATE_POSTTEST) },
+  { id: 'EXPERT', levels: [{ id: 'e1', title: 'Incident Correlation and Response', description: 'Build a timeline from mixed evidence, communicate uncertainty, investigate persistence, and plan a verified response.' }], preTest: balanceAnswerPositions(EXPERT_PRETEST), postTest: balanceAnswerPositions(EXPERT_POSTTEST) },
 ];
 
 export const ISO_QUESTIONS: { category: string; q: string; comment: string }[] = [
@@ -800,24 +1206,87 @@ export const ISO_QUESTIONS: { category: string; q: string; comment: string }[] =
 
 export const CHEAT_SHEET = [
   { category: "Navigation", commands: [{ cmd: "pwd", desc: "Prints your current directory path" }, { cmd: "ls", desc: "Lists files and folders" }, { cmd: "cd [dir]", desc: "Changes into a directory" }] },
-  { category: "File Ops", commands: [{ cmd: "cat [file]", desc: "Displays file contents" }, { cmd: "grep [text]", desc: "Searches for text in a file" }] },
-  { category: "Network", commands: [{ cmd: "ping [host]", desc: "Tests connection to a host" }, { cmd: "nmap [IP]", desc: "Scans IP for open ports" }] },
-  { category: "System", commands: [{ cmd: "ps aux", desc: "Lists all running processes" }, { cmd: "kill [PID]", desc: "Stops a process by ID" }] }
+  { category: "Evidence", commands: [{ cmd: "cat [file]", desc: "Displays a simulated text file" }, { cmd: "grep [pattern] [file]", desc: "Searches simulated file text; add -i, -n, --ip, --after, or --before filters" }, { cmd: "journalctl [--since TIME] [--until TIME] [-u ssh]", desc: "Filters the sample service journal by time and service" }, { cmd: "find [path] -name [file]", desc: "Searches for a simulated file by name" }, { cmd: "stat [file]", desc: "Shows simulated file metadata" }, { cmd: "preserve [source]", desc: "Records a simulated evidence note before response" }, { cmd: "record-evidence [source] [observation]", desc: "Records an observation separately from interpretation" }, { cmd: "assess [low|medium|high] [finding]", desc: "Records a confidence-rated assessment" }] },
+  { category: "Network", commands: [{ cmd: "status", desc: "Shows the simulated host and network state" }, { cmd: "ping [host]", desc: "Checks simulated reachability" }, { cmd: "nmap [IP]", desc: "Shows simulated ports and services; does not scan a real host" }, { cmd: "ss -tuln", desc: "Lists simulated listening services" }, { cmd: "netstat -tuln", desc: "Lists simulated listening services" }, { cmd: "block [IP]", desc: "Simulates containing one source address" }, { cmd: "disable-service [port]", desc: "Simulates disabling one training listener" }] },
+  { category: "System and Findings", commands: [{ cmd: "whoami", desc: "Shows the current simulated user" }, { cmd: "ps aux", desc: "Lists simulated running processes" }, { cmd: "ps -p [PID]", desc: "Shows details for one simulated process" }, { cmd: "kill [PID]", desc: "Simulates stopping a process" }, { cmd: "crontab -l", desc: "Lists simulated scheduled tasks" }, { cmd: "report [finding]", desc: "Records a short evidence-based finding" }] }
 ];
+
+export const TERMINAL_HELP_TEXT = `AVAILABLE TRAINING COMMANDS
+
+Navigation
+  pwd                     Show your current folder
+  ls [folder]             List files and folders
+  cd [folder]             Move to a folder
+  cat [file]              Read a text file
+
+System
+  whoami                  Show the current training account
+  ps aux                  List simulated running programs
+  ps -p [PID]             Inspect one program
+
+Network
+  status                  Review simulated network status
+  ping [host]             Check whether a host responds
+  nmap [host]             Review simulated ports and services
+  netstat -tuln           List simulated listening services
+  block [IP]              Contain a simulated network address
+
+Analysis and response
+  grep [-i] [-n] [word] [file]  Search a simulated text file
+  grep --ip [IP] [file]  Filter records by source address
+  grep --after/--before HH:MM:SS [file] Filter records by time
+  journalctl [--since T] [--until T] [-u ssh] Review sample service events
+  ss -tuln               List simulated listening sockets
+  find [path] -name [file] Search for a named file
+  stat [file]            Review simulated file owner, mode, and time
+  preserve [source]      Record evidence before a response action
+  record-evidence [source] [fact] Record an observation in case notes
+  assess [low|medium|high] [finding] Record a confidence-rated assessment
+  crontab -l              Review scheduled tasks
+  kill [PID]              Stop a simulated program
+  disable-service [port] Disable a simulated service
+  remove-persistence [cron|ssh-key]
+  report [finding]        Record a short finding
+  inspect [clue]          Inspect a clue on the investigation board
+
+Use the command that fits your current objective. All hosts, files, commands, and response actions are simulated; nothing contacts or changes a real system.`;
 
 export const MOCK_FILE_SYSTEM: Record<string, string[]> = { 
   '/': ['home', 'var'], 
   '/home': ['operator'], 
-  '/home/operator': ['notes.txt'], 
+  '/home/operator': ['notes.txt', 'practice'],
+  '/home/operator/practice': ['activity.txt'],
   '/var': ['log', 'log/apache2'], 
-  '/var/log': ['auth.log'],
+  '/var/log': ['auth.log', 'syslog', 'access.log'],
   '/var/log/apache2': ['access.log']
 };
 
 export const MOCK_FILES: Record<string, string> = { 
   '/home/operator/notes.txt': 'Check port 22.', 
-  '/var/log/auth.log': 'Failed login from 185.22.14.99',
-  '/var/log/apache2/access.log': 'GET /index.php?id=1 UNION SELECT * FROM users'
+  '/home/operator/practice/activity.txt': '09:10 INFO scheduled training check started\n09:11 WARNING unknown file requested review\n09:12 INFO training check completed',
+  '/var/log/auth.log': `Oct 08 03:17:02 sandbox sshd[1812]: Failed password for operator from 192.168.1.20
+Oct 08 03:17:18 sandbox sshd[1818]: Accepted publickey for operator from 192.168.1.20
+Oct 08 03:18:02 sandbox sshd[1801]: Accepted publickey for deploy from 192.168.1.20
+Oct 08 03:21:11 sandbox sshd[1842]: Failed password for root from 198.51.100.23
+Oct 08 03:21:14 sandbox sshd[1845]: Failed password for root from 198.51.100.23
+Oct 08 03:21:17 sandbox sshd[1848]: Failed password for root from 198.51.100.23
+Oct 08 03:24:03 sandbox sshd[1858]: Accepted password for root from 198.51.100.23
+Oct 08 03:24:06 sandbox sshd[1860]: Accepted publickey for operator from 192.168.1.50`,
+  '/var/log/syslog': `Oct 08 03:22:02 sandbox systemd[1]: ssh.service started
+Oct 08 03:23:17 sandbox sshd[1848]: authentication failures from 198.51.100.23: 3 attempts in 6 seconds
+Oct 08 03:26:03 sandbox sshd[1858]: new root session opened from 198.51.100.23
+Oct 08 03:26:08 sandbox sudo[1862]: root command session started
+Oct 08 03:27:00 sandbox syslog[1]: clock offset approximately +00:02:00; compare event sequence with host logs
+Oct 08 03:28:10 sandbox apache[1882]: access-log rotation gap recorded for 03:22-03:24; some requests may be unavailable
+Oct 08 03:28:40 sandbox systemd[1]: scheduled backup completed successfully`,
+  '/var/log/access.log': `192.168.1.20 - - [08/Oct/2026:03:20:05] "GET /health HTTP/1.1" 200
+198.51.100.23 - - [08/Oct/2026:03:25:11] "GET /admin HTTP/1.1" 403
+198.51.100.23 - - [08/Oct/2026:03:25:18] "GET /admin/config HTTP/1.1" 404
+192.168.1.20 - - [08/Oct/2026:03:26:01] "GET /status HTTP/1.1" 200`,
+  '/var/log/apache2/access.log': `192.168.1.20 - - [08/Oct/2026:03:20:05] "GET /health HTTP/1.1" 200
+203.0.113.77 - - [08/Oct/2026:03:31:42] "GET /index.php?id=1 UNION SELECT username,password FROM users HTTP/1.1" 200
+203.0.113.77 - - [08/Oct/2026:03:31:45] "GET /index.php?id=1 UNION SELECT email FROM customers HTTP/1.1" 200
+192.168.1.20 - - [08/Oct/2026:03:34:01] "GET /status HTTP/1.1" 200`
 };
 
-export const EASTER_EGGS: Record<string, string> = { 'sl': '🚂 Choo choo!', 'help': 'Available: ls, cd, pwd, cat, whoami, ping, nmap, block, status, sl, help' };
+export const EASTER_EGGS: Record<string, string> = { 'sl': '🚂 Choo choo!' };

@@ -43,7 +43,8 @@ import type {
 
 import {
   MISSIONS,
-  TUTORIAL_MISSIONS
+  TUTORIAL_MISSIONS,
+  TERMINAL_HELP_TEXT
 } from './data/gameData';
 
 import {
@@ -190,7 +191,11 @@ function App() {
     useState(false);
 
   const [hintText, setHintText] =
-    useState('');
+    useState<string | string[]>([]);
+
+  const [containedTarget, setContainedTarget] = useState('');
+  const [disabledService, setDisabledService] = useState('');
+  const [removedPersistence, setRemovedPersistence] = useState<string[]>([]);
 
   const [pendingMission, setPendingMission] =
     useState<Mission | null>(null);
@@ -250,7 +255,6 @@ function App() {
     } catch {
   console.error('An error occurred.');
 }
-  
 
     setShowOnboarding(true);
   };
@@ -742,6 +746,10 @@ function App() {
         pendingMission
       );
 
+      setCurrentPath('/home/operator');
+      setContainedTarget('');
+      setDisabledService('');
+      setRemovedPersistence([]);
       setQuestStep(0);
 
       setIsThreatActive(
@@ -779,6 +787,11 @@ function App() {
     const input =
       cmd.trim();
 
+    if (input.toLowerCase() === 'help') {
+      sendSysMsg(TERMINAL_HELP_TEXT);
+      return;
+    }
+
     if (
       questStep >=
       activeMission.steps.length
@@ -796,9 +809,7 @@ function App() {
       ];
 
     if (
-      input.startsWith(
-        currentStep.cmd
-      )
+      input.toLowerCase() === currentStep.cmd.toLowerCase()
     ) {
       if (
         currentStep.cmd ===
@@ -814,12 +825,31 @@ function App() {
         return;
       }
 
+      if (input.startsWith('cd ')) {
+        const destination = input.slice(3).trim();
+        setCurrentPath(destination === '~' || destination === '~/'
+          ? '/home/operator'
+          : destination.startsWith('/')
+            ? destination
+            : `${currentPath.replace(/\/$/, '')}/${destination}`);
+      }
+
+      if (input.startsWith('block ')) {
+        setContainedTarget(input.slice('block '.length).trim());
+      } else if (input.startsWith('disable-service ')) {
+        setDisabledService(input.slice('disable-service '.length).trim());
+      } else if (input.startsWith('remove-persistence ')) {
+        const removed = input.slice('remove-persistence '.length).trim();
+        setRemovedPersistence(previous => previous.includes(removed) ? previous : [...previous, removed]);
+      }
+
       const isLastStep =
         questStep ===
         activeMission.steps.length -
           1;
 
       if (isLastStep) {
+        setQuestStep(activeMission.steps.length);
         setIsThreatActive(
           false
         );
@@ -1134,9 +1164,13 @@ function App() {
   return (
     <div className="h-screen w-screen bg-black text-[#4ade80] font-mono overflow-hidden flex flex-col relative">
 
-      <nav className="h-14 border-b border-green-900 flex items-center justify-between px-6 bg-black/90 z-40 shrink-0">
+      <a href="#main-content" className="sr-only z-[100] bg-black p-3 text-green-300 focus:not-sr-only focus:absolute focus:left-3 focus:top-3">
+        Skip to main content
+      </a>
 
-        <div className="flex items-center gap-8">
+      <nav aria-label="Main navigation" className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-b border-green-900 px-4 py-2 bg-black/90 z-40 shrink-0 sm:flex sm:justify-between sm:gap-3 lg:px-6">
+
+        <div className="contents sm:flex sm:items-center sm:gap-5 lg:gap-8">
 
           <h1 className="text-xl font-black italic text-white glow">
             SANDBOX
@@ -1145,7 +1179,7 @@ function App() {
             </span>
           </h1>
 
-          <div className="flex gap-4 text-xs font-bold uppercase">
+          <div className="col-span-2 row-start-2 flex min-w-0 gap-1 overflow-x-auto scrollbar-hide text-xs font-bold uppercase sm:w-auto sm:gap-1.5 lg:gap-3 lg:text-sm">
 
             <button
               onClick={() =>
@@ -1153,18 +1187,20 @@ function App() {
                   'dashboard'
                 )
               }
-              className={`px-3 py-1 border ${
+              className={`px-3 lg:px-4 py-2 border transition-colors ${
                 screen ===
                 'dashboard'
-                  ? 'border-green-500 text-green-500'
-                  : 'border-transparent text-green-900 hover:text-green-500'
+                  ? 'border-green-500 bg-green-500/5 text-green-300'
+                  : 'border-transparent text-green-800 hover:border-green-900 hover:text-green-300'
               }`}
+              aria-current={screen === 'dashboard' ? 'page' : undefined}
+              aria-label="Dashboard"
             >
               <LayoutDashboard
                 size={14}
                 className="inline mr-2"
               />
-              Dashboard
+              <span className="hidden md:inline">Dashboard</span>
             </button>
 
             <button
@@ -1173,18 +1209,20 @@ function App() {
                   'academy'
                 )
               }
-              className={`px-3 py-1 border ${
+              className={`px-3 lg:px-4 py-2 border transition-colors ${
                 screen ===
                 'academy'
-                  ? 'border-green-500 text-green-500'
-                  : 'border-transparent text-green-900 hover:text-green-500'
+                  ? 'border-green-500 bg-green-500/5 text-green-300'
+                  : 'border-transparent text-green-800 hover:border-green-900 hover:text-green-300'
               }`}
+              aria-current={screen === 'academy' ? 'page' : undefined}
+              aria-label="Academy"
             >
               <GraduationCap
                 size={14}
                 className="inline mr-2"
               />
-              Academy
+              <span className="hidden md:inline">Academy</span>
             </button>
 
             <button
@@ -1193,18 +1231,20 @@ function App() {
                   'missions'
                 )
               }
-              className={`px-3 py-1 border ${
+              className={`px-3 lg:px-4 py-2 border transition-colors ${
                 screen ===
                 'missions'
-                  ? 'border-green-500 text-green-500'
-                  : 'border-transparent text-green-900 hover:text-green-500'
+                  ? 'border-green-500 bg-green-500/5 text-green-300'
+                  : 'border-transparent text-green-800 hover:border-green-900 hover:text-green-300'
               }`}
+              aria-current={screen === 'missions' ? 'page' : undefined}
+              aria-label="Missions"
             >
               <Target
                 size={14}
                 className="inline mr-2"
               />
-              Missions
+              <span className="hidden md:inline">Missions</span>
             </button>
 
             <button
@@ -1213,24 +1253,26 @@ function App() {
                   'profile'
                 )
               }
-              className={`px-3 py-1 border ${
+              className={`px-3 lg:px-4 py-2 border transition-colors ${
                 screen ===
                 'profile'
-                  ? 'border-green-500 text-green-500'
-                  : 'border-transparent text-green-900 hover:text-green-500'
+                  ? 'border-green-500 bg-green-500/5 text-green-300'
+                  : 'border-transparent text-green-800 hover:border-green-900 hover:text-green-300'
               }`}
+              aria-current={screen === 'profile' ? 'page' : undefined}
+              aria-label="Profile"
             >
               <ClipboardCheck
                 size={14}
                 className="inline mr-2"
               />
-              Profile
+              <span className="hidden md:inline">Profile</span>
             </button>
 
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-xs">
+        <div className="col-start-2 row-start-1 flex items-center justify-end gap-2 text-xs sm:ml-auto sm:gap-4">
 
           <div className="text-right">
 
@@ -1274,7 +1316,7 @@ function App() {
 
       </nav>
 
-      <main className="flex-1 overflow-y-auto">
+      <main id="main-content" className="flex-1 overflow-y-auto bg-[#050807]">
 
         {screen ===
           'dashboard' && (
@@ -1334,6 +1376,7 @@ function App() {
           'terminal' &&
           activeMission && (
             <TerminalScreen
+              key={activeMission.id}
               activeMission={
                 activeMission
               }
@@ -1359,9 +1402,7 @@ function App() {
               setShowMap={
                 setShowMap
               }
-              setHintText={
-                setHintText
-              }
+              setHintText={setHintText}
               currentPath={
                 currentPath
               }
@@ -1371,6 +1412,9 @@ function App() {
               onMapAction={
                 setMapAction
               }
+              containedTarget={containedTarget}
+              disabledService={disabledService}
+              removedPersistence={removedPersistence}
               playSound={
                 playSound
               }
@@ -1410,6 +1454,7 @@ function App() {
       />
 
       <HintModal
+        key={`${showHint}-${JSON.stringify(hintText)}`}
         show={
           showHint
         }
@@ -1418,7 +1463,7 @@ function App() {
             false
           )
         }
-        text={
+        hints={
           hintText
         }
       />
@@ -1438,6 +1483,9 @@ function App() {
         mapAction={
           mapAction
         }
+        containedTarget={containedTarget}
+        disabledService={disabledService}
+        removedPersistence={removedPersistence}
       />
 
       <CheatSheetModal
@@ -1475,10 +1523,7 @@ function App() {
             missionOrigin
           );
         }}
-        missionTitle={
-          activeMission?.title ||
-          'Unknown'
-        }
+        mission={activeMission}
       />
 
       <MissionFailedModal

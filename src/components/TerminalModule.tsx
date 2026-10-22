@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MOCK_FILE_SYSTEM, MOCK_FILES, EASTER_EGGS } from '../data/gameData';
+import { MOCK_FILE_SYSTEM, MOCK_FILES, EASTER_EGGS, TERMINAL_HELP_TEXT } from '../data/gameData';
 
 interface TerminalModuleProps {
   onCommand: (cmd: string) => void;
@@ -33,6 +33,10 @@ export const TerminalModule: React.FC<TerminalModuleProps> = ({
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<HistoryLine[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [terminatedProcessIds, setTerminatedProcessIds] = useState<string[]>([]);
+  const [disabledPorts, setDisabledPorts] = useState<string[]>([]);
+  const [blockedAddresses, setBlockedAddresses] = useState<string[]>([]);
+  const [removedPersistence, setRemovedPersistence] = useState<string[]>([]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastNonceRef = useRef(0);
@@ -200,36 +204,7 @@ export const TerminalModule: React.FC<TerminalModuleProps> = ({
      * HELP
      */
     if (command === 'help') {
-      addHistory(
-        'sys',
-        `Available commands:
-
-Navigation:
-  pwd
-  ls
-  cd [directory]
-  cat [file]
-
-System:
-  whoami
-  ps aux
-  ps -p [PID]
-  clear
-
-Network:
-  status
-  ping [host]
-  nmap [host]
-  netstat -tuln
-  block [IP]
-
-Analysis:
-  grep [pattern] [file]
-  find [path] -name [file]
-  crontab -l
-
-Use the command exactly as shown in mission objectives.`
-      );
+      addHistory('sys', TERMINAL_HELP_TEXT);
 
       playSound('success');
       return;
@@ -258,6 +233,17 @@ Use the command exactly as shown in mission objectives.`
      */
     if (command === 'whoami') {
       addHistory('sys', 'operator');
+      playSound('success');
+      return;
+    }
+
+    if (command === 'report') {
+      const finding = args.join(' ');
+      if (!finding) {
+        addHistory('error', 'report: use report [short finding]');
+      } else {
+        addHistory('sys', `Finding submitted for review: ${finding}\nUse the case evidence to support your conclusion.`);
+      }
       playSound('success');
       return;
     }
@@ -348,7 +334,10 @@ Use the command exactly as shown in mission objectives.`
       ) {
         addHistory(
           'sys',
-          `ssh-rsa AAAA... operator@workstation
+          removedPersistence.includes('ssh-key')
+            ? `ssh-rsa AAAA... operator@workstation
+ssh-ed25519 AAAA... backup-admin@secure-host`
+            : `ssh-rsa AAAA... operator@workstation
 ssh-ed25519 AAAA... backup-admin@secure-host
 ssh-rsa AAAA... unknown@external-host`
         );
@@ -397,13 +386,15 @@ IP Address: 192.168.1.10
 Gateway: 192.168.1.1
 
 Active Connections:
-  192.168.1.10:22  <- 185.22.14.99
+  ${blockedAddresses.includes('198.51.100.23') ? '(no active connection from 198.51.100.23)' : '192.168.1.10:22  <- 198.51.100.23'}
   192.168.1.10:80  <- 192.168.1.20
 
 Security Status:
   Firewall: ACTIVE
   IDS: ACTIVE
-  Threat Level: ELEVATED`
+  Unapproved listener 4444: ${disabledPorts.includes('4444') ? 'DISABLED' : 'ACTIVE'}
+  Suspicious source 198.51.100.23: ${blockedAddresses.includes('198.51.100.23') ? 'CONTAINED' : 'UNDER REVIEW'}
+  Threat Level: ${blockedAddresses.includes('198.51.100.23') ? 'CONTAINED' : 'ELEVATED'}`
       );
 
       playSound('success');
@@ -514,7 +505,7 @@ root       842    0.1   0.4   /usr/sbin/sshd
 root      1091    0.3   0.8   /usr/sbin/apache2
 root      1477    0.1   0.2   /usr/bin/cron
 operator  2014    0.2   1.1   -bash
-root      2214   87.4   2.3   /tmp/.cache/cryptominer.exe`
+${terminatedProcessIds.includes('2214') ? '' : 'root      2214   87.4   2.3   /tmp/.cache/cryptominer.exe'}`
       );
 
       playSound('success');
@@ -541,6 +532,11 @@ root      2214   87.4   2.3   /tmp/.cache/cryptominer.exe`
       }
 
       if (pid === '2214') {
+        if (terminatedProcessIds.includes(pid)) {
+          addHistory('sys', 'PID 2214: no such process (the process is no longer running).');
+          playSound('success');
+          return;
+        }
         addHistory(
           'sys',
           `PID     USER     CPU     COMMAND
@@ -579,6 +575,7 @@ Status: RUNNING`
       }
 
       if (pid === '2214') {
+        setTerminatedProcessIds(prev => prev.includes(pid) ? prev : [...prev, pid]);
         addHistory(
           'success',
           `Process 2214 terminated.
@@ -604,21 +601,24 @@ Status: RUNNING`
       command === 'netstat' &&
       args.includes('-tuln')
     ) {
+      const listenerRows = [
+        `tcp    0.0.0.0:22         LISTEN`,
+        `tcp    0.0.0.0:80         LISTEN`,
+        ...(disabledPorts.includes('4444') ? [] : [`tcp    0.0.0.0:4444       LISTEN`])
+      ].join('\n');
       addHistory(
         'sys',
         `Active listening services:
 
 Proto  Local Address       State
-tcp    0.0.0.0:22         LISTEN
-tcp    0.0.0.0:80         LISTEN
-tcp    0.0.0.0:4444       LISTEN
+${listenerRows}
 
 Expected services:
 22/tcp  SSH
 80/tcp  HTTP
 
 WARNING:
-4444/tcp is not part of the approved server configuration.`
+${disabledPorts.includes('4444') ? '4444/tcp has been disabled in this simulation.' : '4444/tcp is not part of the approved server configuration.'}`
       );
 
       playSound('success');
@@ -662,9 +662,9 @@ WARNING:
       ) {
         addHistory(
           'success',
-          `Oct 08 03:21:11 sandbox sshd[1842]: Failed password for root from 185.22.14.99
-Oct 08 03:21:14 sandbox sshd[1845]: Failed password for root from 185.22.14.99
-Oct 08 03:21:17 sandbox sshd[1848]: Failed password for root from 185.22.14.99`
+          `Oct 08 03:21:11 sandbox sshd[1842]: Failed password for root from 198.51.100.23
+Oct 08 03:21:14 sandbox sshd[1845]: Failed password for root from 198.51.100.23
+Oct 08 03:21:17 sandbox sshd[1848]: Failed password for root from 198.51.100.23`
         );
 
         playSound('success');
@@ -689,14 +689,13 @@ Oct 08 03:21:17 sandbox sshd[1848]: Failed password for root from 185.22.14.99`
     ) {
       addHistory(
         'sys',
-        `# User scheduled tasks
+      `# User scheduled tasks
 
 0 * * * * /usr/bin/logrotate
 30 2 * * * /usr/bin/backup-system
-*/5 * * * * /tmp/.cache/update.sh
+${removedPersistence.includes('cron') ? '' : '*/5 * * * * /tmp/.cache/update.sh'}
 
-WARNING:
-The third entry executes an unknown script from /tmp.`
+${removedPersistence.includes('cron') ? 'The suspicious temporary-directory task is no longer listed.' : 'WARNING:\nThe third entry executes an unknown script from /tmp.'}`
       );
 
       playSound('success');
@@ -747,6 +746,7 @@ The third entry executes an unknown script from /tmp.`
       }
 
       onMapAction('block');
+      setBlockedAddresses(prev => prev.includes(target) ? prev : [...prev, target]);
 
       addHistory(
         'success',
@@ -761,6 +761,32 @@ The third entry executes an unknown script from /tmp.`
         onMapAction('none');
       }, 700);
 
+      return;
+    }
+
+    if (command === 'disable-service') {
+      const port = args[0];
+      if (!port) {
+        addHistory('error', 'disable-service: usage: disable-service [port]');
+      } else if (port === '4444') {
+        setDisabledPorts(prev => prev.includes(port) ? prev : [...prev, port]);
+        addHistory('success', `[SERVICE] Simulated listener on TCP ${port} disabled.\n[NOTE] This is a training action, not a real system change.`);
+      } else {
+        addHistory('error', `disable-service: port ${port} is not an unapproved service in this scenario.`);
+      }
+      playSound('success');
+      return;
+    }
+
+    if (command === 'remove-persistence') {
+      const mechanism = args[0];
+      if (mechanism !== 'cron' && mechanism !== 'ssh-key') {
+        addHistory('error', 'remove-persistence: use cron or ssh-key in this training scenario');
+      } else {
+        setRemovedPersistence(prev => prev.includes(mechanism) ? prev : [...prev, mechanism]);
+        addHistory('success', `[PERSISTENCE] Simulated ${mechanism} mechanism removed.\n[NOTE] Evidence should be recorded before remediation.`);
+      }
+      playSound('success');
       return;
     }
 

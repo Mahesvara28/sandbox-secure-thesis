@@ -40,6 +40,11 @@ export const QuizModule = ({
   reviewAnswers,
   continueLabel = 'Continue'
 }: QuizModuleProps) => {
+  const answerKeyOnly = Boolean(
+    reviewAnswers &&
+    reviewAnswers.length === questions.length &&
+    reviewAnswers.every(answer => answer === null)
+  );
   const [currentIndex, setCurrentIndex] =
     useState(0);
 
@@ -221,7 +226,7 @@ export const QuizModule = ({
 
             <div>
               <p className="text-green-900 text-xs uppercase">
-                Assessment Review
+                {answerKeyOnly ? 'Answer Key' : 'Assessment Review'}
               </p>
 
               <h1 className="text-3xl font-black text-white">
@@ -252,14 +257,13 @@ export const QuizModule = ({
               />
 
               <span className="text-green-700 uppercase text-xs font-bold">
-                Final Score
+              {answerKeyOnly ? 'Correct answers' : 'Final Score'}
               </span>
 
             </div>
 
             <p className="text-4xl font-black text-white">
-              {finalScore}/
-              {questions.length}
+              {answerKeyOnly ? `${questions.length} questions` : <>{finalScore}/{questions.length}</>}
             </p>
 
           </div>
@@ -275,6 +279,7 @@ export const QuizModule = ({
                   answers[index];
 
                 const isCorrect =
+                  !answerKeyOnly &&
                   userAnswer !== null &&
                   userAnswer ===
                     question.correctAnswer;
@@ -289,7 +294,9 @@ export const QuizModule = ({
 
                     <div className="flex items-start gap-3 mb-5">
 
-                      {isCorrect ? (
+                      {answerKeyOnly ? (
+                        <BookOpen size={20} className="mt-1 shrink-0 text-cyan-400" />
+                      ) : isCorrect ? (
                         <CheckCircle
                           size={20}
                           className="text-green-500 mt-1 shrink-0"
@@ -366,7 +373,7 @@ export const QuizModule = ({
                                 </span>
                               )}
 
-                              {isUserAnswer &&
+                              {!answerKeyOnly && isUserAnswer &&
                                 !isCorrectAnswer && (
                                   <span className="ml-3 text-xs">
                                     YOUR ANSWER
@@ -476,11 +483,7 @@ export const QuizModule = ({
 
             {showReviewAfterComplete && (
               <button
-                onClick={() =>
-                  setShowReview(
-                    true
-                  )
-                }
+                onClick={() => setShowReview(true)}
                 className="border border-green-500 px-6 py-3 text-green-500 hover:bg-green-500 hover:text-black flex items-center gap-2"
               >
                 <BookOpen
@@ -496,7 +499,7 @@ export const QuizModule = ({
               }
               className="bg-green-500 text-black px-6 py-3 font-bold hover:bg-green-400 flex items-center gap-2"
             >
-              Continue
+              {continueLabel}
               <ArrowRight
                 size={16}
               />

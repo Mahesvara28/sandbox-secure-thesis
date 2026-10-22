@@ -33,7 +33,7 @@ const guideSteps = [
     title: 'ACADEMY',
     subtitle: 'Learn before you deploy',
     description:
-      'The Academy is where you build your cybersecurity knowledge. Start with a pre-test, study the lessons, complete guided tutorials, and take the final test.',
+      'The Academy contains the Beginner, Intermediate, and Expert certifications. Take a pre-test, complete that tier’s training missions, then take its post-test. These missions belong to the Academy.',
     icon: GraduationCap,
     color: 'blue',
     visual: 'ACADEMY'
@@ -42,7 +42,7 @@ const guideSteps = [
     title: 'MISSIONS',
     subtitle: 'Investigate security incidents',
     description:
-      'Missions put your knowledge into practice. You will investigate suspicious activity, analyze evidence, and make decisions using the simulated terminal.',
+      'The Missions tab contains standalone practice missions. They are separate from the certification missions in the Academy, so you can practice without changing your certification progress.',
     icon: Target,
     color: 'red',
     visual: 'MISSIONS'
@@ -78,7 +78,7 @@ const guideSteps = [
     title: 'YOU ARE READY',
     subtitle: 'Begin your cybersecurity training',
     description:
-      'Start with the Beginner Academy tier. Learn the fundamentals first, then progress toward more advanced investigations.',
+      'Start with the Beginner Academy tier to build a foundation. Use standalone Missions for extra practice, then return to the Academy when you are ready to advance.',
     icon: Keyboard,
     color: 'green',
     visual: 'READY'
@@ -232,17 +232,17 @@ const OnboardingGuide = ({ onComplete }: OnboardingGuideProps) => {
 
                       <div className="flex items-center gap-3 text-gray-400">
                         <span className="text-blue-400">02</span>
-                        Tutorials
+                        Certification Missions
                       </div>
 
                       <div className="flex items-center gap-3 text-gray-400">
                         <span className="text-blue-400">03</span>
-                        Missions
+                        Post-Test
                       </div>
 
                       <div className="flex items-center gap-3 text-gray-400">
                         <span className="text-blue-400">04</span>
-                        Final Test
+                        Extra practice is in the Missions tab
                       </div>
                     </div>
                   </div>

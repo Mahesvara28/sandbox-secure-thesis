@@ -17,13 +17,13 @@ import {
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
-  authDomain: "sandbox-secure-thesis.firebaseapp.com",
-  databaseURL: "https://sandbox-secure-thesis-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "sandbox-secure-thesis",
-  storageBucket: "sandbox-secure-thesis.firebasestorage.app",
+  authDomain: "sandbox-thesis.firebaseapp.com",
+  databaseURL: "https://sandbox-thesis-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "sandbox-thesis",
+  storageBucket: "sandbox-thesis.firebasestorage.app",
   messagingSenderId: "543031512593",
   appId: "1:543031512593:web:e41386bd4bed13fe15abb0",
-  measurementId: "G-L3TW6NCND0"
+  measurementId: "G-TL3TW6CND0"
 };
 
 const app = initializeApp(firebaseConfig);

@@ -2,8 +2,9 @@ import { Map, HelpCircle, X, ClipboardCheck, BookOpen } from 'lucide-react';
 import type { Mission } from '../data/gameData';
 import { CHEAT_SHEET, ISO_QUESTIONS } from '../data/gameData';
 import { motion } from 'framer-motion';
+import { useState } from 'react';
 
-export const NetworkMapModal = ({ show, onClose, activeMission, mapAction }: { show: boolean; onClose: () => void; activeMission: Mission | null; mapAction: 'scan' | 'block' | 'none' }) => {
+export const NetworkMapModal = ({ show, onClose, activeMission, mapAction, containedTarget, disabledService, removedPersistence }: { show: boolean; onClose: () => void; activeMission: Mission | null; mapAction: 'scan' | 'block' | 'none'; containedTarget: string; disabledService: string; removedPersistence: string[] }) => {
   if (!show) return null;
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={onClose}>
@@ -13,31 +14,43 @@ export const NetworkMapModal = ({ show, onClose, activeMission, mapAction }: { s
           <button onClick={onClose} className="text-red-500 hover:text-red-400 text-sm font-bold"><X size={20}/></button>
         </div>
         <div className="space-y-4 relative">
-          {mapAction === 'scan' && (
-            <motion.div initial={{ scale: 0, opacity: 0.8 }} animate={{ scale: 4, opacity: 0 }} transition={{ duration: 1.5, repeat: Infinity }} className="absolute top-10 left-10 w-4 h-4 bg-yellow-400 rounded-full pointer-events-none" />
-          )}
-          <div className="border border-green-700 p-4 relative">
-            <div className="flex items-center gap-3 mb-2"><div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div><span className="text-white font-bold">Gateway (10.0.0.1)</span></div>
-            <p className="text-xs text-green-600">Status: ONLINE | Traffic: Normal</p>
+          {activeMission && <div className="mb-4 border border-green-900/70 bg-green-950/10 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-green-600">Mission context</p>
+            <p className="mt-1 text-sm text-green-300">{activeMission.learningGoal}</p>
+          </div>}
+          {activeMission && mapAction === 'scan' && <motion.div initial={{ opacity: 0.2, scale: 0.7 }} animate={{ opacity: [0.2, 1, 0.2], scale: [0.7, 1.15, 0.7] }} transition={{ duration: 1.2, repeat: Infinity }} className="pointer-events-none absolute -top-2 right-3 z-10 rounded border border-yellow-400 bg-yellow-950/80 px-3 py-1 text-[10px] font-bold text-yellow-300">SCAN IN PROGRESS</motion.div>}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(activeMission?.topology ?? []).map((node, index) => {
+              const isContained = node.address === containedTarget;
+              const isDisabled = Boolean(disabledService) && node.address.includes(disabledService);
+              const isPersistenceRemoved = (removedPersistence.includes('cron') && (/cron|scheduled|update\.sh/i.test(`${node.label} ${node.address}`))) || (removedPersistence.includes('ssh-key') && node.address.includes('authorized_keys'));
+              const isThreat = /suspicious|unverified|under review|unknown|incident active/i.test(node.status);
+              const scanFocusIndex = activeMission?.topology.findIndex(item => /suspicious|unverified|under review|unknown|incident active/i.test(item.status)) ?? -1;
+              const isScanning = mapAction === 'scan' && index === scanFocusIndex;
+              return <div key={`${node.label}-${node.address}`} className={`border p-4 transition-all ${isContained || isDisabled || isPersistenceRemoved ? 'border-cyan-400 bg-cyan-950/20 ring-2 ring-cyan-400/70 shadow-[0_0_18px_rgba(34,211,238,0.18)]' : isThreat ? 'border-red-800 bg-red-950/10' : 'border-green-800 bg-green-950/10'} ${isScanning ? 'ring-1 ring-yellow-400' : ''}`}>
+                {node.linksTo && <p className="mb-2 text-[10px] text-green-700">CONNECTED TO: {node.linksTo}</p>}
+                <div className="flex items-center gap-2">
+                  <span className={`h-2.5 w-2.5 rounded-full ${isContained || isDisabled || isPersistenceRemoved ? 'bg-gray-500' : isThreat ? 'bg-red-500' : 'bg-green-500'}`} />
+                  <span className={`font-bold ${isContained || isDisabled || isPersistenceRemoved ? 'text-gray-400' : 'text-white'}`}>{node.label}</span>
+                  {(isContained || isDisabled || isPersistenceRemoved) && <span className="ml-auto border border-cyan-500/70 px-2 py-0.5 text-[9px] font-bold tracking-wider text-cyan-300">UPDATED</span>}
+                </div>
+                <p className="mt-2 font-mono text-xs text-green-300">{node.address}</p>
+                <p className="mt-1 text-xs text-green-600">{node.role}</p>
+                <p className={`mt-2 text-[10px] font-bold ${isContained || isDisabled || isPersistenceRemoved ? 'text-gray-500' : isThreat ? 'text-red-400' : 'text-green-500'}`}>STATUS: {isContained ? 'CONTAINED' : isDisabled ? 'SERVICE DISABLED' : isPersistenceRemoved ? 'PERSISTENCE REMOVED' : node.status}</p>
+              </div>;
+            })}
           </div>
-          <div className="border border-yellow-700 p-4 ml-8 relative">
-            {mapAction === 'block' && (<motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute -top-3 -right-3 bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded-full border-2 border-black">BLOCKED</motion.div>)}
-            <div className="flex items-center gap-3 mb-2"><div className="w-3 h-3 bg-yellow-500 rounded-full"></div><span className="text-white">Web Server (10.0.0.12)</span></div>
-            <p className="text-xs text-yellow-600">Port 80: OPEN | Port 443: OPEN</p>
-          </div>
-          {activeMission?.target && activeMission.target !== "none" && (
-            <div className={`border p-4 ml-16 transition-colors ${mapAction === 'block' ? 'border-gray-700 bg-gray-900/20' : 'border-red-700 bg-red-950/20'}`}>
-              <div className="flex items-center gap-3 mb-2"><div className={`w-3 h-3 rounded-full ${mapAction === 'block' ? 'bg-gray-500' : 'bg-red-500 animate-pulse'}`}></div><span className={`font-bold ${mapAction === 'block' ? 'text-gray-400 line-through' : 'text-white'}`}>THREAT: {activeMission.target}</span></div>
-              <p className={`text-xs ${mapAction === 'block' ? 'text-gray-500' : 'text-red-600'}`}>{mapAction === 'block' ? 'Status: NEUTRALIZED' : 'Status: MALICIOUS - BLOCK REQUIRED'}</p>
-            </div>
-          )}
+          {activeMission?.topology.length === 0 && <p className="text-sm text-green-600">No topology details are defined for this mission yet.</p>}
+          <p className="border-t border-green-900 pt-3 text-xs text-green-700">Topology is a training model. A connection or alert is evidence to investigate, not proof of an attacker’s identity.</p>
         </div>
       </div>
     </div>
   );
 };
 
-export const HintModal = ({ show, onClose, text }: { show: boolean; onClose: () => void; text: string }) => {
+export const HintModal = ({ show, onClose, hints }: { show: boolean; onClose: () => void; hints: string | string[] }) => {
+  const hintList = Array.isArray(hints) ? hints : [hints];
+  const [hintIndex, setHintIndex] = useState(0);
   if (!show) return null;
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={onClose}>
@@ -46,8 +59,9 @@ export const HintModal = ({ show, onClose, text }: { show: boolean; onClose: () 
           <h3 className="text-xl font-bold text-yellow-500 flex items-center gap-2"><HelpCircle size={20} /> MISSION HINT</h3>
           <button onClick={onClose} className="text-red-500 hover:text-red-400 text-sm font-bold"><X size={20}/></button>
         </div>
-        <div className="text-green-400 font-mono text-sm leading-relaxed min-h-[60px] flex items-center">{text}</div>
-        <button onClick={onClose} className="mt-6 w-full border border-yellow-600 text-yellow-500 py-2 hover:bg-yellow-900/20 text-sm font-bold uppercase transition-colors">Understood</button>
+        <p className="mb-2 text-[10px] uppercase tracking-widest text-yellow-700">Hint {hintIndex + 1} / {hintList.length}</p>
+        <div className="text-green-400 font-mono text-sm leading-relaxed min-h-[60px] flex items-center">{hintList[hintIndex]}</div>
+        <button onClick={() => hintIndex + 1 < hintList.length ? setHintIndex(index => index + 1) : onClose()} className="mt-6 w-full border border-yellow-600 text-yellow-500 py-2 hover:bg-yellow-900/20 text-sm font-bold uppercase transition-colors">{hintIndex + 1 < hintList.length ? 'Show next hint' : 'Understood'}</button>
       </div>
     </div>
   );
@@ -65,7 +79,8 @@ export const BriefingModal = ({ show, mission, onStart, onAbort }: { show: boole
         </div>
         <div className="p-6 space-y-6">
           <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Scenario</h3><p className="text-green-400 text-sm italic border-l-2 border-green-700 pl-3">"{mission.scenario}"</p></div>
-          <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">What You'll Learn</h3><p className="text-white text-sm">{mission.briefing.concept}</p></div>
+          <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Learning Goal</h3><p className="text-white text-sm">{mission.learningGoal}</p><p className="text-green-600 text-xs mt-2">{mission.briefing.concept}</p></div>
+          <div className="text-xs text-green-600">Difficulty: <span className="text-green-300">{mission.difficulty.toUpperCase()}</span> · {mission.timerLimit > 0 ? `Challenge timer: ${Math.floor(mission.timerLimit / 60)} minutes` : 'Untimed practice'}</div>
           <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Commands You'll Use</h3><div className="space-y-2">{mission.briefing.commands.map((cmd, i) => (<div key={i} className="bg-green-950/30 border border-green-900 p-2 font-mono text-xs"><span className="text-green-400">{cmd}</span></div>))}</div></div>
           <div className="border border-yellow-700 bg-yellow-950/20 p-3"><h3 className="text-xs font-bold text-yellow-600 uppercase mb-1">Objective</h3><p className="text-yellow-400 text-sm">{mission.briefing.objective}</p></div>
         </div>
@@ -139,17 +154,27 @@ export const EvalModal = ({ show, onClose }: { show: boolean; onClose: () => voi
 };
 
 // --- Victory Modal (ADDED) ---
-export const VictoryModal = ({ show, onClose, missionTitle }: { show: boolean; onClose: () => void; missionTitle: string }) => {
+export const VictoryModal = ({ show, onClose, mission }: { show: boolean; onClose: () => void; mission: Mission | null }) => {
   if (!show) return null;
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 animate-in fade-in duration-300">
-      <div className="border-2 border-green-500 bg-black p-8 max-w-md w-full text-center shadow-[0_0_50px_rgba(34,197,94,0.5)] relative overflow-hidden">
+      <div className="border-2 border-green-500 bg-black p-8 max-w-xl w-full mx-4 text-center shadow-[0_0_50px_rgba(34,197,94,0.5)] relative overflow-y-auto max-h-[90vh]">
         <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 pointer-events-none bg-[length:100%_4px,3px_100%]"></div>
         <h2 className="text-4xl font-black text-green-500 mb-2 tracking-tighter relative z-20">MISSION ACCOMPLISHED</h2>
         <div className="h-1 w-full bg-green-500 mb-6 relative z-20"></div>
-        <p className="text-white text-lg mb-1 relative z-20">Operation: <span className="text-green-400 font-bold">{missionTitle}</span></p>
-        <p className="text-green-600 text-xs uppercase tracking-widest mb-8 relative z-20">Objectives Complete // Data Secured</p>
-        <button onClick={onClose} className="border-2 border-green-500 text-green-500 px-8 py-3 hover:bg-green-500 hover:text-black font-bold uppercase transition-all w-full relative z-20">Return to Base →</button>
+        <p className="text-white text-lg mb-1 relative z-20">Operation: <span className="text-green-400 font-bold">{mission?.title ?? 'Training exercise'}</span></p>
+        <p className="text-green-600 text-xs uppercase tracking-widest mb-6 relative z-20">Objectives complete · review your takeaway</p>
+        {mission && <div className="space-y-4 text-left relative z-20">
+          <div className="border border-green-900 bg-green-950/10 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-green-600">What you practiced</p>
+            <p className="mt-2 text-sm text-green-200">{mission.learningGoal}</p>
+          </div>
+          <div className="border border-blue-900 bg-blue-950/10 p-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Why it matters</p>
+            <p className="mt-2 text-sm leading-6 text-gray-300">{mission.realWorld}</p>
+          </div>
+        </div>}
+        <button onClick={onClose} className="mt-6 border-2 border-green-500 text-green-500 px-8 py-3 hover:bg-green-500 hover:text-black font-bold uppercase transition-all w-full relative z-20">Return to Base →</button>
       </div>
     </div>
   );

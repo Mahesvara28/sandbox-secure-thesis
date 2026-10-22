@@ -24,3 +24,64 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  html,
+  body,
+  #root {
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #171717 !important;
+  }
+
+  #root > div {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #171717 !important;
+  }
+
+  main,
+  nav,
+  section,
+  article,
+  button,
+  [class*="bg-"] {
+    background-color: #fff !important;
+    background-image: none !important;
+    color: #171717 !important;
+    border-color: #a3a3a3 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  * {
+    animation: none !important;
+    caret-color: transparent !important;
+    scrollbar-width: none !important;
+    print-color-adjust: economy;
+    -webkit-print-color-adjust: economy;
+  }
+
+  input {
+    border: 1px solid #777 !important;
+    color: #171717 !important;
+  }
+
+  section,
+  article {
+    break-inside: avoid;
+  }
+}

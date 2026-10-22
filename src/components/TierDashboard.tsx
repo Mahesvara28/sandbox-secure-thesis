@@ -24,6 +24,7 @@ import {
   QuizModule,
   type Question
 } from './QuizModule';
+import { CommandFieldGuide } from './CommandFieldGuide';
 
 interface TierDashboardProps {
   tierName: Tier;
@@ -65,6 +66,7 @@ type Stage =
   | 'missions'
   | 'finaltest'
   | 'complete'
+  | 'review-select'
   | 'review';
 
 export const TierDashboard = ({
@@ -77,6 +79,8 @@ export const TierDashboard = ({
   completedMissions,
   userScores
 }: TierDashboardProps) => {
+
+  const [showCommandGuide, setShowCommandGuide] = useState(false);
 
   const tierMissions: Mission[] =
     MISSIONS.filter(
@@ -120,6 +124,24 @@ export const TierDashboard = ({
     null
   );
 
+  const [reviewAssessment, setReviewAssessment] = useState<'pre' | 'post'>('post');
+  const [answerKeyOnly, setAnswerKeyOnly] = useState(false);
+  const [reviewReturnStage, setReviewReturnStage] = useState<'missions' | 'complete'>('complete');
+
+  const openAnswerKey = (assessment: 'pre' | 'post', returnStage: 'missions' | 'complete') => {
+    setReviewAssessment(assessment);
+    setAnswerKeyOnly(true);
+    setReviewReturnStage(returnStage);
+    setStage('review');
+  };
+
+  const openPostAnswerReview = () => {
+    setReviewAssessment('post');
+    setAnswerKeyOnly(false);
+    setReviewReturnStage('complete');
+    setStage('review');
+  };
+
   const completedCount =
     tierMissions.filter(
       mission =>
@@ -147,7 +169,7 @@ export const TierDashboard = ({
     return (
       <div className="h-full overflow-y-auto p-6">
 
-        <div className="max-w-5xl mx-auto">
+        <div className="mx-auto w-full max-w-[1320px]">
 
           <button
             onClick={onExit}
@@ -248,6 +270,14 @@ export const TierDashboard = ({
               </button>
 
               <button
+                onClick={() => setShowCommandGuide(true)}
+                className="border border-cyan-700/60 px-6 py-3 text-xs font-bold uppercase text-cyan-400 hover:border-cyan-400 hover:bg-cyan-950/20"
+              >
+                <BookOpen size={14} className="mr-2 inline" />
+                Command Field Guide
+              </button>
+
+              <button
                 onClick={() =>
                   setStage(
                     'pretest'
@@ -260,6 +290,8 @@ export const TierDashboard = ({
               </button>
 
             </div>
+
+            {showCommandGuide && <CommandFieldGuide tier={tierName} onClose={() => setShowCommandGuide(false)} />}
 
           </div>
 
@@ -315,7 +347,7 @@ export const TierDashboard = ({
     return (
       <div className="h-full overflow-y-auto p-6">
 
-        <div className="max-w-5xl mx-auto">
+        <div className="mx-auto w-full max-w-[1320px]">
 
           <button
             onClick={onExit}
@@ -345,6 +377,7 @@ export const TierDashboard = ({
 
               </div>
 
+              <div className="flex flex-col gap-2">
               <div className="border border-green-500/20 p-4 text-center">
 
                 <p className="text-[10px] text-green-700">
@@ -357,10 +390,24 @@ export const TierDashboard = ({
                 </p>
 
               </div>
+              <button onClick={() => setShowCommandGuide(true)} className="border border-cyan-700/60 px-4 py-3 text-xs font-bold uppercase text-cyan-400 hover:border-cyan-400 hover:bg-cyan-950/20">
+                <BookOpen size={14} className="mr-2 inline" /> Command Field Guide
+              </button>
+              {savedTierScore && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => openAnswerKey('pre', 'missions')} className="border border-green-800 px-3 py-2 text-[10px] font-bold uppercase text-green-400 hover:border-green-400">Pre-Test Answers</button>
+                  {savedTierScore.finalScore !== undefined && (
+                    <button onClick={() => openAnswerKey('post', 'missions')} className="border border-green-800 px-3 py-2 text-[10px] font-bold uppercase text-green-400 hover:border-green-400">Post-Test Answers</button>
+                  )}
+                </div>
+              )}
+              </div>
 
             </div>
 
           </div>
+
+          {showCommandGuide && <CommandFieldGuide tier={tierName} onClose={() => setShowCommandGuide(false)} />}
 
           <div className="space-y-4">
 
@@ -537,9 +584,7 @@ export const TierDashboard = ({
         questions={
           postTestQuestions
         }
-        showReviewAfterComplete={
-          true
-        }
+        continueLabel="Choose Review"
         onComplete={(
           score,
           total,
@@ -558,14 +603,10 @@ export const TierDashboard = ({
 
           setFinalScore(safeScore);
 
-          // Save the score only when the 70% pass mark is reached
-          if (total > 0 && (safeScore / total) * 100 >= 70) {
-            onComplete(safeScore, total);
-          }
+          // Keep every attempt so learners can compare assessment progress.
+          onComplete(safeScore, total);
         }}
-        onContinueAfterComplete={() =>
-          setStage('complete')
-        }
+        onContinueAfterComplete={() => setStage('review-select')}
         onExit={() =>
           setStage('missions')
         }
@@ -574,24 +615,46 @@ export const TierDashboard = ({
   }
 
   if (stage === 'review') {
+    const reviewQuestions = reviewAssessment === 'pre' ? preTestQuestions : postTestQuestions;
     return (
       <QuizModule
-        title={`${tierName} Post-Assessment`}
-        questions={
-          postTestQuestions
-        }
-        reviewAnswers={
-          finalAnswers ?? undefined
-        }
-        continueLabel="Back to Results"
+        title={`${tierName} ${reviewAssessment === 'pre' ? 'Pre-Assessment' : 'Post-Assessment'}`}
+        questions={reviewQuestions}
+        reviewAnswers={answerKeyOnly ? Array<(number | null)>(reviewQuestions.length).fill(null) : reviewAssessment === 'post' ? finalAnswers ?? undefined : undefined}
+        continueLabel={reviewReturnStage === 'missions' ? 'Back to Missions' : 'Back to Review Options'}
         onComplete={() => {}}
-        onContinueAfterComplete={() =>
-          setStage('complete')
-        }
-        onExit={() =>
-          setStage('complete')
-        }
+        onContinueAfterComplete={() => setStage(reviewReturnStage)}
+        onExit={() => setStage(reviewReturnStage)}
       />
+    );
+  }
+
+  if (stage === 'review-select') {
+    return (
+      <div className="h-full overflow-y-auto p-6">
+        <div className="mx-auto w-full max-w-3xl border border-green-500/30 bg-black/70 p-6 sm:p-8">
+          <button onClick={() => setStage('complete')} className="mb-6 text-xs text-green-600 hover:text-green-300">← BACK TO RESULTS</button>
+          <p className="text-xs tracking-widest text-green-700">ASSESSMENT REVIEW</p>
+          <h1 className="mt-2 text-3xl font-black text-green-300">Choose an answer review</h1>
+          <p className="mt-3 text-sm leading-6 text-green-600">Review your post-assessment choices or open the correct-answer guide for either assessment.</p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            {finalAnswers && (
+              <button onClick={openPostAnswerReview} className="border border-cyan-700/60 p-4 text-left hover:border-cyan-400">
+                <span className="block text-sm font-bold text-cyan-300">Review my post-test answers</span>
+                <span className="mt-1 block text-xs text-green-700">See your selections, correct answers, and explanations.</span>
+              </button>
+            )}
+            <button onClick={() => openAnswerKey('post', 'complete')} className="border border-green-800 p-4 text-left hover:border-green-400">
+              <span className="block text-sm font-bold text-green-300">Post-test answer key</span>
+              <span className="mt-1 block text-xs text-green-700">View every correct answer and its explanation.</span>
+            </button>
+            <button onClick={() => openAnswerKey('pre', 'complete')} className="border border-green-800 p-4 text-left hover:border-green-400">
+              <span className="block text-sm font-bold text-green-300">Pre-test answer key</span>
+              <span className="mt-1 block text-xs text-green-700">Review the foundation questions and correct answers.</span>
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
