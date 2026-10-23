@@ -89,14 +89,15 @@ export const HintModal = ({ show, onClose, hints, onLevelShown }: { show: boolea
 export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort }: { show: boolean; mission: Mission | null; onStart: () => void; onStartUntimed?: () => void; onAbort: () => void }) => {
   if (!show || !mission) return null;
   return (
-    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-      <div className="border-2 border-green-500 bg-black max-w-2xl w-full shadow-[0_0_50px_rgba(34,197,94,0.3)]">
-        <div className="border-b border-green-900 p-6 bg-green-950/20">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 p-3 sm:p-4">
+      <div className="flex min-h-full items-center justify-center">
+      <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col border-2 border-green-500 bg-black shadow-[0_0_50px_rgba(34,197,94,0.3)] sm:max-h-[calc(100dvh-2rem)]">
+        <div className="shrink-0 border-b border-green-900 bg-green-950/20 p-4 sm:p-6">
           <div className="flex items-center gap-3 mb-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div><span className="text-xs text-green-500 uppercase tracking-wider">Mission Briefing</span></div>
           <h2 className="text-2xl font-black text-white uppercase">{mission.title}</h2>
           <p className="text-xs text-green-600 mt-1">{mission.tier} TIER</p>
         </div>
-        <div className="p-6 space-y-6">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:space-y-6 sm:p-6">
           <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Scenario</h3><p className="text-green-400 text-sm italic border-l-2 border-green-700 pl-3">"{mission.scenario}"</p></div>
           <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Learning Goal</h3><p className="text-white text-sm">{mission.learningGoal}</p><p className="text-green-600 text-xs mt-2">{mission.briefing.concept}</p></div>
           {mission.primer && <section className="border border-cyan-800 bg-cyan-950/20 p-4" aria-label="Before you begin concept primer">
@@ -109,11 +110,12 @@ export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort 
           <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Commands You'll Use</h3><div className="space-y-2">{mission.briefing.commands.map((cmd, i) => (<div key={i} className="bg-green-950/30 border border-green-900 p-2 font-mono text-xs"><span className="text-green-400">{cmd}</span></div>))}</div></div>
           <div className="border border-yellow-700 bg-yellow-950/20 p-3"><h3 className="text-xs font-bold text-yellow-600 uppercase mb-1">Objective</h3><p className="text-yellow-400 text-sm">{mission.briefing.objective}</p></div>
         </div>
-        <div className="border-t border-green-900 p-4 flex flex-col gap-3 sm:flex-row">
+        <div className="shrink-0 border-t border-green-900 bg-black p-3 sm:p-4 flex flex-col gap-3 sm:flex-row">
           <button onClick={onAbort} className="flex-1 border border-red-900 text-red-500 py-3 text-xs font-bold uppercase hover:bg-red-900/20 transition-colors">Abort Mission</button>
           {mission.timerLimit > 0 && onStartUntimed && <button onClick={onStartUntimed} className="flex-1 border border-cyan-700 text-cyan-300 py-3 text-xs font-bold uppercase hover:bg-cyan-950/30 transition-colors">Practice untimed</button>}
           <button onClick={onStart} className="flex-1 border-2 border-green-500 bg-green-500 text-black py-3 text-xs font-black uppercase hover:bg-green-400 transition-colors">{mission.timerLimit > 0 ? 'Start challenge →' : 'Begin Mission →'}</button>
         </div>
+      </div>
       </div>
     </div>
   );

@@ -158,6 +158,13 @@ export const TierDashboard = ({
     completedCount ===
       tierMissions.length;
 
+  // Unlock the first unfinished mission in sequence. Using only the immediately
+  // preceding card can make progression confusing when saved progress contains
+  // gaps (for example, after bridge lessons have been added to a tier).
+  const firstIncompleteMissionIndex = tierMissions.findIndex(
+    mission => !completedMissions.includes(mission.id)
+  );
+
   const nextMission = tierMissions.find(mission => !completedMissions.includes(mission.id));
 
   const finalPercentage =
@@ -444,17 +451,9 @@ export const TierDashboard = ({
                     mission.id
                   );
 
-                const previousComplete =
-                  index === 0 ||
-                  completedMissions.includes(
-                    tierMissions[
-                      index - 1
-                    ]?.id
-                  );
-
                 const unlocked =
                   completed ||
-                  previousComplete;
+                  index === firstIncompleteMissionIndex;
 
                 return (
                   <div
@@ -524,6 +523,11 @@ export const TierDashboard = ({
                       <button
                         disabled={
                           !unlocked
+                        }
+                        title={
+                          !unlocked
+                            ? `Complete ${tierMissions[index - 1]?.title ?? 'the previous mission'} first.`
+                            : undefined
                         }
                         onClick={() =>
                           onStartMission(
