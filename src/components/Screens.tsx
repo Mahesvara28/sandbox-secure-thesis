@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { User as FirebaseUser } from 'firebase/auth';
+import { getMissionAttempts, getAssessmentAttempts } from '../Firebase';
 
 import {
   Terminal,
@@ -16,7 +17,6 @@ import {
   Activity,
   Wifi,
   Database,
-  Eye,
   BarChart3,
   HelpCircle,
   Lock
@@ -1353,6 +1353,7 @@ interface TerminalScreenProps {
   setHintText: (
     value: string | string[]
   ) => void;
+  onHintLevelShown: (level: number) => void;
 
   currentPath: string;
 
@@ -1370,6 +1371,8 @@ interface TerminalScreenProps {
   containedTarget: string;
   disabledService: string;
   removedPersistence: string[];
+  onCaseNotesChange: (update: (previous: string[]) => string[]) => void;
+  onCaseConfidenceChange: (confidence: string) => void;
 
   playSound: (
     type:
@@ -1391,12 +1394,15 @@ export const TerminalScreen = ({
   setShowHint,
   setShowMap,
   setHintText,
+  onHintLevelShown,
   currentPath,
   setCurrentPath,
   onMapAction,
   containedTarget,
   disabledService,
   removedPersistence,
+  onCaseNotesChange,
+  onCaseConfidenceChange,
   playSound
 }: TerminalScreenProps) => {
   const [command, setCommand] =
@@ -1413,11 +1419,18 @@ export const TerminalScreen = ({
   const [evidenceNotes, setEvidenceNotes] = useState<string[]>([]);
   const [terminatedPids, setTerminatedPids] = useState<string[]>([]);
   const [showCommandGuide, setShowCommandGuide] = useState(false);
+  const [showMissionPrimer, setShowMissionPrimer] = useState(false);
 
   const currentStep =
     activeMission.steps[
       questStep
     ];
+  const isCertificationMission = activeMission.id.startsWith('m') || activeMission.id.startsWith('bridge-');
+
+  const recordEvidenceNote = (note: string) => {
+    setEvidenceNotes(previous => previous.includes(note) ? previous : [...previous, note]);
+    onCaseNotesChange(previous => previous.includes(note) ? previous : [...previous, note]);
+  };
 
   const inspectEvidence = (id: string) => {
     setInspectedEvidence(previous => previous.includes(id) ? previous : [...previous, id]);
@@ -1444,6 +1457,7 @@ export const TerminalScreen = ({
     const logTime = (row: string) => row.match(/(?:\d{2}:){2}\d{2}/)?.[0] ?? '';
 
     if (name === 'help') return '';
+    if (name === 'choose') return '[DECISION] Choice submitted for evidence review.';
     if (name === 'inspect') {
       const requestedId = args.join(' ').toLowerCase();
       const evidence = activeMission.evidence?.find(item =>
@@ -1470,6 +1484,7 @@ export const TerminalScreen = ({
     }
     if (name === 'cat') {
       const path = args[0] ?? '';
+      if (activeMission.id === 'bridge-web-log' && path.endsWith('access.log')) return MOCK_FILES['/var/log/apache2/bridge-access.log'];
       if (path === '~/.ssh/authorized_keys' || path === '/home/operator/.ssh/authorized_keys') {
         return removedPersistence.includes('ssh-key')
           ? 'ssh-ed25519 AAAA... operator@workstation\nssh-ed25519 AAAA... backup-admin@secure-host'
@@ -1523,7 +1538,8 @@ export const TerminalScreen = ({
     }
     if (name === 'status') {
       const hasUnexpectedListener = ['m5', 'm9'].includes(activeMission.id);
-      return `=== SIMULATED NETWORK STATUS ===\nHost: sandbox-server · 192.168.1.10\nSSH 22/tcp: listening\nHTTP 80/tcp: listening\n${hasUnexpectedListener ? `Unknown 4444/tcp: ${disabledService === '4444' ? 'disabled' : 'listening (not in baseline)'}\n` : ''}Source ${containedTarget || '198.51.100.23'}: ${containedTarget ? 'contained in this scenario' : 'under review'}\nNo real network was contacted.`;
+      const connectionRecord = activeMission.id === 'm5' ? '\nNETFLOW: TCP 4444 peer 198.51.100.23 observed at 10:14 · source not yet verified' : '';
+      return `=== SIMULATED NETWORK STATUS ===\nHost: sandbox-server · 192.168.1.10\nSSH 22/tcp: listening\nHTTP 80/tcp: listening\n${hasUnexpectedListener ? `Unknown 4444/tcp: ${disabledService === '4444' ? 'disabled' : 'listening (not in baseline)'}\n` : ''}Source ${containedTarget || '198.51.100.23'}: ${containedTarget ? 'contained in this scenario' : 'under review'}${connectionRecord}\nNo real network was contacted.`;
     }
     if (name === 'ping') return `PING ${args[0] ?? '127.0.0.1'} (simulated)\n3 packets transmitted, 3 received, 0% packet loss\nTraining result only; this does not contact a real host.`;
     if (name === 'nmap') {
@@ -1532,10 +1548,17 @@ export const TerminalScreen = ({
       return `Simulated scan report for ${target}\nPORT     STATE     SERVICE\n22/tcp   open      ssh${isLocal ? '\n80/tcp   open      http' : ''}${isLocal && ['m5', 'm9'].includes(activeMission.id) ? `\n4444/tcp ${disabledService === '4444' ? 'closed' : 'open'}      unknown${disabledService === '4444' ? ' (disabled in simulation)' : ''}` : ''}\nNo packets were sent to a real host.`;
     }
     if (name === 'ps') {
+      if (args[0] === '-p' && args[1] === '3110') return 'PID 3110 · backup-user · /usr/bin/backup · RUNNING · scheduled maintenance job (simulated)';
       if (args[0] === '-p') return terminatedPids.includes(args[1] ?? '') ? `PID ${args[1]}: no such process (stopped in simulation)` : `PID ${args[1] ?? 'unknown'} · root · /tmp/.cache/cryptominer.exe · RUNNING (simulated)`;
-      return `USER       PID   %CPU  COMMAND\nroot         1    0.0   /sbin/init\nroot       842    0.1   /usr/sbin/sshd\nroot      1477    0.3   /usr/sbin/apache2\n${terminatedPids.includes('2214') ? '' : 'root      2214   87.4   /tmp/.cache/cryptominer.exe'}`;
+      if (activeMission.id === 'bridge-process') return `USER       PID   %CPU  COMMAND\nroot         1    0.0   /sbin/init\nroot       842    0.1   /usr/sbin/sshd\nbackup-user 3110   87.4   /usr/bin/backup --nightly (approved schedule)\n${terminatedPids.includes('2214') ? '' : 'root      2214   18.2   /tmp/.cache/worker'}`;
+      if (activeMission.id === 'm4') return `USER       PID   %CPU  COMMAND\nroot         1    0.0   /sbin/init\nbackup-user 3110   87.4   /usr/bin/backup --nightly (approved schedule)\n${terminatedPids.includes('2214') ? '' : 'root      2214   18.2   /tmp/.cache/cryptominer.exe'}`;
+      const approvedBackup = activeMission.id === 'm9' ? 'backup-user 3110   87.4   /usr/bin/backup --nightly (approved schedule)\n' : '';
+      return `USER       PID   %CPU  COMMAND\nroot         1    0.0   /sbin/init\nroot       842    0.1   /usr/sbin/sshd\nroot      1477    0.3   /usr/sbin/apache2\n${approvedBackup}${terminatedPids.includes('2214') ? '' : 'root      2214   18.2   /tmp/.cache/cryptominer.exe'}`;
     }
-    if (name === 'ss' || name === 'netstat') return `State  Local Address:Port  Process\nLISTEN 0.0.0.0:22       sshd\nLISTEN 0.0.0.0:80       apache2\n${disabledService === '4444' ? '' : 'LISTEN 0.0.0.0:4444     unknown (not in approved baseline)'}\nAll entries are simulated.`;
+    if (name === 'ss' || name === 'netstat') {
+      if (activeMission.id === 'bridge-listener') return 'State  Local Address:Port  Process\nLISTEN 0.0.0.0:22       sshd\nLISTEN 0.0.0.0:443      https\nLISTEN 0.0.0.0:9443     unknown\nAll entries are simulated.';
+      return `State  Local Address:Port  Process\nLISTEN 0.0.0.0:22       sshd\nLISTEN 0.0.0.0:80       apache2\n${disabledService === '4444' ? '' : 'LISTEN 0.0.0.0:4444     unknown (not in approved baseline)'}\nAll entries are simulated.`;
+    }
     if (name === 'find') {
       const targetIndex = args.indexOf('-name');
       const target = targetIndex >= 0 ? args[targetIndex + 1] : '';
@@ -1554,18 +1577,19 @@ export const TerminalScreen = ({
     }
     if (name === 'preserve') {
       const evidence = args.join(' ') || 'current investigation output';
-      setEvidenceNotes(previous => previous.includes(evidence) ? previous : [...previous, evidence]);
+      recordEvidenceNote(evidence);
       return `[EVIDENCE SAVED] ${evidence}\nA simulated read-only case note was recorded before response. Original source logs remain unchanged.`;
     }
     if (name === 'record-evidence') {
       const evidence = args.join(' ');
       if (!evidence) return 'Usage: record-evidence [source] [observed fact]';
-      setEvidenceNotes(previous => [...previous, evidence]);
+      recordEvidenceNote(evidence);
       return `[CASE NOTE ${evidenceNotes.length + 1}] Observation recorded: ${evidence}\nKeep observations factual; put explanations in your assessment.`;
     }
     if (name === 'assess') {
       const confidence = args[0]?.toLowerCase();
       if (!confidence || !['low', 'medium', 'high'].includes(confidence)) return 'Usage: assess [low|medium|high] [supported finding]';
+      onCaseConfidenceChange(confidence);
       const notes = evidenceNotes.length ? evidenceNotes.map((note, index) => `  ${index + 1}. ${note}`).join('\n') : '  No evidence notes recorded.';
       return `Assessment recorded · Confidence: ${confidence.toUpperCase()}\nFinding: ${args.slice(1).join(' ') || 'no finding supplied'}\nEvidence notes (${evidenceNotes.length}):\n${notes}\nConfidence describes support for this conclusion, not certainty about identity or intent.`;
     }
@@ -1574,11 +1598,12 @@ export const TerminalScreen = ({
     if (name === 'kill') {
       const pid = args[0] ?? '';
       const isApprovedStep = currentStep?.cmd.toLowerCase() === line.trim().toLowerCase();
+      if (pid === '3110' && ['m4', 'm9', 'bridge-process'].includes(activeMission.id)) return '[ACTION NOT APPLIED] PID 3110 is the approved scheduled backup in this scenario. High CPU alone does not justify stopping it.';
       if (!isApprovedStep) return '[ACTION NOT APPLIED] Inspect and preserve evidence before stopping a process.';
       if (pid === '2214') setTerminatedPids(previous => previous.includes(pid) ? previous : [...previous, pid]);
       return `PID ${pid || '(missing PID)'} ${pid === '2214' ? 'stopped in the training simulation' : 'is not a target in this scenario'}. Verify with ps -p ${pid || '[PID]'}. No real process was stopped.`;
     }
-    if (name === 'crontab') return `# Simulated scheduled tasks\n0 * * * * /usr/bin/logrotate\n30 2 * * * /usr/bin/backup-system\n${removedPersistence.includes('cron') ? '' : '*/5 * * * * /tmp/.cache/update.sh\n'}${removedPersistence.includes('cron') ? 'The suspicious temporary-directory task is no longer listed.' : 'The temporary-directory script is not in the approved baseline.'}`;
+    if (name === 'crontab') return `# Simulated scheduled tasks\n# Approved system maintenance\n0 * * * * /usr/bin/logrotate\n# Approved nightly backup\n30 2 * * * /usr/bin/backup-system\n${removedPersistence.includes('cron') ? '' : '# Not in the approved task baseline\n*/5 * * * * /tmp/.cache/update.sh\n'}${removedPersistence.includes('cron') ? 'The suspicious temporary-directory task is no longer listed.' : 'The temporary-directory script is not in the approved baseline.'}`;
     if (name === 'remove-persistence') return currentStep?.cmd.toLowerCase() === line.trim().toLowerCase() ? `[PERSISTENCE SIMULATION] ${args[0] ?? '(missing mechanism)'} removed from the case model.\nVerify by reviewing the scheduled task or authorized-key list. No real account or system file was changed.` : '[ACTION NOT APPLIED] Preserve and review evidence before removing a persistence mechanism.';
     if (name === 'report') return `Case finding recorded: ${args.join(' ') || '(empty)'}\nUse observed facts and avoid claiming an impact the records do not establish.`;
     if (name === 'clear') { setHistory([]); return ''; }
@@ -1686,12 +1711,19 @@ export const TerminalScreen = ({
           'record-evidence': 'Write down a source and an observable fact before adding your interpretation.',
           assess: 'Choose confidence based on evidence quality and gaps; avoid claiming certainty about identity.'
         };
-        const hints = Array.isArray(currentStep.hint)
-          ? currentStep.hint
-          : [firstHint[command] ?? 'Break the objective into the evidence you need, the action to take, and the result to verify.', currentStep.hint, `Suggested command: ${currentStep.cmd}`];
+        const authoredHints = Array.isArray(currentStep.hint) ? currentStep.hint : [currentStep.hint];
+        const conceptNudge = firstHint[command] ?? 'Start with the evidence the objective asks you to compare, then decide what it supports.';
+        const commandFamily = command === 'grep' ? 'grep' : command;
+        const hints = activeMission.difficulty === 'guided'
+          ? [conceptNudge, ...authoredHints]
+          : activeMission.difficulty === 'standard'
+            ? [conceptNudge, `Command family: ${commandFamily}. Check the field guide for its purpose and limits.`, `Suggested format: ${currentStep.cmd}`]
+            : [conceptNudge, `Use the ${commandFamily} command family to examine the evidence.`, `Command: ${commandFamily}. Choose the target and details from the evidence you collected.`];
         setHintText(
           hints
         );
+
+        onHintLevelShown(1);
 
         setShowHint(
           true
@@ -1851,8 +1883,30 @@ export const TerminalScreen = ({
               <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min(100, (questStep / activeMission.steps.length) * 100)}%` }} />
             </div>
             <p className="mt-2 text-[10px] text-green-600">{questStep} of {activeMission.steps.length} objectives complete</p>
+            {currentStep?.requiredCommands && <div className="mt-3 border-t border-green-900/60 pt-3">
+              <p className="text-[9px] uppercase tracking-widest text-cyan-500">Run these checks in any order</p>
+              <ul className="mt-2 space-y-1 font-mono text-[10px] text-cyan-200">{currentStep.requiredCommands.map(check => <li key={check}>› {check}</li>)}</ul>
+            </div>}
 
           </div>
+
+          {currentStep?.decision && <div className="border border-cyan-700/40 bg-[#071014] p-4" aria-label="Evidence based decision">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-400">Evidence decision</p>
+            <p className="mt-2 text-sm leading-5 text-gray-200">{currentStep.decision.prompt}</p>
+            <div className="mt-3 space-y-2">
+              {currentStep.decision.choices.map(choice => <button
+                key={choice.id}
+                type="button"
+                onClick={() => {
+                  const commandLine = `choose ${choice.id}`;
+                  setHistory(previous => [...previous, `operator@secure:${currentPath}$ ${commandLine}`]);
+                  playSound('keystroke');
+                  handleCommand(commandLine);
+                }}
+                className="w-full border border-cyan-900/70 bg-black px-3 py-2 text-left text-xs leading-5 text-cyan-100 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+              >{choice.label}</button>)}
+            </div>
+          </div>}
 
           {activeMission.evidence && activeMission.evidence.length > 0 && (
             <div className="border border-blue-500/20 bg-[#071014] p-4">
@@ -1904,7 +1958,7 @@ export const TerminalScreen = ({
 
           </div>
 
-          <div className={`grid ${activeMission.id.startsWith('m') ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2`}>
+          <div className={`grid ${isCertificationMission ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2`}>
 
             <button
               onClick={
@@ -1942,12 +1996,20 @@ export const TerminalScreen = ({
               HELP
             </button>
 
-            {activeMission.id.startsWith('m') && <button
+            {isCertificationMission && <button
               onClick={() => setShowCommandGuide(true)}
               className="border border-cyan-700/50 bg-[#071014] p-3 text-xs text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
               <BookOpen size={16} className="mx-auto mb-1" />
               COMMAND GUIDE
+            </button>}
+
+            {activeMission.primer && <button
+              onClick={() => setShowMissionPrimer(true)}
+              className="border border-cyan-700/50 bg-[#071014] p-3 text-xs text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+            >
+              <BookOpen size={16} className="mx-auto mb-1" />
+              GLOSSARY
             </button>}
 
           </div>
@@ -2054,6 +2116,17 @@ export const TerminalScreen = ({
 
       {showCommandGuide && <CommandFieldGuide tier={activeMission.tier} onClose={() => setShowCommandGuide(false)} />}
 
+      {showMissionPrimer && activeMission.primer && <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/85 p-4" role="dialog" aria-modal="true" aria-labelledby="mission-primer-title" onClick={() => setShowMissionPrimer(false)}>
+        <section className="w-full max-w-xl border border-cyan-700 bg-[#050a08] p-5 shadow-[0_0_35px_rgba(34,211,238,0.15)]" onClick={event => event.stopPropagation()}>
+          <p className="text-[10px] uppercase tracking-widest text-cyan-600">Mission glossary</p>
+          <h2 id="mission-primer-title" className="mt-1 text-xl font-bold text-cyan-200">{activeMission.briefing.concept}</h2>
+          <p className="mt-4 text-sm leading-6 text-gray-200">{activeMission.primer.definition}</p>
+          <p className="mt-3 text-xs leading-5 text-cyan-200"><strong>Analogy:</strong> {activeMission.primer.analogy}</p>
+          {activeMission.primer.example && <pre className="mt-3 whitespace-pre-wrap border-l-2 border-cyan-700 bg-black/50 p-3 font-mono text-xs leading-5 text-green-200">{activeMission.primer.example}</pre>}
+          <button onClick={() => setShowMissionPrimer(false)} className="mt-4 w-full border border-cyan-700 px-4 py-2 text-xs font-bold uppercase text-cyan-300 hover:bg-cyan-950/30">Return to mission</button>
+        </section>
+      </div>}
+
     </div>
   );
 };
@@ -2066,16 +2139,13 @@ interface ProfileScreenProps {
     TierScoreLike
   >;
 
-  setShowEval?: (
-    value: boolean
-  ) => void;
 }
 
 export const ProfileScreen = ({
   user,
-  userScores,
-  setShowEval
+  userScores
 }: ProfileScreenProps) => {
+  const [exportMessage, setExportMessage] = useState('');
   const scoreEntries =
     Object.values(
       userScores
@@ -2113,6 +2183,72 @@ export const ProfileScreen = ({
             100
         )
       : 0;
+
+  const exportLearningData = async () => {
+    if (!user) return;
+    try {
+      const [attempts, assessmentAttempts] = await Promise.all([getMissionAttempts(user.uid), getAssessmentAttempts(user.uid)]);
+      if (!attempts.length && !assessmentAttempts.length) {
+        setExportMessage('No mission or assessment attempt records are available yet.');
+        return;
+      }
+      const escapeCsv = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const downloadCsv = (filename: string, content: string) => {
+        const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+      };
+      if (attempts.length) {
+        const headers = ['missionId', 'missionTitle', 'tier', 'concept', 'outcome', 'startedAt', 'completedAt', 'totalTimeSeconds', 'hintsOpened', 'hintLevelsShown', 'timePerStepSeconds', 'wrongCommandsByStep', 'wrongDecisionCount'];
+        const rows = attempts.map(attempt => headers.map(header => escapeCsv(typeof attempt[header as keyof typeof attempt] === 'object' ? JSON.stringify(attempt[header as keyof typeof attempt]) : attempt[header as keyof typeof attempt])).join(','));
+        const groups = new Map<string, { missionTitle: string; tier: string; concept: string; attempts: number; completed: number; totalSeconds: number; hints: number; wrongCommands: number; wrongDecisions: number }>();
+        attempts.forEach(attempt => {
+          const summary = groups.get(attempt.missionId) ?? { missionTitle: attempt.missionTitle, tier: attempt.tier, concept: attempt.concept, attempts: 0, completed: 0, totalSeconds: 0, hints: 0, wrongCommands: 0, wrongDecisions: 0 };
+          summary.attempts += 1;
+          summary.completed += attempt.outcome === 'completed' ? 1 : 0;
+          summary.totalSeconds += attempt.totalTimeSeconds;
+          summary.hints += attempt.hintsOpened;
+          summary.wrongCommands += Object.values(attempt.wrongCommandsByStep).reduce((sum, count) => sum + count, 0);
+          summary.wrongDecisions += attempt.wrongDecisionCount;
+          groups.set(attempt.missionId, summary);
+        });
+        const summaryHeaders = ['missionId', 'missionTitle', 'tier', 'concept', 'attemptCount', 'completionRatePercent', 'averageTimeSeconds', 'averageHintsOpened', 'averageWrongCommands', 'averageWrongDecisions'];
+        const summaryRows = [...groups.entries()].map(([missionId, summary]) => [missionId, summary.missionTitle, summary.tier, summary.concept, summary.attempts, Math.round((summary.completed / summary.attempts) * 100), Math.round(summary.totalSeconds / summary.attempts), Number((summary.hints / summary.attempts).toFixed(2)), Number((summary.wrongCommands / summary.attempts).toFixed(2)), Number((summary.wrongDecisions / summary.attempts).toFixed(2))].map(escapeCsv).join(','));
+        downloadCsv('sandbox-secure-mission-summary.csv', [summaryHeaders.join(','), ...summaryRows].join('\r\n'));
+        downloadCsv('sandbox-secure-mission-attempts.csv', [headers.join(','), ...rows].join('\r\n'));
+      }
+      if (assessmentAttempts.length) {
+        const headers = ['tier', 'assessment', 'score', 'total', 'attemptNumber', 'timestamp'];
+        const rows = assessmentAttempts.map(attempt => headers.map(header => escapeCsv(attempt[header as keyof typeof attempt])).join(','));
+        const groups = new Map<string, { count: number; scoreSum: number; totalSum: number; firstScore: number | null; bestScore: number }>();
+        assessmentAttempts.forEach(attempt => {
+          const key = `${attempt.tier}-${attempt.assessment}`;
+          const summary = groups.get(key) ?? { count: 0, scoreSum: 0, totalSum: 0, firstScore: null, bestScore: 0 };
+          summary.count += 1;
+          summary.scoreSum += attempt.score;
+          summary.totalSum += attempt.total;
+          if (attempt.attemptNumber === 1) summary.firstScore = attempt.score;
+          summary.bestScore = Math.max(summary.bestScore, attempt.score);
+          groups.set(key, summary);
+        });
+        const summaryHeaders = ['tier', 'assessment', 'attemptCount', 'firstAttemptScore', 'bestScore', 'averagePercent'];
+        const summaryRows = [...groups.entries()].map(([key, summary]) => {
+          const [tier, assessment] = key.split('-');
+          const averagePercent = summary.totalSum ? Math.round((summary.scoreSum / summary.totalSum) * 100) : 0;
+          return [tier, assessment, summary.count, summary.firstScore, summary.bestScore, averagePercent].map(escapeCsv).join(',');
+        });
+        downloadCsv('sandbox-secure-assessment-summary.csv', [summaryHeaders.join(','), ...summaryRows].join('\r\n'));
+        downloadCsv('sandbox-secure-assessment-attempts.csv', [headers.join(','), ...rows].join('\r\n'));
+      }
+      setExportMessage(`Exported ${attempts.length} mission and ${assessmentAttempts.length} assessment attempts for this account.`);
+    } catch (error) {
+      console.error('Could not export mission data:', error);
+      setExportMessage('Export failed. Check Firestore access and try again.');
+    }
+  };
 
   return (
     <div className="mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
@@ -2152,6 +2288,11 @@ export const ProfileScreen = ({
 
         </div>
 
+      </section>
+
+      <section className="flex flex-col gap-3 border border-cyan-900/60 bg-[#071014] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><p className="text-xs font-bold uppercase tracking-widest text-cyan-300">Learning data</p><p className="mt-1 text-xs text-gray-400">Download mission and assessment summaries plus detailed attempt rows for this account as CSV.</p>{exportMessage && <p className="mt-2 text-xs text-cyan-200" role="status">{exportMessage}</p>}</div>
+        <button type="button" onClick={exportLearningData} className="border border-cyan-700 px-4 py-2 text-xs font-bold uppercase text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">Export my learning data</button>
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2289,48 +2430,6 @@ export const ProfileScreen = ({
         </div>
 
       </section>
-
-      {setShowEval && (
-        <section className="border border-green-500/20 bg-[#08100c] p-6">
-
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-
-            <div>
-
-              <div className="flex items-center gap-2">
-
-                <Eye
-                  size={18}
-                  className="text-green-400"
-                />
-
-                <h2 className="font-bold text-green-300">
-                  THESIS EVALUATION
-                </h2>
-
-              </div>
-
-              <p className="text-sm text-green-500/40 mt-2">
-                Evaluate the Sandbox Secure training experience.
-              </p>
-
-            </div>
-
-            <button
-              onClick={() =>
-                setShowEval(
-                  true
-                )
-              }
-              className="border border-green-500/30 px-5 py-3 text-xs text-green-400 hover:bg-green-500/10"
-            >
-              OPEN EVALUATION
-            </button>
-
-          </div>
-
-        </section>
-      )}
 
     </div>
   );

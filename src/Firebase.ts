@@ -12,7 +12,10 @@ import {
   getFirestore,
   doc,
   getDoc,
-  setDoc
+  setDoc,
+  addDoc,
+  collection,
+  getDocs
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -182,15 +185,9 @@ export const saveUserScore = async (
     typeof previous.finalScore ===
       "number"
       ? previous.finalScore
+      : previous && typeof previous.score === "number"
+        ? previous.score
       : undefined;
-
-  if (
-    previousFinalScore !==
-      undefined &&
-    previousFinalScore >= safeScore
-  ) {
-    return;
-  }
 
   const existingTierData =
     previous &&
@@ -198,18 +195,34 @@ export const saveUserScore = async (
       ? previous
       : {};
 
+  const attemptNumber = Number(existingTierData.finalAttemptCount ?? 0) + 1;
+  try {
+    await addDoc(collection(db, 'users', userId, 'assessmentAttempts'), {
+      tier,
+      assessment: 'post',
+      score: safeScore,
+      total: safeTotal,
+      attemptNumber,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Could not append post-test attempt record:', error);
+  }
+
   await setDoc(
     userRef,
     {
       scores: {
         [tier]: {
           ...existingTierData,
-          score: safeScore,
+          score: Math.max(previousFinalScore ?? 0, safeScore),
           total: safeTotal,
-          finalScore: safeScore,
+          finalScore: Math.max(previousFinalScore ?? 0, safeScore),
           finalTotal: safeTotal,
-          timestamp:
-            new Date().toISOString()
+          firstFinalScore: existingTierData.firstFinalScore ?? previousFinalScore ?? safeScore,
+          firstFinalTotal: existingTierData.firstFinalTotal ?? existingTierData.finalTotal ?? existingTierData.total ?? safeTotal,
+          finalAttemptCount: attemptNumber,
+          timestamp: new Date().toISOString()
         }
       }
     },
@@ -249,6 +262,20 @@ export const savePreTestScore = async (
       ? previous
       : {};
 
+  const attemptNumber = Number(existingTierData.preTestAttemptCount ?? 0) + 1;
+  try {
+    await addDoc(collection(db, 'users', userId, 'assessmentAttempts'), {
+      tier,
+      assessment: 'pre',
+      score: safeScore,
+      total: safeTotal,
+      attemptNumber,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Could not append pre-test attempt record:', error);
+  }
+
   await setDoc(
     userRef,
     {
@@ -259,6 +286,12 @@ export const savePreTestScore = async (
             safeScore,
           preTestTotal:
             safeTotal,
+          preTestFirstScore:
+            existingTierData.preTestFirstScore ?? existingTierData.preTestScore ?? safeScore,
+          preTestFirstTotal:
+            existingTierData.preTestFirstTotal ?? existingTierData.preTestTotal ?? safeTotal,
+          preTestAttemptCount:
+            attemptNumber,
           preTestTimestamp:
             new Date().toISOString()
         }
@@ -289,4 +322,45 @@ export const saveCompletedMissions = async (
 
     throw error;
   }
+};
+
+export interface MissionAttemptRecord {
+  missionId: string;
+  missionTitle: string;
+  tier: string;
+  concept: string;
+  outcome: 'completed' | 'timed_out';
+  startedAt: string;
+  completedAt: string;
+  totalTimeSeconds: number;
+  hintsOpened: number;
+  hintLevelsShown: number[];
+  timePerStepSeconds: Record<string, number>;
+  wrongCommandsByStep: Record<string, number>;
+  wrongDecisionCount: number;
+}
+
+// Store attempts in a subcollection so this additive telemetry never overwrites
+// existing score or completedMissions fields on users/{uid}.
+export const saveMissionAttempt = async (userId: string, attempt: MissionAttemptRecord) => {
+  await addDoc(collection(db, 'users', userId, 'missionAttempts'), attempt);
+};
+
+export const getMissionAttempts = async (userId: string): Promise<MissionAttemptRecord[]> => {
+  const snapshot = await getDocs(collection(db, 'users', userId, 'missionAttempts'));
+  return snapshot.docs.map(item => item.data() as MissionAttemptRecord);
+};
+
+export interface AssessmentAttemptRecord {
+  tier: string;
+  assessment: 'pre' | 'post';
+  score: number;
+  total: number;
+  attemptNumber: number;
+  timestamp: string;
+}
+
+export const getAssessmentAttempts = async (userId: string): Promise<AssessmentAttemptRecord[]> => {
+  const snapshot = await getDocs(collection(db, 'users', userId, 'assessmentAttempts'));
+  return snapshot.docs.map(item => item.data() as AssessmentAttemptRecord);
 };

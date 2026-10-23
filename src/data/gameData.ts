@@ -13,6 +13,18 @@ export interface MissionEvidence {
   command?: string;
 }
 
+export interface MissionPrimer {
+  definition: string;
+  analogy: string;
+  example?: string;
+}
+
+export interface MissionDecision {
+  prompt: string;
+  correctId: string;
+  choices: { id: string; label: string; feedback: string }[];
+}
+
 export interface Mission {
   id: string; title: string; tier: Tier; scenario: string; intro: string; timerLimit: number;
   category?: 'files' | 'network' | 'logs' | 'response';
@@ -20,7 +32,8 @@ export interface Mission {
   learningGoal: string;
   difficulty: 'guided' | 'standard' | 'advanced';
   topology: { label: string; address: string; role: string; status: string; linksTo?: string }[];
-  logs: string[]; target: string; steps: { desc: string; cmd: string; hint: string | string[]; target?: string; inspectEvidenceId?: string; }[];
+  logs: string[]; target: string; steps: { desc: string; cmd: string; hint: string | string[]; target?: string; inspectEvidenceId?: string; alternates?: string[]; decision?: MissionDecision; requiredCommands?: string[]; }[];
+  primer?: MissionPrimer;
   realWorld: string;
   briefing: { concept: string; commands: string[]; objective: string; };
   didYouKnow: string[];
@@ -279,6 +292,73 @@ export const TUTORIAL_MISSIONS: Mission[] = [
   }
 ];
 
+// Short, untimed bridge lessons at the start of the Intermediate certification path.
+export const BRIDGE_MISSIONS: Mission[] = [
+  {
+    id: 'bridge-process', title: 'Bridge 1: Programs in Motion', tier: 'INTERMEDIATE',
+    scenario: 'A monitoring alert reports high CPU use. One busy process is an approved backup job. Identify the process by its PID, owner, and path before deciding whether it is concerning.',
+    intro: 'HANDLER: A process is a program that is running. High CPU can be normal during scheduled work. Read the process list, inspect one PID, and distinguish the backup job from the item that needs review.',
+    timerLimit: 0, category: 'response', learningGoal: 'Read a process list and use a PID to inspect one running program.', difficulty: 'guided',
+    topology: [{ label: 'Training server', address: '10.20.0.30', role: 'Host whose processes are being reviewed', status: 'MONITORING' }],
+    logs: ['[MONITOR] CPU use increased during scheduled backup window.', '[INVENTORY] PID 3110: approved backup job.', '[PROCESS] PID 2214: executable under /tmp; owner and path need review.'], target: 'process',
+    primer: { definition: 'A process is a program that is running on a computer. A PID is the number the system uses to refer to one running program.', analogy: 'Think of a process as a worker and its PID as the worker’s badge number.', example: 'PID 3110 · backup-user · /usr/bin/backup → approved scheduled backup\nPID 2214 · root · /tmp/.cache/worker → needs investigation; its location is unusual, not proof of harm.' },
+    steps: [
+      { desc: 'List the running programs and compare their CPU use, owner, and path.', cmd: 'ps aux', hint: ['A process is a running program. Look at the PID, owner, and path together; CPU use alone is not enough.'] },
+      { desc: 'Identify the high-CPU process that the inventory says is approved scheduled work.', cmd: 'choose backup-pid-3110', hint: ['Use the owner and executable path to separate the approved backup from the other process.'], decision: { prompt: 'Which process is the approved backup job?', correctId: 'backup-pid-3110', choices: [
+        { id: 'backup-pid-3110', label: 'PID 3110 · backup-user · /usr/bin/backup', feedback: 'Correct. The owner, approved path, and schedule match the inventory. High CPU does not make this process malicious.' },
+        { id: 'review-pid-2214', label: 'PID 2214 · root · /tmp/.cache/worker', feedback: 'That process is the stronger lead for review because its path is unapproved. The backup job is PID 3110.' }
+      ] } },
+      { desc: 'Inspect PID 3110 to confirm its owner and executable path.', cmd: 'ps -p 3110', hint: ['Use the PID from the process list to focus on one program.', 'The backup job uses PID 3110.', 'Submit: ps -p 3110'] },
+      { desc: 'Record that the busy backup job is expected, while the other process still needs review.', cmd: 'report backup-is-expected-other-process-needs-review', hint: ['Compare the inspected owner and path with the inventory note.', 'High CPU can be legitimate; keep PID 2214 as a separate lead.', 'Submit: report backup-is-expected-other-process-needs-review'] }
+    ],
+    realWorld: 'Analysts use process IDs and executable paths to investigate running programs. Busy work can be legitimate, so compare it with schedules and approved software.',
+    briefing: { concept: 'Process and PID', commands: ['ps aux', 'ps -p [PID]', 'report [finding]'], objective: 'Identify a running program by its PID and context; do not stop anything in this lesson.' },
+    didYouKnow: ['A process list is a snapshot; a program may start or stop immediately afterward.']
+  },
+  {
+    id: 'bridge-listener', title: 'Bridge 2: Listening Services and Baselines', tier: 'INTERMEDIATE',
+    scenario: 'A server inventory lists the services expected on a training host. Compare the live simulated listener list with that baseline and report the difference without changing the system.',
+    intro: 'HANDLER: A listening service waits for network connections. A baseline is the approved list used for comparison. An unexpected listener is a reason to check, not proof of an attack.',
+    timerLimit: 0, category: 'network', learningGoal: 'Compare simulated listening services with an approved baseline.', difficulty: 'guided',
+    topology: [{ label: 'Training server', address: '10.20.0.31', role: 'Host in the approved service inventory', status: 'UNDER REVIEW' }],
+    logs: ['[BASELINE] Approved listeners: TCP 22 SSH, TCP 443 HTTPS.', '[OBSERVATION] Simulated listener list includes TCP 9443.', '[CHANGE RECORD] No change ticket is attached to TCP 9443.'], target: 'listener-baseline',
+    primer: { definition: 'A listening service is a program waiting for network connections on a port. A baseline lists the services the organization expects to be there.', analogy: 'The baseline is the guest list; a listener not on it should be checked with its owner.', example: 'ss/netstat: 22/tcp ssh, 443/tcp https, 9443/tcp unknown\nApproved list: 22/tcp ssh, 443/tcp https\nDifference: 9443 needs review; the comparison alone does not prove misuse.' },
+    steps: [
+      { desc: 'List the services waiting for connections on the simulated host.', cmd: 'ss -tuln', hint: ['A listening service waits for connections. Read the port and service columns, then compare them with the approved list.'] },
+      { desc: 'Read the approved service baseline.', cmd: 'cat /etc/training/approved-services.txt', hint: ['A baseline is the reference for what should normally be present.', 'The approved list is in /etc/training/approved-services.txt.', 'Submit: cat /etc/training/approved-services.txt'] },
+      { desc: 'Select the observed listener that is not in the approved baseline.', cmd: 'choose tcp-9443', hint: ['Compare the two lists and identify the entry that appears only in the observation.'], decision: { prompt: 'Which listener differs from the baseline?', correctId: 'tcp-9443', choices: [
+        { id: 'tcp-22', label: 'TCP 22 · SSH', feedback: 'TCP 22 is listed in the approved baseline. It is an expected service in this case.' },
+        { id: 'tcp-443', label: 'TCP 443 · HTTPS', feedback: 'TCP 443 is listed in the approved baseline. It is an expected service in this case.' },
+        { id: 'tcp-9443', label: 'TCP 9443 · unknown', feedback: 'Correct. The listener appears in the observation but not the baseline. That difference needs validation, not an immediate accusation.' }
+      ] } },
+      { desc: 'Report the listener that is missing from the baseline, without calling it a confirmed attack.', cmd: 'report tcp-9443-needs-review', hint: ['Compare the two lists and find the port that appears in only one.', 'An unexpected listener needs owner and change-record validation.', 'Submit: report tcp-9443-needs-review'] }
+    ],
+    realWorld: 'Defenders compare observed listeners with an approved service inventory and change records. A difference is a lead for investigation, not a verdict.',
+    briefing: { concept: 'Listeners and baselines', commands: ['ss -tuln', 'netstat -tuln', 'cat [file]', 'report [finding]'], objective: 'Compare observed listeners with the approved baseline and document one difference.' },
+    didYouKnow: ['Port numbers are conventions; service identity should be confirmed from context, not assumed from the number alone.']
+  },
+  {
+    id: 'bridge-web-log', title: 'Bridge 3: Reading a Web Request', tier: 'INTERMEDIATE',
+    scenario: 'A web server owner asks you to review two access-log entries: one ordinary health check and one unusual request for a hidden configuration path. Determine what the records show and what they do not prove.',
+    intro: 'HANDLER: A web access log records requests and responses. An unusual path may deserve follow-up, but a request alone does not establish that data was accessed.',
+    timerLimit: 0, category: 'logs', learningGoal: 'Read the fields in a web access-log line and distinguish unusual activity from confirmed impact.', difficulty: 'guided',
+    topology: [{ label: 'Training web server', address: '10.20.0.32', role: 'Source of simulated access records', status: 'LOGS AVAILABLE' }],
+    logs: ['[ACCESS] 192.0.2.24 - - [23/Oct/2026:10:02:11] "GET /health HTTP/1.1" 200', '[ACCESS] 203.0.113.44 - - [23/Oct/2026:10:03:08] "GET /.env HTTP/1.1" 404'], target: 'access-log',
+    primer: { definition: 'A web access log records who made a request, when it arrived, what method and path were requested, and the response status.', analogy: 'It is like a visitor log that records the visitor’s address, the door they tried, and whether the door opened.', example: '203.0.113.44 - - [23/Oct/2026:10:03:08] "GET /.env HTTP/1.1" 404\nIP: 203.0.113.44 · Time: 10:03:08 · Method: GET · Path: /.env · Status: 404 (not found)' },
+    steps: [
+      { desc: 'Read the simulated access log and compare the normal health check with the unusual request.', cmd: 'cat /var/log/apache2/access.log', hint: ['Each row records a request and a response. Compare the paths and status codes; unusual does not automatically mean malicious.'] },
+      { desc: 'Choose the request that should be checked with the application owner.', cmd: 'choose hidden-path-request', hint: ['Compare the normal health path with the hidden configuration path, then read the response code.'], decision: { prompt: 'What does the access log support?', correctId: 'hidden-path-request', choices: [
+        { id: 'health-check', label: 'The /health request is the unusual event', feedback: 'The /health path is the routine comparison entry in this sample. The other request is the one that merits follow-up.' },
+        { id: 'hidden-path-request', label: 'The /.env request is unusual, but returned 404', feedback: 'Correct. The request warrants review; the 404 response does not show successful access.' }
+      ] } },
+      { desc: 'Report that the hidden configuration path was requested but returned not found.', cmd: 'report unusual-request-no-confirmed-access', hint: ['The 404 status means the requested path was not found in this response.', 'Report the request as unusual and avoid claiming access succeeded.', 'Submit: report unusual-request-no-confirmed-access'] }
+    ],
+    realWorld: 'Access logs show requests and response codes. Analysts use application and system evidence to determine impact rather than treating a suspicious-looking request as a successful compromise.',
+    briefing: { concept: 'Web access-log fields', commands: ['cat [file]', 'report [finding]'], objective: 'Read a normal and an unusual request, then state what the recorded response supports.' },
+    didYouKnow: ['HTTP 404 records a not-found response; it does not describe every internal application action.']
+  }
+];
+
 // --- CAMPAIGN MISSIONS ---
 export const MISSIONS: Mission[] = [
   {
@@ -437,9 +517,9 @@ export const MISSIONS: Mission[] = [
     title: 'Network Basics: Meet a Host and Service',
     tier: 'BEGINNER',
     scenario:
-      'The authentication investigation identified a suspicious source. Network telemetry now shows that the same address may be communicating with the server.',
+      'The authentication investigation identified a suspicious source. Network telemetry now shows that the same address may be communicating with the server. You are reviewing a simulated scan, not connecting to the host.',
     intro:
-      'HANDLER: Good work identifying the source. Now we move from authentication evidence to network evidence. Your job is to determine what the host is exposing.',
+      'HANDLER: Good work identifying the source. We are moving from authentication evidence to network evidence. SSH is the service recorded on port 22; you do not need to open an SSH session. Use the simulated network tools to inspect the host.',
     timerLimit: 0,
     learningGoal: 'Learn how hosts, reachability, ports, and services relate before deciding whether a connection is unexpected.',
     difficulty: 'guided',
@@ -466,7 +546,7 @@ export const MISSIONS: Mission[] = [
         hint: 'Use ping to test whether the simulated host responds.'
       },
       {
-        desc: 'Perform a basic scan of the suspicious host.',
+        desc: 'Perform a simulated scan of the suspicious host. This checks its listed services; it does not log in or connect to a shell.',
         cmd: 'nmap 198.51.100.23',
         hint: 'Use nmap followed by the target IP address.'
       },
@@ -507,12 +587,13 @@ export const MISSIONS: Mission[] = [
     title: 'Operation: Process Under Suspicion',
     tier: 'INTERMEDIATE',
     scenario:
-      'The server has been experiencing unusually high CPU usage. The security team suspects that an unauthorized program may be running in the background.',
+      'The previous investigation covered hosts and network services. This case shifts to processes: programs currently running on a server. The training server is already selected, so you do not need to connect with SSH. Begin by listing processes, then inspect one PID before deciding what to do.',
     intro:
-      'HANDLER: We have contained the suspicious network source, but something may already be running on the server. Now we investigate processes.',
-    timerLimit: 900,
-    learningGoal: 'Use process details and context—not CPU usage alone—to identify and safely stop a confirmed unwanted process.',
-    difficulty: 'standard',
+      'HANDLER: New tool, same investigation rhythm: observe, inspect, preserve, respond, verify. ps lists processes on this simulated server. High CPU is a clue, not proof of malware. Take your time; this first Intermediate mission is untimed.',
+    timerLimit: 0,
+    learningGoal: 'Use process details and inventory context to assess an unapproved process, then perform a scoped simulated response.',
+    difficulty: 'guided',
+    primer: { definition: 'A process is a program that is running now. Its PID is a number used to inspect that specific program.', analogy: 'The process list is a staff roster; the PID is each worker’s badge number.', example: 'PID 3110 · backup-user · /usr/bin/backup → approved scheduled task\nPID 2214 · root · /tmp/.cache/cryptominer.exe → investigate the path and context before acting.' },
     topology: [
       { label: 'Sandbox server', address: '192.168.1.10', role: 'Host with elevated CPU activity', status: 'INVESTIGATING' },
       { label: 'Apache service', address: 'PID 1477', role: 'Expected parent process', status: 'EXPECTED', linksTo: 'Sandbox server' },
@@ -531,14 +612,28 @@ export const MISSIONS: Mission[] = [
         hint: 'Use ps aux to view running processes.'
       },
       {
-        desc: 'Identify the high-CPU process, then treat it as suspicious rather than proven malicious until you inspect its details.',
-        cmd: 'report pid-2214-needs-review',
-        hint: ['Compare CPU use and executable location with expected services.', 'High CPU is a clue; inspect the PID and path before taking action.', 'Submit: report pid-2214-needs-review']
+        desc: 'Choose which process needs an individual review, using owner and path as well as CPU use.',
+        cmd: 'choose 2214',
+        hint: ['Compare each process with the approved backup job and its executable path.'],
+        decision: { prompt: 'Which PID should you inspect next?', correctId: '2214', choices: [
+          { id: '3110', label: 'PID 3110 · approved backup job with high CPU', feedback: 'The inventory identifies PID 3110 as scheduled backup work. High CPU during its scheduled window is not enough to flag it.' },
+          { id: '2214', label: 'PID 2214 · root-owned program running from /tmp', feedback: 'Correct. Its temporary path and missing approval make it the stronger lead. Inspect the PID before any response.' }
+        ] }
       },
       {
         desc: 'Investigate the suspicious process ID.',
         cmd: 'ps -p 2214',
-        hint: 'Use ps -p followed by the suspicious PID.'
+        hint: ['Use ps with -p to inspect one process by ID.', 'The PID shown by ps aux is 2214.', 'Submit: ps -p 2214']
+      },
+      {
+        desc: 'Check the executable metadata and approval status before deciding whether response is justified.',
+        cmd: 'stat /tmp/.cache/cryptominer.exe',
+        hint: ['Compare its owner and location with the approved inventory.', 'Metadata supports review but does not prove who created the file or why.']
+      },
+      {
+        desc: 'Report that PID 2214 is running from an unapproved path and needs scoped response; do not claim attribution.',
+        cmd: 'report pid-2214-unapproved-process',
+        hint: ['Cite the running PID, path, and missing approval.', 'High CPU and a temporary path are reasons to investigate, not proof of identity or intent.', 'Submit: report pid-2214-unapproved-process']
       },
       {
         desc: 'Record the process path and PID before stopping it.',
@@ -546,7 +641,7 @@ export const MISSIONS: Mission[] = [
         hint: ['Preserve the command output as a simulated case note.', 'Real responders document process details before containment when circumstances permit.', 'Submit: preserve ps-pid-2214-process-path']
       },
       {
-        desc: 'Stop the confirmed unwanted process in the training simulation.',
+        desc: 'Stop the unapproved process in the training simulation after recording its evidence.',
         cmd: 'kill 2214',
         hint: 'Use kill followed by the process ID.'
       },
@@ -562,7 +657,7 @@ export const MISSIONS: Mission[] = [
       }
     ],
     realWorld:
-      'During incident response, analysts examine processes for unusual names, locations, resource usage, and parent-child relationships. A suspicious process should be investigated before termination whenever possible.',
+      'During incident response, analysts examine processes for unusual names, locations, resource usage, and parent-child relationships. An unapproved running process may justify scoped containment, but do not infer the operator or intent without more evidence.',
     briefing: {
       concept: 'Process Investigation and Malware Identification',
       commands: ['ps aux', 'ps -p [PID]', 'preserve [evidence]', 'kill [PID]'],
@@ -584,9 +679,10 @@ export const MISSIONS: Mission[] = [
       'A suspicious process has been removed, but the system is still communicating with an unknown service. You must determine which network service is exposed and contain the threat.',
     intro:
       'HANDLER: Removing malware is only part of incident response. We need to understand the network exposure and prevent further communication.',
-    timerLimit: 900,
+    timerLimit: 0,
     learningGoal: 'Compare listening services with an approved baseline, then contain the confirmed suspicious source and verify the result.',
     difficulty: 'standard',
+    primer: { definition: 'A listening service waits for a connection on a port. A baseline is the approved list of services expected on a host.', analogy: 'The baseline is the guest list; an unlisted listener needs checking with its owner.', example: 'Observed: 22/ssh, 80/http, 4444/unknown\nApproved: 22/ssh, 80/http\n4444 is a difference to investigate, not proof of compromise.' },
     topology: [
       { label: 'Operator workstation', address: '192.168.1.50', role: 'Authorized response console', status: 'TRUSTED' },
       { label: 'Sandbox server', address: '192.168.1.10', role: 'Protected host', status: 'INVESTIGATING', linksTo: 'Operator workstation' },
@@ -597,7 +693,8 @@ export const MISSIONS: Mission[] = [
     logs: [
       '[NET] Unexpected listening service detected.',
       '[NET] TCP port 4444 exposed.',
-      '[ALERT] Unknown external communication associated with port 4444.'
+      '[NETFLOW] Connection to the TCP 4444 listener from 198.51.100.23 observed at 10:14.',
+      '[ALERT] The source is unverified; confirm ownership before treating it as malicious.'
     ],
     target: '4444',
     steps: [
@@ -610,6 +707,16 @@ export const MISSIONS: Mission[] = [
         desc: 'List active network connections and listening services.',
         cmd: 'netstat -tuln',
         hint: 'Use netstat -tuln to inspect listening ports.'
+      },
+      {
+        desc: 'Select the listener that differs from the approved service baseline.',
+        cmd: 'choose 4444',
+        hint: ['The baseline lists SSH and HTTP. Compare every observed listener before deciding.'],
+        decision: { prompt: 'Which listener is absent from the baseline and needs follow-up?', correctId: '4444', choices: [
+          { id: '22', label: 'TCP 22 · SSH', feedback: 'TCP 22 appears in the approved baseline. Keep it as an expected service unless other evidence changes that assessment.' },
+          { id: '80', label: 'TCP 80 · HTTP', feedback: 'HTTP on TCP 80 is listed as expected in this case. The baseline comparison does not support selecting it.' },
+          { id: '4444', label: 'TCP 4444 · unknown listener', feedback: 'Correct. It appears in the observed list but not the approved baseline. That is a configuration difference to investigate.' }
+        ] }
       },
       {
         desc: 'Compare the listening ports with the approved baseline: SSH and HTTP are expected; port 4444 is not.',
@@ -632,7 +739,16 @@ export const MISSIONS: Mission[] = [
         hint: ['A listener can represent a legitimate service, so compare it with the approved baseline first.', 'The training action accepts a port number with the disable-service command.', 'Submit: disable-service 4444']
       },
       {
-        desc: 'Block the malicious network connection.',
+        desc: 'Select the source recorded in the connection evidence before containing it.',
+        cmd: 'choose source-198-51-100-23',
+        hint: ['Use the source shown in the network-flow record. Do not infer who controls the address.'],
+        decision: { prompt: 'Which source is associated with the observed TCP 4444 connection?', correctId: 'source-198-51-100-23', choices: [
+          { id: 'source-203-0-113-77', label: '203.0.113.77 · source from a separate web-request case', feedback: 'That address belongs to a separate web-log scenario. The current network-flow line records a different source.' },
+          { id: 'source-198-51-100-23', label: '198.51.100.23 · source in this connection record', feedback: 'Correct. This is the recorded peer for the TCP 4444 connection. The record does not identify the person or prove malicious intent.' }
+        ] }
+      },
+      {
+        desc: 'Contain the unverified source associated with the unapproved listener, using a scoped simulated block.',
         cmd: 'block 198.51.100.23',
         target: '198.51.100.23',
         hint: ['The port identifies a service; the observed source IP identifies the peer to contain.', 'Block the known suspicious source, not the port number.', 'Submit: block 198.51.100.23']
@@ -671,9 +787,10 @@ export const MISSIONS: Mission[] = [
       'The web server is receiving unusual requests. Your task is to analyze the access logs and determine what type of attack is being attempted.',
     intro:
       'HANDLER: The network is contained, but another alert just came in. The web server is receiving suspicious requests. Investigate the logs.',
-    timerLimit: 900,
+    timerLimit: 0,
     learningGoal: 'Use web access logs to identify suspicious input while distinguishing evidence of an attempt from proof of a successful compromise.',
     difficulty: 'standard',
+    primer: { definition: 'A web access log records a request’s source, time, method, path, and response status.', analogy: 'It is a visitor log: who arrived, which door they tried, and what response they received.', example: '203.0.113.77 · 03:31:42 · GET · /index.php?id=1 UNION SELECT… · 200\nThis records a request and response; it does not alone prove database data was returned.' },
     topology: [
       { label: 'Client host', address: '203.0.113.77', role: 'Source of unusual HTTP requests', status: 'UNDER REVIEW' },
       { label: 'Web server', address: '192.168.1.10', role: 'Apache service', status: 'MONITORING', linksTo: 'Client host' },
@@ -706,6 +823,15 @@ export const MISSIONS: Mission[] = [
         desc: 'Search the log for the UNION keyword.',
         cmd: "grep 'UNION' access.log",
         hint: 'grep searches text for a specified pattern.'
+      },
+      {
+        desc: 'Choose the request that warrants application-owner review, without claiming data access.',
+        cmd: 'choose sql-request',
+        hint: ['Compare the routine health request with the request that includes database-like syntax.'],
+        decision: { prompt: 'Which recorded event should be escalated as a possible injection attempt?', correctId: 'sql-request', choices: [
+          { id: 'health-check', label: 'GET /health · routine response', feedback: 'The health-check path matches the expected service behavior in this case. Keep it as a benign comparison.' },
+          { id: 'sql-request', label: 'GET request containing UNION SELECT', feedback: 'Correct. The request contains a pattern worth investigating. The HTTP response alone does not establish whether data was returned.' }
+        ] }
       },
       {
         desc: 'Classify the evidence as an attempted SQL injection. A log entry shows a request pattern, not proof that data was accessed.',
@@ -741,9 +867,10 @@ export const MISSIONS: Mission[] = [
       'Three different alerts have appeared: failed authentication, suspicious network activity, and a malicious web request. Your task is to correlate the evidence and determine whether they belong to the same incident.',
     intro:
       'HANDLER: Rookie missions are over. Real incidents rarely arrive as one clean alert. Correlate the evidence and build the timeline.',
-    timerLimit: 1500,
+    timerLimit: 0,
     learningGoal: 'Correlate independent sources and timestamps, separate confirmed facts from assumptions, and build a defensible incident timeline.',
     difficulty: 'advanced',
+    primer: { definition: 'A timeline orders records from different systems. Their clocks may differ, so recorded times may need adjustment before comparison.', analogy: 'Before comparing two watches, first check whether they show the same time.', example: 'Host A: 03:24 · Host B: 03:26 · B is 2 minutes fast\nAdjusted B time: 03:24. Similar timing supports a possible link, not proof of one actor.' },
     topology: [
       { label: 'Operator workstation', address: '192.168.1.50', role: 'Investigation console', status: 'TRUSTED' },
       { label: 'Sandbox server', address: '192.168.1.10', role: 'System with related alerts', status: 'INVESTIGATING', linksTo: 'Operator workstation' },
@@ -755,7 +882,8 @@ export const MISSIONS: Mission[] = [
       '[03:21] Failed SSH authentication from 198.51.100.23.',
       '[03:24] Successful SSH authentication from 198.51.100.23.',
       '[03:31] SQL-like web request from 203.0.113.77.',
-      '[03:32] Process 2214 begins abnormal activity.'
+      '[03:32] Process 2214 begins abnormal activity.',
+      '[03:35] Approved backup task completed on schedule.'
     ],
     target: 'incident_correlation',
     steps: [
@@ -772,12 +900,12 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Filter the SSH service journal to the relevant time window and compare event order.',
         cmd: 'journalctl -u ssh --since 03:23:00 --until 03:27:00',
-        hint: ['Use the service and time filters to narrow the journal.', 'The system journal clock is about two minutes fast; the matching authentication events appear later here. Compare their order rather than assuming exact timestamps align.', 'Submit: journalctl -u ssh --since 03:23:00 --until 03:27:00']
+        hint: ['Use the service and time filters to narrow the journal.', 'The system journal clock is about two minutes fast; compare event order after accounting for the offset.', 'Use the journalctl command family to review service events in a time window.']
       },
       {
         desc: 'Record the authentication observation and cite its source file.',
         cmd: 'record-evidence auth.log repeated-failures-and-later-success',
-        hint: ['Capture what the log shows without naming an attacker.', 'Keep observations separate from interpretation.', 'Submit: record-evidence auth.log repeated-failures-and-later-success']
+        hint: ['Capture what the log shows without naming an attacker.', 'Keep observations separate from interpretation.', 'Use the evidence-recording command with a source and a factual observation.']
       },
       {
         desc: 'Inspect the system processes.',
@@ -802,17 +930,41 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Record the web observation and note that this source address differs from the SSH source.',
         cmd: 'record-evidence access.log sql-like-request-from-separate-address',
-        hint: ['Cite access.log and the source address it records.', 'A separate address is a reason not to assume one shared actor.', 'Submit: record-evidence access.log sql-like-request-from-separate-address']
+        hint: ['Cite access.log and the source address it records.', 'A separate address is a reason not to assume one shared actor.', 'Use the evidence-recording command with the log name and observed fact.']
       },
       {
-        desc: 'Rate confidence and submit a cautious assessment: the timeline merits follow-up, but different source addresses do not prove a shared actor.',
+        desc: 'Review scheduled work and rule out the approved backup as an unrelated benign event.',
+        cmd: 'crontab -l',
+        hint: ['Compare scheduled commands with the timeline and known maintenance notes. A nearby event is not automatically part of the incident.']
+      },
+      {
+        desc: 'Classify the scheduled backup using its approved path and completion record.',
+        cmd: 'choose backup-benign',
+        hint: ['Check the task name against the approved maintenance context before including it in your incident timeline.'],
+        decision: { prompt: 'How should the scheduled backup be treated?', correctId: 'backup-benign', choices: [
+          { id: 'backup-benign', label: 'Benign comparison event; exclude it from the incident chain', feedback: 'Correct. The task is approved and completed on schedule, so proximity alone does not make it incident activity.' },
+          { id: 'backup-malicious', label: 'Confirmed malicious because CPU use was high', feedback: 'CPU usage and timing alone are not enough. The schedule and approved path support legitimate maintenance.' }
+        ] }
+      },
+      {
+        desc: 'Decide whether the records establish one shared actor or only a possible relationship.',
+        cmd: 'choose related-needs-validation',
+        hint: ['Compare the corrected timeline with the different source addresses and the incomplete records.'],
+        decision: { prompt: 'What conclusion is best supported by this evidence?', correctId: 'related-needs-validation', choices: [
+          { id: 'same-actor-confirmed', label: 'The same actor is confirmed across SSH and web activity', feedback: 'The records show different source addresses, and shared networks or clock offsets remain possible. The current evidence does not identify a shared actor.' },
+          { id: 'unrelated-confirmed', label: 'The activity is definitely unrelated', feedback: 'Different addresses weaken a single-source theory but do not prove the events are unrelated. Keep the relationship as a hypothesis for follow-up.' },
+          { id: 'related-needs-validation', label: 'The timeline may be related, but the link needs validation', feedback: 'Correct. Timing supports follow-up; source differences and missing records limit attribution.' }
+        ] }
+      },
+      {
+        desc: 'Record medium confidence because suspicious events are correlated in time but source identity and impact remain unconfirmed.',
         cmd: 'assess medium correlation-unconfirmed',
-        hint: ['Medium confidence reflects multiple suspicious observations but incomplete linkage.', 'Different source IPs, possible shared networks, and clock differences limit attribution.', 'Submit: assess medium correlation-unconfirmed']
+        hint: ['Medium confidence reflects multiple suspicious observations but incomplete linkage.', 'Different source IPs, possible shared networks, and clock differences limit attribution.', 'Use the confidence-assessment command and choose a level supported by the gaps.']
       },
       {
         desc: 'Submit the finding while keeping possible correlation separate from confirmed attribution or impact.',
         cmd: 'report correlation-unconfirmed',
-        hint: ['Compare timestamps and source addresses across the four evidence sources.', 'A close timeline supports investigation, but the web request uses a different source address.', 'Submit: report correlation-unconfirmed']
+        hint: ['Compare timestamps and source addresses across the four evidence sources.', 'A close timeline supports investigation, but the web request uses a different source address.', 'Use the report command to state the cautious conclusion.']
       },
       {
         desc: 'Return to the operator home directory.',
@@ -843,9 +995,10 @@ export const MISSIONS: Mission[] = [
       'The malicious process was removed, but the security team suspects the attacker created a way to return after the system restarts. Investigate possible persistence mechanisms.',
     intro:
       'HANDLER: Killing the process did not end the incident. Something may be allowing the attacker to return. Find the persistence mechanism.',
-    timerLimit: 1500,
+    timerLimit: 0,
     learningGoal: 'Investigate multiple persistence locations and distinguish expected automation from unauthorized mechanisms.',
     difficulty: 'advanced',
+    primer: { definition: 'Persistence is a way a program or account can regain access after a restart or sign-out.', analogy: 'It is like leaving a spare key so someone can return later; find and verify the key before removing it.', example: 'A scheduled task or an unfamiliar authorized key can be a persistence clue. Confirm ownership and purpose before changing it.' },
     topology: [
       { label: 'Sandbox server', address: '192.168.1.10', role: 'Previously compromised host', status: 'INVESTIGATING' },
       { label: 'Scheduled tasks', address: 'cron', role: 'Automation review', status: 'SUSPICIOUS ENTRY', linksTo: 'Sandbox server' },
@@ -882,13 +1035,23 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Check the executable metadata and compare its owner, permissions, and location with the baseline.',
         cmd: 'stat /tmp/.cache/cryptominer.exe',
-        hint: ['stat displays file metadata such as owner, mode, and modification time.', 'Metadata makes a file worth reviewing but does not prove it executed.', 'Submit: stat /tmp/.cache/cryptominer.exe']
+        hint: ['File metadata includes owner, mode, and modification time.', 'Metadata makes a file worth reviewing but does not prove it executed.', 'Use the metadata command family and the path you found in the evidence.']
       },
       {
         desc: 'Summarize the persistence evidence: a suspicious scheduled script, an unknown SSH key, and an executable in temporary storage.',
-        cmd: 'report cron-key-and-temp-file',
-        hint: ['Compare the scheduled command, key entries, and discovered file path.', 'More than one mechanism may enable return access; include all three findings.', 'Submit: report cron-key-and-temp-file']
+        cmd: 'choose cron-and-ssh-key',
+        hint: ['The approved backup schedule and known operator key are decoys. Compare the remaining entries with the inventory.'],
+        decision: { prompt: 'Which entries are the strongest persistence leads?', correctId: 'cron-and-ssh-key', choices: [
+          { id: 'backup-and-operator', label: 'The scheduled backup and known operator key', feedback: 'Both entries match expected administration. A familiar scheduled task or approved key should not be removed just because it is present.' },
+          { id: 'cron-only', label: 'Only the temporary-directory cron task', feedback: 'That task is suspicious, but the unknown external-host key is also absent from the known-key list and needs review.' },
+          { id: 'cron-and-ssh-key', label: 'The temporary-directory cron task and unfamiliar SSH key', feedback: 'Correct. Both are outside the expected baseline. The backup job and known operator key are benign comparison items.' }
+        ] }
       },
+      { desc: 'Record the evidence-based persistence finding.', cmd: 'report cron-key-and-temp-file', hint: ['Cite the scheduled task, key entry, and file details. Do not infer who installed them without more evidence.'] },
+      { desc: 'Decide whether the discovered executable is confirmed to have run.', cmd: 'choose execution-unconfirmed', hint: ['Metadata and file presence are not execution records. Identify what evidence is still missing.'], decision: { prompt: 'What does the file evidence establish?', correctId: 'execution-unconfirmed', choices: [
+        { id: 'execution-confirmed', label: 'The executable definitely ran because it exists in /tmp', feedback: 'A file’s presence and metadata do not establish that it executed. Look for process history or other corroborating records.' },
+        { id: 'execution-unconfirmed', label: 'The file is an unapproved lead; execution remains unconfirmed', feedback: 'Correct. Its path and metadata justify investigation, but they do not prove it ran.' }
+      ] } },
       {
         desc: 'Verify that the suspicious process is no longer active.',
         cmd: 'ps aux',
@@ -915,11 +1078,11 @@ export const MISSIONS: Mission[] = [
     title: 'Operation: Full Incident Response',
     tier: 'EXPERT',
     scenario:
-      'The Sandbox Secure server has suffered a multi-stage intrusion. You must investigate the evidence, identify the attack, contain the threat, remove malicious activity, and verify that the system is stable.',
+      'The Sandbox Secure server has a multi-stage security incident. Investigate the records, separate confirmed facts from assumptions, contain supported activity, review persistence, and verify the simulated system state.',
     intro:
       'HANDLER: Final operation. Apply what you have learned: collect evidence, separate facts from assumptions, contain the supported threat, and verify the system state.',
     timerLimit: 2100,
-    learningGoal: 'Run a careful incident-response cycle: establish scope, collect evidence, correlate facts, contain the confirmed threat, and verify system state.',
+    learningGoal: 'Run a careful incident-response cycle: establish scope, collect evidence, correlate facts, contain supported activity, and verify system state.',
     difficulty: 'advanced',
     topology: [
       { label: 'Operator workstation', address: '192.168.1.50', role: 'Authorized response console', status: 'TRUSTED' },
@@ -962,6 +1125,15 @@ export const MISSIONS: Mission[] = [
         hint: 'Look for the suspicious process identified in the incident timeline.'
       },
       {
+        desc: 'Choose a process for individual review, ruling out approved scheduled work.',
+        cmd: 'choose 2214',
+        hint: ['Compare the process owner and executable path with the scheduled backup inventory.'],
+        decision: { prompt: 'Which PID should be inspected further?', correctId: '2214', choices: [
+          { id: '3110', label: 'PID 3110 · approved backup process', feedback: 'The inventory and scheduled time support this backup process as legitimate. CPU use alone is not enough to stop it.' },
+          { id: '2214', label: 'PID 2214 · root process from a temporary path', feedback: 'Correct. The path is not approved and should be corroborated with the timeline before response.' }
+        ] }
+      },
+      {
         desc: 'Investigate the suspicious process.',
         cmd: 'ps -p 2214',
         hint: 'Inspect PID 2214.'
@@ -994,20 +1166,39 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Check authorized SSH keys for an unfamiliar route back into the host.',
         cmd: 'cat ~/.ssh/authorized_keys',
-        hint: ['Compare key comments with the known operator and backup accounts.', 'One key is labeled as coming from an unknown external host.', 'Submit: cat ~/.ssh/authorized_keys']
+        hint: ['Compare key comments with the known operator and backup accounts.', 'One key is labeled as coming from an unknown external host.', 'Use a file-reading command to review the simulated authorized-key list.']
       },
       {
         desc: 'Record a careful assessment before response: suspicious access and persistence are supported, but the web request source differs and impact is not confirmed.',
         cmd: 'report suspicious-activity-impact-unconfirmed',
-        hint: ['Separate observed facts from assumptions before changing the system.', 'The logs support suspicious activity; they do not establish that database data was accessed or who controlled both sources.', 'Submit: report suspicious-activity-impact-unconfirmed']
+        hint: ['Separate observed facts from assumptions before changing the system.', 'The logs support suspicious activity; they do not establish that database data was accessed or who controlled both sources.', 'Use the report command to capture a scoped, evidence-based conclusion.']
       },
       {
         desc: 'Preserve the key process, network, and persistence evidence before making response changes.',
         cmd: 'preserve case-evidence-before-containment',
-        hint: ['The assessment is recorded. Capture the simulated case evidence before response actions.', 'Evidence preservation helps explain what was present before containment.', 'Submit: preserve case-evidence-before-containment']
+        hint: ['The assessment is recorded. Capture the simulated case evidence before response actions.', 'Evidence preservation helps explain what was present before containment.', 'Use the evidence-preservation command before response.']
       },
       {
-        desc: 'Terminate the confirmed malicious process.',
+        desc: 'Select the source supported by the authentication evidence for scoped containment.',
+        cmd: 'choose ssh-source',
+        hint: ['The web request has a different source. Use the authentication records for this containment decision.'],
+        decision: { prompt: 'Which source should be selected for this case’s scoped block?', correctId: 'ssh-source', choices: [
+          { id: 'web-source', label: '203.0.113.77 · source of SQL-like web requests', feedback: 'This address appears in web requests, not the authentication sequence. The evidence does not support substituting it for the SSH source.' },
+          { id: 'ssh-source', label: '198.51.100.23 · repeated SSH failures followed by success', feedback: 'Correct. This address is supported by the authentication evidence. A scoped response still does not identify the person behind it.' }
+        ] }
+      },
+      {
+        desc: 'Choose the persistence entries supported by the inventory and collected evidence.',
+        cmd: 'choose cron-and-ssh-key',
+        hint: ['The logrotate and scheduled backup tasks are approved. Compare the remaining entries with the evidence you collected.'],
+        decision: { prompt: 'Which persistence targets should be removed after the evidence has been recorded?', correctId: 'cron-and-ssh-key', choices: [
+          { id: 'backup', label: 'Remove the approved backup schedule', feedback: 'The backup schedule is listed as approved. Removing it would disrupt expected work without evidence that it is part of the incident.' },
+          { id: 'cron-and-ssh-key', label: 'Remove the unapproved temporary-path task and unfamiliar key', feedback: 'Correct. These are the two unapproved persistence leads. Preserve them first, then verify both are gone.' },
+          { id: 'web-source', label: 'Remove the web source address', feedback: 'An IP address is not a persistence mechanism. The supported persistence evidence is in the scheduled-task and authorized-key records.' }
+        ] }
+      },
+      {
+        desc: 'Stop the unapproved running process after preserving its evidence.',
         cmd: 'kill 2214',
         hint: 'Remove the malicious process after collecting the evidence.'
       },
@@ -1015,47 +1206,28 @@ export const MISSIONS: Mission[] = [
         desc: 'Contain the known suspicious source.',
         cmd: 'block 198.51.100.23',
         target: '198.51.100.23',
-        hint: ['Use the source supported by repeated authentication evidence.', 'Do not use the web request source as a substitute; the logs show a different address.', 'Submit: block 198.51.100.23']
+        hint: ['Use the source supported by repeated authentication evidence.', 'Do not use the web request source as a substitute; the logs show a different address.', 'Use the simulated containment command with the source you selected from the logs.']
       },
       {
         desc: 'Disable the confirmed unapproved listener discovered during investigation.',
         cmd: 'disable-service 4444',
-        hint: ['The 4444/tcp listener was absent from the approved baseline.', 'Use the simulated disable-service action for port 4444.', 'Submit: disable-service 4444']
+        hint: ['The 4444/tcp listener was absent from the approved baseline.', 'Use the service-containment command with the port supported by the baseline comparison.']
       },
       {
         desc: 'Remove the confirmed unauthorized scheduled task from the simulated host.',
         cmd: 'remove-persistence cron',
-        hint: ['The cron list showed an unknown script running from temporary storage.', 'Use the simulated persistence action with the cron target.', 'Submit: remove-persistence cron']
+        hint: ['The cron list showed an unknown script running from temporary storage.', 'Use the persistence-removal action with the mechanism supported by the evidence.']
       },
       {
         desc: 'Remove the unfamiliar SSH key after recording it as evidence.',
         cmd: 'remove-persistence ssh-key',
-        hint: ['Preserve the finding in your report before changing access controls.', 'Use the simulated persistence action with the ssh-key target.', 'Submit: remove-persistence ssh-key']
+        hint: ['Preserve the finding in your report before changing access controls.', 'Use the persistence-removal action with the mechanism supported by the evidence.']
       },
       {
-        desc: 'Verify the process is no longer active.',
-        cmd: 'ps aux',
-        hint: 'Confirm PID 2214 no longer appears.'
-      },
-      {
-        desc: 'Verify the network is contained.',
-        cmd: 'status',
-        hint: 'Check the final network state.'
-      },
-      {
-        desc: 'Verify that the unapproved service is no longer listening.',
-        cmd: 'netstat -tuln',
-        hint: ['Review the resulting service list after the simulated change.', 'The 4444/tcp entry should no longer be present.', 'Submit: netstat -tuln']
-      },
-      {
-        desc: 'Verify that the unauthorized scheduled task is gone.',
-        cmd: 'crontab -l',
-        hint: ['Review the task list after the simulated removal.', 'The /tmp/.cache/update.sh entry should be absent.', 'Submit: crontab -l']
-      },
-      {
-        desc: 'Verify that the unfamiliar SSH key is no longer authorized.',
-        cmd: 'cat ~/.ssh/authorized_keys',
-        hint: ['Review the remaining authorized keys after the simulated removal.', 'The unknown external-host key should be absent.', 'Submit: cat ~/.ssh/authorized_keys']
+        desc: 'Verify containment and cleanup by checking the process list, network status, listeners, scheduled tasks, and authorized keys in any order.',
+        cmd: 'verify incident response',
+        requiredCommands: ['ps aux', 'status', 'netstat -tuln', 'crontab -l', 'cat ~/.ssh/authorized_keys'],
+        hint: ['Run each listed read-only check in any order.', 'Confirm PID 2214, the 4444 listener, the temporary-path task, and unfamiliar key are absent; confirm the approved services remain.']
       },
       {
         desc: 'Return to the operator home directory.',
@@ -1190,18 +1362,9 @@ const balanceAnswerPositions = (questions: Question[]): Question[] => {
 };
 
 export const TIERS: TierConfig[] = [
-  { id: 'BEGINNER', levels: [{ id: 'b1', title: 'System and Network Foundations', description: 'Navigate the simulated system, read basic evidence, and learn what hosts, addresses, ports, and services represent.' }], preTest: balanceAnswerPositions(BEGINNER_PRETEST), postTest: balanceAnswerPositions(BEGINNER_POSTTEST) },
-  { id: 'INTERMEDIATE', levels: [{ id: 'i1', title: 'Evidence and Containment', description: 'Inspect processes and services, interpret logs, take scoped response actions, and verify their effects.' }], preTest: balanceAnswerPositions(INTERMEDIATE_PRETEST), postTest: balanceAnswerPositions(INTERMEDIATE_POSTTEST) },
+  { id: 'BEGINNER', levels: [{ id: 'b1', title: 'System and Network Foundations', description: 'Navigate the simulated system, read basic evidence, and learn what hosts, addresses, ports, and services represent. Standalone practice missions are optional.' }], preTest: balanceAnswerPositions(BEGINNER_PRETEST), postTest: balanceAnswerPositions(BEGINNER_POSTTEST) },
+  { id: 'INTERMEDIATE', levels: [{ id: 'i1', title: 'Evidence and Containment', description: 'Start with three short untimed bridge lessons on processes, service baselines, and web logs. Then inspect certification cases, take scoped response actions, and verify their effects.' }], preTest: balanceAnswerPositions(INTERMEDIATE_PRETEST), postTest: balanceAnswerPositions(INTERMEDIATE_POSTTEST) },
   { id: 'EXPERT', levels: [{ id: 'e1', title: 'Incident Correlation and Response', description: 'Build a timeline from mixed evidence, communicate uncertainty, investigate persistence, and plan a verified response.' }], preTest: balanceAnswerPositions(EXPERT_PRETEST), postTest: balanceAnswerPositions(EXPERT_POSTTEST) },
-];
-
-export const ISO_QUESTIONS: { category: string; q: string; comment: string }[] = [
-  { category: "1. Functionality", q: "The terminal accurately simulates real Linux command-line responses.", comment: "Tests core loop." },
-  { category: "2. Reliability", q: "The application runs without crashing during normal use.", comment: "Tests stability." },
-  { category: "3. Usability", q: "The interface is intuitive and easy to navigate.", comment: "Tests UX design." },
-  { category: "4. Efficiency", q: "The application loads quickly and responds instantly.", comment: "Tests performance." },
-  { category: "5. Maintainability", q: "The code structure is clean and well-organized.", comment: "Tests code quality." },
-  { category: "6. Portability", q: "The application works across different browsers/devices.", comment: "Tests cross-platform support." }
 ];
 
 export const CHEAT_SHEET = [
@@ -1248,6 +1411,10 @@ Analysis and response
   remove-persistence [cron|ssh-key]
   report [finding]        Record a short finding
   inspect [clue]          Inspect a clue on the investigation board
+Evidence decision box   Select an option when the mission asks you to choose a target or conclusion
+
+TRAINING-ONLY COMMANDS: block, disable-service, preserve, record-evidence, assess, remove-persistence, report, and inspect are simplified game actions. grep --ip/--after/--before are custom filters in this simulation.
+Real work uses authorized firewall or service-management tools, evidence-handling and case-management procedures, and the documented filters in grep or a log-analysis platform.
 
 Use the command that fits your current objective. All hosts, files, commands, and response actions are simulated; nothing contacts or changes a real system.`;
 
@@ -1258,7 +1425,8 @@ export const MOCK_FILE_SYSTEM: Record<string, string[]> = {
   '/home/operator/practice': ['activity.txt'],
   '/var': ['log', 'log/apache2'], 
   '/var/log': ['auth.log', 'syslog', 'access.log'],
-  '/var/log/apache2': ['access.log']
+  '/var/log/apache2': ['access.log'],
+  '/etc/training': ['approved-services.txt']
 };
 
 export const MOCK_FILES: Record<string, string> = { 
@@ -1286,7 +1454,9 @@ Oct 08 03:28:40 sandbox systemd[1]: scheduled backup completed successfully`,
   '/var/log/apache2/access.log': `192.168.1.20 - - [08/Oct/2026:03:20:05] "GET /health HTTP/1.1" 200
 203.0.113.77 - - [08/Oct/2026:03:31:42] "GET /index.php?id=1 UNION SELECT username,password FROM users HTTP/1.1" 200
 203.0.113.77 - - [08/Oct/2026:03:31:45] "GET /index.php?id=1 UNION SELECT email FROM customers HTTP/1.1" 200
-192.168.1.20 - - [08/Oct/2026:03:34:01] "GET /status HTTP/1.1" 200`
+192.168.1.20 - - [08/Oct/2026:03:34:01] "GET /status HTTP/1.1" 200`,
+  '/etc/training/approved-services.txt': 'TCP 22 ssh · approved remote administration\nTCP 443 https · approved secure web service',
+  '/var/log/apache2/bridge-access.log': '192.0.2.24 - - [23/Oct/2026:10:02:11] "GET /health HTTP/1.1" 200\n203.0.113.44 - - [23/Oct/2026:10:03:08] "GET /.env HTTP/1.1" 404'
 };
 
 export const EASTER_EGGS: Record<string, string> = { 'sl': '🚂 Choo choo!' };

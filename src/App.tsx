@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
 
@@ -11,7 +11,8 @@ import {
   loginWithEmail,
   saveCompletedMissions,
   savePreTestScore,
-  getUserProgress
+  getUserProgress,
+  saveMissionAttempt
 } from './Firebase';
 
 import {
@@ -25,13 +26,13 @@ import {
 } from './components/Screens';
 
 import OnboardingGuide from './components/OnboardingGuide';
+import MissionToolGuide from './components/MissionToolGuide';
 
 import {
   NetworkMapModal,
   HintModal,
   BriefingModal,
   CheatSheetModal,
-  EvalModal,
   VictoryModal,
   MissionFailedModal
 } from './components/Modals';
@@ -43,6 +44,7 @@ import type {
 
 import {
   MISSIONS,
+  BRIDGE_MISSIONS,
   TUTORIAL_MISSIONS,
   TERMINAL_HELP_TEXT
 } from './data/gameData';
@@ -159,6 +161,14 @@ function App() {
   const [showMissionFailed, setShowMissionFailed] =
     useState(false);
 
+  const [failedAtStep, setFailedAtStep] = useState(0);
+  const [missionRunNumber, setMissionRunNumber] = useState(0);
+  const attemptStartedAtRef = useRef(0);
+  const stepStartedAtRef = useRef(0);
+  const attemptSavedRef = useRef(false);
+  const verifiedCommandsByStepRef = useRef<Record<string, string[]>>({});
+  const attemptTelemetryRef = useRef({ hintsOpened: 0, hintLevelsShown: [] as number[], timePerStepSeconds: {} as Record<string, number>, wrongCommandsByStep: {} as Record<string, number>, wrongDecisionCount: 0 });
+
   const [currentPath, setCurrentPath] =
     useState('/home/operator');
 
@@ -187,9 +197,6 @@ function App() {
   const [showCheat, setShowCheat] =
     useState(false);
 
-  const [showEval, setShowEval] =
-    useState(false);
-
   const [hintText, setHintText] =
     useState<string | string[]>([]);
 
@@ -203,6 +210,12 @@ function App() {
   const [showOnboarding, setShowOnboarding] =
     useState(false);
 
+  const [showMissionToolGuide, setShowMissionToolGuide] =
+    useState(false);
+
+  const [caseNotes, setCaseNotes] = useState<string[]>([]);
+  const [caseConfidence, setCaseConfidence] = useState('');
+
   const sendSysMsg = (
     text: string
   ) => {
@@ -211,6 +224,31 @@ function App() {
       n => n + 1
     );
   };
+
+  const persistMissionAttempt = useCallback((outcome: 'completed' | 'timed_out') => {
+    if (!activeMission || attemptSavedRef.current) return;
+    const completedAt = Date.now();
+    const startedAt = attemptStartedAtRef.current || completedAt;
+    const activeStep = Math.min(questStep, activeMission.steps.length - 1);
+    const timePerStepSeconds = { ...attemptTelemetryRef.current.timePerStepSeconds };
+    if (outcome === 'timed_out' && stepStartedAtRef.current && questStep < activeMission.steps.length) {
+      timePerStepSeconds[String(activeStep)] = Math.max(0, Math.round((completedAt - stepStartedAtRef.current) / 1000));
+    }
+    attemptSavedRef.current = true;
+    if (!user || isFakeAdmin) return;
+    void saveMissionAttempt(user.uid, {
+      missionId: activeMission.id,
+      missionTitle: activeMission.title,
+      tier: activeMission.tier,
+      concept: activeMission.briefing.concept,
+      outcome,
+      startedAt: new Date(startedAt).toISOString(),
+      completedAt: new Date(completedAt).toISOString(),
+      totalTimeSeconds: Math.max(0, Math.round((completedAt - startedAt) / 1000)),
+      ...attemptTelemetryRef.current,
+      timePerStepSeconds
+    }).catch(error => console.error('Error saving mission attempt telemetry:', error));
+  }, [activeMission, questStep, user, isFakeAdmin]);
 
   const playSound = (
     type:
@@ -448,30 +486,19 @@ function App() {
       return;
     }
 
-    const timer =
-      setInterval(() => {
-        setTimeLeft(
-          prev => {
-            if (prev <= 1) {
-              setIsThreatActive(
-                false
-              );
-
-              sendSysMsg(
-                '[MISSION FAILED]: Time expired!'
-              );
-
-              setShowMissionFailed(
-                true
-              );
-
-              return 0;
-            }
-
-            return prev - 1;
-          }
-        );
-      }, 1000);
+    const timer = setInterval(() => {
+      if (timeLeft <= 1) {
+        setTimeLeft(0);
+        setIsThreatActive(false);
+        setFailedAtStep(questStep);
+        setMsg('[MISSION FAILED]: The optional challenge timer ended. Your practice progress is not a failure.');
+        setSysNonce(previous => previous + 1);
+        persistMissionAttempt('timed_out');
+        setShowMissionFailed(true);
+      } else {
+        setTimeLeft(previous => Math.max(0, previous - 1));
+      }
+    }, 1000);
 
     return () =>
       clearInterval(
@@ -479,7 +506,9 @@ function App() {
       );
   }, [
     isThreatActive,
-    timeLeft
+    timeLeft,
+    questStep,
+    persistMissionAttempt
   ]);
 
   const handleLogin =
@@ -686,6 +715,8 @@ function App() {
       setShowOnboarding(
         false
       );
+
+      setShowMissionToolGuide(false);
     };
 
   const startMission = (
@@ -709,6 +740,7 @@ function App() {
   ) => {
     const allMissions = [
       ...MISSIONS,
+      ...BRIDGE_MISSIONS,
       ...TUTORIAL_MISSIONS
     ];
 
@@ -735,7 +767,7 @@ function App() {
   };
 
   const confirmStartMission =
-    () => {
+    (untimed = false) => {
       if (
         !pendingMission
       ) {
@@ -750,11 +782,18 @@ function App() {
       setContainedTarget('');
       setDisabledService('');
       setRemovedPersistence([]);
+      setCaseNotes([]);
+      setCaseConfidence('');
       setQuestStep(0);
+      attemptStartedAtRef.current = Date.now();
+      stepStartedAtRef.current = Date.now();
+      attemptSavedRef.current = false;
+      verifiedCommandsByStepRef.current = {};
+      attemptTelemetryRef.current = { hintsOpened: 0, hintLevelsShown: [], timePerStepSeconds: {}, wrongCommandsByStep: {}, wrongDecisionCount: 0 };
+      setMissionRunNumber(previous => previous + 1);
 
       setIsThreatActive(
-        pendingMission.timerLimit >
-          0
+        !untimed && pendingMission.timerLimit > 0
       );
 
       setTimeLeft(
@@ -773,6 +812,18 @@ function App() {
       sendSysMsg(
         pendingMission.intro
       );
+
+      if (pendingMission.id === 'm1') {
+        const guideKey = `sandboxSecureMissionGuideCompleted-${user?.uid ?? 'guest'}`;
+        try {
+          if (localStorage.getItem(guideKey) !== 'true') {
+            localStorage.setItem(guideKey, 'true');
+            setShowMissionToolGuide(true);
+          }
+        } catch {
+          setShowMissionToolGuide(true);
+        }
+      }
     };
 
   const handleCommand = (
@@ -808,9 +859,53 @@ function App() {
         questStep
       ];
 
+    const normalizeCommand = (value: string) => value
+      .toLowerCase()
+      .replace(/["']/g, '')
+      .trim()
+      .replace(/\s+/g, ' ');
+    const normalizedInput = normalizeCommand(input);
+    const acceptedCommands = (currentStep.requiredCommands ? (currentStep.alternates ?? []) : [currentStep.cmd, ...(currentStep.alternates ?? [])])
+      .map(normalizeCommand);
+    if (/^ls(?:\s|$)/i.test(currentStep.cmd)) {
+      acceptedCommands.push('ls', 'ls -la', 'ls -l', currentStep.cmd);
+    }
+    if (currentStep.cmd === 'netstat -tuln' || currentStep.cmd === 'ss -tuln') {
+      acceptedCommands.push('netstat -tuln', 'ss -tuln');
+    }
+    const chosenDecision = normalizedInput.startsWith('choose ')
+      ? normalizedInput.slice('choose '.length)
+      : '';
+    const isCorrectDecision = Boolean(currentStep.decision && chosenDecision === currentStep.decision.correctId);
+    const requiredCommand = currentStep.requiredCommands?.find(command => {
+      const normalizedRequired = normalizeCommand(command);
+      return normalizedRequired === normalizedInput
+        || (normalizedRequired === 'netstat -tuln' && normalizedInput === 'ss -tuln')
+        || (normalizedRequired === 'ss -tuln' && normalizedInput === 'netstat -tuln');
+    });
+    const previouslyVerified = verifiedCommandsByStepRef.current[String(questStep)] ?? [];
+    const verifiedNow = requiredCommand && !previouslyVerified.includes(requiredCommand)
+      ? [...previouslyVerified, requiredCommand]
+      : previouslyVerified;
+    const isRequiredCheckComplete = Boolean(currentStep.requiredCommands?.length && verifiedNow.length === currentStep.requiredCommands.length);
+    const isRequiredCheck = Boolean(requiredCommand);
+    const isEquivalentDirectoryList = /^ls(?:\s+.+)?$/.test(normalizedInput) && /^ls(?:\s|$)/i.test(currentStep.cmd);
+
+    if (isRequiredCheck && !isRequiredCheckComplete) {
+      verifiedCommandsByStepRef.current[String(questStep)] = verifiedNow;
+      const stepKey = String(questStep);
+      attemptTelemetryRef.current.timePerStepSeconds[stepKey] = (attemptTelemetryRef.current.timePerStepSeconds[stepKey] ?? 0) + Math.max(0, Math.round((Date.now() - stepStartedAtRef.current) / 1000));
+      stepStartedAtRef.current = Date.now();
+      sendSysMsg(`[VERIFICATION]: ${verifiedNow.length}/${currentStep.requiredCommands?.length} checks recorded. Continue in any order.`);
+      return;
+    }
+
     if (
-      input.toLowerCase() === currentStep.cmd.toLowerCase()
+      acceptedCommands.includes(normalizedInput) || isEquivalentDirectoryList || isCorrectDecision || isRequiredCheckComplete
     ) {
+      const stepKey = String(questStep);
+      attemptTelemetryRef.current.timePerStepSeconds[stepKey] = (attemptTelemetryRef.current.timePerStepSeconds[stepKey] ?? 0) + Math.max(0, Math.round((Date.now() - stepStartedAtRef.current) / 1000));
+      stepStartedAtRef.current = Date.now();
       if (
         currentStep.cmd ===
           'block' &&
@@ -849,6 +944,7 @@ function App() {
           1;
 
       if (isLastStep) {
+        persistMissionAttempt('completed');
         setQuestStep(activeMission.steps.length);
         setIsThreatActive(
           false
@@ -921,10 +1017,50 @@ function App() {
         );
       }
     } else {
-      sendSysMsg(
-        `[INVALID]: Command rejected. Current Objective: ${currentStep.desc}`
-      );
+      if (currentStep.decision && chosenDecision) {
+        const selected = currentStep.decision.choices.find(choice => choice.id === chosenDecision);
+        const explanation = selected?.feedback ?? 'That choice is not supported by the evidence shown. Review the clues and try again.';
+        attemptTelemetryRef.current.wrongDecisionCount += 1;
+        const stepKey = String(questStep);
+        attemptTelemetryRef.current.wrongCommandsByStep[stepKey] = (attemptTelemetryRef.current.wrongCommandsByStep[stepKey] ?? 0) + 1;
+        sendSysMsg(`[DECISION NOT SUPPORTED]: ${explanation}`);
+        return;
+      }
+      const readOnlyCommands = new Set(['ls', 'pwd', 'cat', 'ps', 'netstat', 'ss', 'status', 'whoami', 'grep', 'find', 'stat', 'journalctl', 'crontab', 'nmap', 'ping', 'inspect']);
+      const enteredCommand = input.split(/\s+/)[0]?.toLowerCase() ?? '';
+      if (readOnlyCommands.has(enteredCommand)) {
+        // Read-only exploration is allowed at any point and does not consume an objective.
+        return;
+      }
+      const stepKey = String(questStep);
+      attemptTelemetryRef.current.wrongCommandsByStep[stepKey] = (attemptTelemetryRef.current.wrongCommandsByStep[stepKey] ?? 0) + 1;
+      const expectedCommand = currentStep.cmd.split(/\s+/)[0];
+      const correction = enteredCommand.toLowerCase() === expectedCommand.toLowerCase()
+        ? `The command is right, but its arguments do not match this step. Expected format: ${currentStep.cmd}`
+        : `This objective needs the ${expectedCommand} tool. The current objective is: ${currentStep.desc} Use Hint or the Command Field Guide if you need help.`;
+      sendSysMsg(`[NOT THE CURRENT OBJECTIVE]: ${correction}`);
     }
+  };
+
+  const retryMissionUntimed = () => {
+    setShowMissionFailed(false);
+    setQuestStep(0);
+    setCurrentPath('/home/operator');
+    setContainedTarget('');
+    setDisabledService('');
+    setRemovedPersistence([]);
+    setCaseNotes([]);
+    setCaseConfidence('');
+    attemptStartedAtRef.current = Date.now();
+    stepStartedAtRef.current = Date.now();
+    attemptSavedRef.current = false;
+    verifiedCommandsByStepRef.current = {};
+    attemptTelemetryRef.current = { hintsOpened: 0, hintLevelsShown: [], timePerStepSeconds: {}, wrongCommandsByStep: {}, wrongDecisionCount: 0 };
+    setTimeLeft(0);
+    setIsThreatActive(false);
+    setMissionRunNumber(previous => previous + 1);
+    setScreen('terminal');
+    if (activeMission) sendSysMsg(`${activeMission.intro}\n[TRAINING MODE]: Untimed retry. Use the objective, hints, and glossary to work through the case.`);
   };
 
   const handleQuizComplete =
@@ -1376,7 +1512,7 @@ function App() {
           'terminal' &&
           activeMission && (
             <TerminalScreen
-              key={activeMission.id}
+              key={`${activeMission.id}-${missionRunNumber}`}
               activeMission={
                 activeMission
               }
@@ -1403,6 +1539,10 @@ function App() {
                 setShowMap
               }
               setHintText={setHintText}
+              onHintLevelShown={level => {
+                if (level === 1) attemptTelemetryRef.current.hintsOpened += 1;
+                attemptTelemetryRef.current.hintLevelsShown.push(level);
+              }}
               currentPath={
                 currentPath
               }
@@ -1415,6 +1555,8 @@ function App() {
               containedTarget={containedTarget}
               disabledService={disabledService}
               removedPersistence={removedPersistence}
+              onCaseNotesChange={setCaseNotes}
+              onCaseConfidenceChange={setCaseConfidence}
               playSound={
                 playSound
               }
@@ -1428,9 +1570,6 @@ function App() {
             userScores={
               userScores
             }
-            setShowEval={
-              setShowEval
-            }
           />
         )}
 
@@ -1443,9 +1582,8 @@ function App() {
         mission={
           pendingMission
         }
-        onStart={
-          confirmStartMission
-        }
+        onStart={() => confirmStartMission(false)}
+        onStartUntimed={() => confirmStartMission(true)}
         onAbort={() =>
           setShowBriefing(
             false
@@ -1466,6 +1604,7 @@ function App() {
         hints={
           hintText
         }
+        onLevelShown={level => attemptTelemetryRef.current.hintLevelsShown.push(level)}
       />
 
       <NetworkMapModal
@@ -1499,17 +1638,6 @@ function App() {
         }
       />
 
-      <EvalModal
-        show={
-          showEval
-        }
-        onClose={() =>
-          setShowEval(
-            false
-          )
-        }
-      />
-
       <VictoryModal
         show={
           showVictory
@@ -1524,6 +1652,8 @@ function App() {
           );
         }}
         mission={activeMission}
+        caseNotes={caseNotes}
+        confidence={caseConfidence}
       />
 
       <MissionFailedModal
@@ -1543,6 +1673,11 @@ function App() {
           activeMission?.title ||
           'Unknown'
         }
+        reachedStep={failedAtStep + 1}
+        totalSteps={activeMission?.steps.length ?? 0}
+        stepDescription={activeMission?.steps[failedAtStep]?.desc ?? 'Review the mission objective.'}
+        concept={activeMission?.briefing.concept ?? 'Mission investigation'}
+        onRetryUntimed={retryMissionUntimed}
       />
 
       {showOnboarding && (
@@ -1553,6 +1688,10 @@ function App() {
             )
           }
         />
+      )}
+
+      {showMissionToolGuide && (
+        <MissionToolGuide onComplete={() => setShowMissionToolGuide(false)} />
       )}
 
     </div>

@@ -7,6 +7,20 @@ type GuideEntry = {
   limit: string;
 };
 
+const simulationOnlyCommand = (command: string, example: string) => /^(help|inspect|report|preserve|record-evidence|assess|block|disable-service|remove-persistence)\b/.test(command)
+  || [command, example].some(value => value.includes('--ip') || value.includes('--after') || value.includes('--before'));
+
+const realWorldEquivalent = (command: string) => {
+  if (command.startsWith('block')) return 'Real work: an approved firewall or endpoint control, with authorization and verification.';
+  if (command.startsWith('disable-service')) return 'Real work: the operating system service manager and change-control process.';
+  if (command.startsWith('kill')) return 'Real work: process-management tools, after evidence preservation and authorization.';
+  if (command.startsWith('remove-persistence')) return 'Real work: investigate the specific startup mechanism, preserve evidence, and follow approved remediation procedures.';
+  if (command.startsWith('preserve') || command.startsWith('record-evidence')) return 'Real work: case-management and evidence-handling procedures; preserve original sources.';
+  if (command.startsWith('assess') || command.startsWith('report')) return 'Real work: document findings, sources, uncertainty, and scope in the incident case record.';
+  if (command.includes('--ip') || command.includes('--after') || command.includes('--before')) return 'Real work: use grep or a log-analysis platform with its documented filters; these flags are custom to this simulation.';
+  return 'Real work: this command is a training interface feature; use the relevant system or case-management tool.';
+};
+
 const GUIDE: Record<Tier, GuideEntry[]> = {
   BEGINNER: [
     { command: 'help', what: 'Shows the commands supported by this training terminal.', example: 'help', limit: 'Use the mission objective and this guide to choose which command to try next.' },
@@ -28,6 +42,7 @@ const GUIDE: Record<Tier, GuideEntry[]> = {
     { command: 'cat [file]', what: 'Displays the contents of a simulated log or record.', example: 'cat access.log', limit: 'A single request does not show whether an attack succeeded.' },
     { command: 'ps aux', what: 'Lists running simulated processes, including IDs, owners, CPU use, and paths.', example: 'ps aux', limit: 'High CPU or an unfamiliar name alone does not prove malware.' },
     { command: 'ps -p [PID]', what: 'Shows details about one process ID.', example: 'ps -p 2214', limit: 'Compare path and context with expected software.' },
+    { command: 'stat [file]', what: 'Shows simulated file owner, permissions, and modification time for context.', example: 'stat /tmp/.cache/cryptominer.exe', limit: 'Metadata can support review but does not prove that a file executed.' },
     { command: 'preserve [source]', what: 'Adds a simulated case note before response.', example: 'preserve netstat port-4444-listener', limit: 'Real evidence handling requires preserving originals and recording collection details.' },
     { command: 'netstat -tuln / ss -tuln', what: 'Lists simulated listening services and sockets.', example: 'ss -tuln', limit: 'A listening port is a service endpoint, not proof of compromise.' },
     { command: 'grep [-i] [-n] [pattern] [file]', what: 'Searches file lines; -i ignores case and -n adds line numbers.', example: "grep -i -n failed auth.log", limit: 'Filters can hide relevant context.' },
@@ -75,6 +90,10 @@ export const CommandFieldGuide = ({ tier, onClose }: { tier: Tier; onClose: () =
             <article key={entry.command} className="border border-green-900/70 bg-black/50 p-3 sm:p-4">
               <code className="block break-words text-xs font-bold text-cyan-300">{entry.command}</code>
               <p className="mt-2 text-xs leading-5 text-gray-300">{entry.what}</p>
+              {simulationOnlyCommand(entry.command, entry.example) && <div className="mt-2 border border-cyan-900/70 bg-cyan-950/20 p-2">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-cyan-300">Simulation command</p>
+                <p className="mt-1 text-[10px] leading-4 text-cyan-100">{realWorldEquivalent(entry.command)}</p>
+              </div>}
               <p className="mt-2 text-[11px] text-green-500"><span className="text-green-800">EXAMPLE </span><code className="break-words">{entry.example}</code></p>
               <p className="mt-2 border-t border-green-950 pt-2 text-[11px] leading-4 text-yellow-700"><span className="font-bold text-yellow-600">LIMIT </span>{entry.limit}</p>
             </article>

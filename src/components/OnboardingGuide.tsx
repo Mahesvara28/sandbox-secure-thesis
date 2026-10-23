@@ -4,14 +4,12 @@ import {
   GraduationCap,
   Target,
   BookOpen,
-  Map,
   HelpCircle,
   ChevronRight,
   ChevronLeft,
   X,
-  CheckCircle2,
-  Shield,
-  Keyboard
+  LayoutDashboard,
+  UserRound
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -22,18 +20,26 @@ interface OnboardingGuideProps {
 const guideSteps = [
   {
     title: 'WELCOME, OPERATOR',
-    subtitle: 'Welcome to Sandbox Secure',
+    subtitle: 'Your interface tour',
     description:
       'You are entering a simulated cybersecurity training environment. Your objective is to learn, investigate incidents, and complete security operations.',
-    icon: Shield,
+    icon: LayoutDashboard,
     color: 'green',
     visual: 'WELCOME'
   },
   {
+    title: 'DASHBOARD',
+    subtitle: 'Your home screen',
+    description: 'Use the Dashboard to see your pre-test and post-test scores, open the Academy, or find standalone practice missions. You can reopen this tour with How to Play.',
+    icon: LayoutDashboard,
+    color: 'blue',
+    visual: 'DASHBOARD'
+  },
+  {
     title: 'ACADEMY',
-    subtitle: 'Learn before you deploy',
+    subtitle: 'Certification path',
     description:
-      'The Academy contains the Beginner, Intermediate, and Expert certifications. Take a pre-test, complete that tier’s training missions, then take its post-test. These missions belong to the Academy.',
+      'Choose a certification tier. Its path is pre-test, Academy missions in order, then post-test. Your progress is saved so you can return to your training.',
     icon: GraduationCap,
     color: 'blue',
     visual: 'ACADEMY'
@@ -42,46 +48,18 @@ const guideSteps = [
     title: 'MISSIONS',
     subtitle: 'Investigate security incidents',
     description:
-      'The Missions tab contains standalone practice missions. They are separate from the certification missions in the Academy, so you can practice without changing your certification progress.',
+      'The Missions tab contains optional standalone practice. These scenarios are separate from Academy certification missions and do not replace them.',
     icon: Target,
     color: 'red',
     visual: 'MISSIONS'
   },
   {
-    title: 'THE TERMINAL',
-    subtitle: 'Your primary investigation tool',
-    description:
-      'Type commands into the terminal to explore the simulated system. Commands such as pwd, ls, cd, cat, grep, ps, and netstat help you investigate the environment.',
-    icon: Terminal,
-    color: 'green',
-    visual: 'TERMINAL'
-  },
-  {
-    title: 'MISSION OBJECTIVES',
-    subtitle: 'Follow the investigation steps',
-    description:
-      'Every mission has objectives shown at the top of the terminal screen. Complete them in order to progress through the investigation.',
-    icon: CheckCircle2,
-    color: 'yellow',
-    visual: 'OBJECTIVES'
-  },
-  {
-    title: 'NEED HELP?',
-    subtitle: 'Your tools are always available',
-    description:
-      'Use Hint when you are stuck, Map when you need to inspect the network, and Cheat Sheet when you need a quick command reference.',
-    icon: HelpCircle,
+    title: 'PROFILE & SUPPORT',
+    subtitle: 'Scores and help',
+    description: 'Profile shows your assessment results. Use How to Play on the Dashboard to revisit this interface tour. Your first Academy mission also introduces the tools used during investigations.',
+    icon: UserRound,
     color: 'purple',
-    visual: 'TOOLS'
-  },
-  {
-    title: 'YOU ARE READY',
-    subtitle: 'Begin your cybersecurity training',
-    description:
-      'Start with the Beginner Academy tier to build a foundation. Use standalone Missions for extra practice, then return to the Academy when you are ready to advance.',
-    icon: Keyboard,
-    color: 'green',
-    visual: 'READY'
+    visual: 'PROFILE'
   }
 ];
 
@@ -215,7 +193,7 @@ const OnboardingGuide = ({ onComplete }: OnboardingGuideProps) => {
                   {current.description}
                 </p>
 
-                {step === 1 && (
+                {step === 2 && (
                   <div className="mt-8 border border-blue-900 bg-blue-950/20 p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <GraduationCap size={16} className="text-blue-400" />
@@ -248,88 +226,8 @@ const OnboardingGuide = ({ onComplete }: OnboardingGuideProps) => {
                   </div>
                 )}
 
-                {step === 3 && (
-                  <div className="mt-8 border border-green-900 bg-green-950/20 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Terminal size={16} className="text-green-400" />
-                      <span className="text-xs font-bold text-green-400 uppercase">
-                        Example Commands
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      {['pwd', 'ls', 'cd', 'cat', 'grep', 'ps aux'].map(command => (
-                        <div
-                          key={command}
-                          className="border border-green-900/70 bg-black px-3 py-2 text-xs text-green-300"
-                        >
-                          {command}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {step === 4 && (
-                  <div className="mt-8 border border-yellow-900 bg-yellow-950/10 p-4">
-                    <div className="flex items-center gap-3">
-                      <CheckCircle2 size={18} className="text-yellow-400" />
-
-                      <div>
-                        <p className="text-xs text-yellow-400 font-bold uppercase">
-                          Follow the evidence
-                        </p>
-
-                        <p className="text-[11px] text-gray-500 mt-1">
-                          Do not rush. Read the mission objective before entering commands.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 5 && (
-                  <div className="mt-8 grid grid-cols-3 gap-3">
-                    <div className="border border-yellow-900 bg-yellow-950/10 p-3 text-center">
-                      <HelpCircle size={20} className="mx-auto text-yellow-500 mb-2" />
-                      <p className="text-[10px] text-yellow-400 uppercase">
-                        Hint
-                      </p>
-                    </div>
-
-                    <div className="border border-blue-900 bg-blue-950/10 p-3 text-center">
-                      <Map size={20} className="mx-auto text-blue-500 mb-2" />
-                      <p className="text-[10px] text-blue-400 uppercase">
-                        Map
-                      </p>
-                    </div>
-
-                    <div className="border border-purple-900 bg-purple-950/10 p-3 text-center">
-                      <BookOpen size={20} className="mx-auto text-purple-500 mb-2" />
-                      <p className="text-[10px] text-purple-400 uppercase">
-                        Cheat Sheet
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {step === 6 && (
-                  <div className="mt-8 border border-green-700 bg-green-950/20 p-4">
-                    <div className="flex items-center gap-3">
-                      <Target size={20} className="text-green-400" />
-
-                      <div>
-                        <p className="text-xs text-green-400 font-bold uppercase">
-                          Recommended Starting Point
-                        </p>
-
-                        <p className="text-[11px] text-gray-400 mt-1">
-                          Academy → Beginner → Start Training
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {step === 3 && <div className="mt-8 border border-red-900 bg-red-950/10 p-4"><div className="flex items-center gap-3"><Target size={18} className="text-red-400" /><p className="text-xs text-gray-300">Standalone practice scenarios. Certification progress stays in the Academy.</p></div></div>}
+                {step === 4 && <div className="mt-8 border border-purple-900 bg-purple-950/10 p-4"><div className="flex items-center gap-3"><BookOpen size={18} className="text-purple-400" /><HelpCircle size={18} className="text-purple-400" /><p className="text-xs text-gray-300">This tour covers navigation. A separate guide will appear when you enter your first certification mission.</p></div></div>}
               </motion.div>
             </AnimatePresence>
 

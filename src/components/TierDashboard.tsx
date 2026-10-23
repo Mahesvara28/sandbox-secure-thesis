@@ -17,7 +17,8 @@ import type {
 } from '../data/gameData';
 
 import {
-  MISSIONS
+  MISSIONS,
+  BRIDGE_MISSIONS
 } from '../data/gameData';
 
 import {
@@ -82,11 +83,13 @@ export const TierDashboard = ({
 
   const [showCommandGuide, setShowCommandGuide] = useState(false);
 
-  const tierMissions: Mission[] =
-    MISSIONS.filter(
+  const tierMissions: Mission[] = [
+    ...(tierName === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []),
+    ...MISSIONS.filter(
       mission =>
         mission.tier === tierName
-    );
+    )
+  ];
 
   const savedTierScore =
     userScores[tierName];
@@ -155,6 +158,8 @@ export const TierDashboard = ({
     completedCount ===
       tierMissions.length;
 
+  const nextMission = tierMissions.find(mission => !completedMissions.includes(mission.id));
+
   const finalPercentage =
     finalScore !== null &&
     postTestQuestions.length > 0
@@ -164,6 +169,11 @@ export const TierDashboard = ({
             100
         )
       : 0;
+
+  const prePercentage = preTestScore !== null && preTestQuestions.length > 0
+    ? Math.round((preTestScore / preTestQuestions.length) * 100)
+    : 0;
+  const scoreChange = finalPercentage - prePercentage;
 
   if (stage === 'intro') {
     return (
@@ -374,6 +384,11 @@ export const TierDashboard = ({
                   Learn and practice the skills required for your final
                   assessment.
                 </p>
+                <p className="mt-3 border-l-2 border-cyan-700 pl-3 text-xs leading-5 text-cyan-200">
+                  {nextMission
+                    ? <>Next step: <strong>{nextMission.title}</strong>. Read its briefing before starting; each mission introduces the skills needed for the next one.</>
+                    : 'You have completed every mission in this tier. You can continue to the final assessment.'}
+                </p>
 
               </div>
 
@@ -395,7 +410,7 @@ export const TierDashboard = ({
               </button>
               {savedTierScore && (
                 <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => openAnswerKey('pre', 'missions')} className="border border-green-800 px-3 py-2 text-[10px] font-bold uppercase text-green-400 hover:border-green-400">Pre-Test Answers</button>
+                  {savedTierScore.preTestScore !== undefined && <button onClick={() => openAnswerKey('pre', 'missions')} className="border border-green-800 px-3 py-2 text-[10px] font-bold uppercase text-green-400 hover:border-green-400">Pre-Test Answers</button>}
                   {savedTierScore.finalScore !== undefined && (
                     <button onClick={() => openAnswerKey('post', 'missions')} className="border border-green-800 px-3 py-2 text-[10px] font-bold uppercase text-green-400 hover:border-green-400">Post-Test Answers</button>
                   )}
@@ -404,6 +419,13 @@ export const TierDashboard = ({
               </div>
 
             </div>
+
+            {tierName === 'BEGINNER' && <div className={`mt-4 border-l-2 p-3 text-xs leading-5 ${prePercentage >= 80 ? 'border-cyan-500 bg-cyan-950/20 text-cyan-100' : 'border-green-900 bg-green-950/10 text-green-600'}`}>
+              <p className="font-bold uppercase tracking-widest">{prePercentage >= 80 ? 'Placement suggestion' : 'Practice is optional'}</p>
+              <p className="mt-1">{prePercentage >= 80
+                ? 'Your pre-assessment suggests you already know many foundations. You can continue directly with this certification path; standalone practice missions in the Missions tab are optional. Intermediate bridge lessons remain part of that tier.'
+                : 'The standalone practice missions in the Missions tab are optional and separate from certification. Use them for extra practice or continue with the Academy missions.'}</p>
+            </div>}
 
           </div>
 
@@ -753,6 +775,11 @@ export const TierDashboard = ({
                 </div>
 
               </div>
+
+              <p className={`mt-4 border-t border-green-900/60 pt-3 text-sm ${scoreChange >= 0 ? 'text-green-300' : 'text-yellow-300'}`}>
+                {scoreChange > 0 ? `Assessment score increased by ${scoreChange} percentage points.` : scoreChange < 0 ? `Assessment score was ${Math.abs(scoreChange)} percentage points lower this time.` : 'Both assessment scores were at the same percentage.'}
+              </p>
+              <p className="mt-1 text-[10px] leading-4 text-green-700">The pre-test and post-test use different questions, so this is a broad progress signal rather than a topic-by-topic comparison.</p>
 
             </div>
 
