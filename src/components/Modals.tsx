@@ -1,5 +1,7 @@
 import { Map, HelpCircle, X, BookOpen } from 'lucide-react';
 import type { Mission } from '../data/gameData';
+
+const isSimulationShortcut = (command: string) => /^(help|inspect|report|preserve|record-evidence|assess|block|disable-service|remove-persistence|choose)\b/.test(command);
 import { CHEAT_SHEET } from '../data/gameData';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
@@ -107,7 +109,7 @@ export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort 
             {mission.primer.example && <pre className="mt-3 whitespace-pre-wrap border-l-2 border-cyan-700 bg-black/50 p-3 font-mono text-xs leading-5 text-green-200">{mission.primer.example}</pre>}
           </section>}
           <div className="text-xs text-green-600">Difficulty: <span className="text-green-300">{mission.difficulty.toUpperCase()}</span> · {mission.timerLimit > 0 ? `Optional challenge timer: ${Math.floor(mission.timerLimit / 60)} minutes` : 'Untimed practice'}</div>
-          <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Commands You'll Use</h3><div className="space-y-2">{mission.briefing.commands.map((cmd, i) => (<div key={i} className="bg-green-950/30 border border-green-900 p-2 font-mono text-xs"><span className="text-green-400">{cmd}</span></div>))}</div></div>
+          <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Commands You'll Use</h3><div className="space-y-2">{mission.briefing.commands.map((cmd, i) => (<div key={i} className="bg-green-950/30 border border-green-900 p-2 font-mono text-xs"><span className="text-green-400">{cmd}</span>{isSimulationShortcut(cmd) && <span className="ml-2 font-sans text-[9px] font-bold uppercase tracking-wide text-cyan-300">Training shortcut</span>}</div>))}</div><p className="mt-2 text-[11px] leading-5 text-gray-400"><strong className="text-cyan-300">Simulation note:</strong> Commands marked “Training shortcut” are game actions, not standard shell commands. In real work, analysts record findings and response actions in approved case-management or security tools.</p></div>
           <div className="border border-yellow-700 bg-yellow-950/20 p-3"><h3 className="text-xs font-bold text-yellow-600 uppercase mb-1">Objective</h3><p className="text-yellow-400 text-sm">{mission.briefing.objective}</p></div>
         </div>
         <div className="shrink-0 border-t border-green-900 bg-black p-3 sm:p-4 flex flex-col gap-3 sm:flex-row">

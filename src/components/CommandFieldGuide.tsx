@@ -88,18 +88,18 @@ export const CommandFieldGuide = ({ tier, onClose }: { tier: Tier; onClose: () =
         <div className="grid gap-3 md:grid-cols-2">
           {GUIDE[tier].map(entry => (
             <article key={entry.command} className="border border-green-900/70 bg-black/50 p-3 sm:p-4">
-              <code className="block break-words text-xs font-bold text-cyan-300">{entry.command}</code>
-              <p className="mt-2 text-xs leading-5 text-gray-300">{entry.what}</p>
+              <code className="block break-words border border-cyan-700/70 bg-cyan-950/60 px-3 py-2 text-xs font-black text-cyan-100">{entry.command}</code>
+              <p className="mt-3 border-l-2 border-green-700 pl-3 text-xs leading-5 text-gray-200"><span className="mb-1 block text-[9px] font-bold uppercase tracking-widest text-green-400">What it does</span>{entry.what}</p>
               {simulationOnlyCommand(entry.command, entry.example) && <div className="mt-2 border border-cyan-900/70 bg-cyan-950/20 p-2">
                 <p className="text-[9px] font-bold uppercase tracking-widest text-cyan-300">Simulation command</p>
                 <p className="mt-1 text-[10px] leading-4 text-cyan-100">{realWorldEquivalent(entry.command)}</p>
               </div>}
-              <p className="mt-2 text-[11px] text-green-500"><span className="text-green-800">EXAMPLE </span><code className="break-words">{entry.example}</code></p>
-              <p className="mt-2 border-t border-green-950 pt-2 text-[11px] leading-4 text-yellow-700"><span className="font-bold text-yellow-600">LIMIT </span>{entry.limit}</p>
+              <p className="mt-3 border border-green-900/80 bg-green-950/30 p-2 text-[11px] text-green-200"><span className="mb-1 block text-[9px] font-bold uppercase tracking-widest text-green-400">Example</span><code className="break-words">{entry.example}</code></p>
+              <p className="mt-2 border-l-2 border-yellow-700 bg-yellow-950/20 p-2 text-[11px] leading-4 text-yellow-200"><span className="font-bold uppercase tracking-wide text-yellow-400">Limit · </span>{entry.limit}</p>
             </article>
           ))}
         </div>
-        <p className="mt-4 text-[10px] text-green-800">Commands run only in the training simulation. Check the current objective before choosing a command.</p>
+        <p className="mt-4 border-l-2 border-cyan-700 bg-cyan-950/20 px-3 py-2 text-[11px] leading-5 text-cyan-200"><strong>Training simulation:</strong> Standard tools such as <code>grep</code>, <code>ps</code>, and <code>cat</code> are represented with sample data here. Shortcuts such as <code>report</code>, <code>preserve</code>, and <code>assess</code> are game actions, not standard shell commands. In real work, findings and response actions are recorded through approved security and case-management tools. Always use the objective to decide what to investigate.</p>
       </div>
     </section>
   </div>

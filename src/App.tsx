@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
+import errorSound from './assets/error.mp3';
+import levelCompleteSound from './assets/level complete.mp3';
+import missionMusicOne from './assets/Main sound.mp3';
+import missionMusicTwo from './assets/Main sound2.mp3';
 
 import {
   auth,
@@ -54,7 +58,9 @@ import {
   GraduationCap,
   Target,
   ClipboardCheck,
-  LogOut
+  LogOut,
+  Settings,
+  Play
 } from 'lucide-react';
 
 type Screen =
@@ -72,6 +78,30 @@ type BootStage =
 type AuthMode =
   | 'login'
   | 'register';
+
+const getLocalDateKey = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
+const getDailyTrialDetails = () => {
+  const date = new Date();
+  const day = date.getDate();
+  const mission = TUTORIAL_MISSIONS[(day - 1) % TUTORIAL_MISSIONS.length];
+  return {
+    dateKey: getLocalDateKey(),
+    type: day % 2 === 0 ? 'timeAttack' as const : 'accuracy' as const,
+    missionTitle: mission.title.replace(/^(Tutorial|Practice):?\s*/i, '')
+  };
+};
+
+const hasUsedDailyTrial = (uid: string) => {
+  try {
+    return localStorage.getItem(`sandbox-secure-daily-trial-${uid}-${getLocalDateKey()}`) === 'used';
+  } catch {
+    return false;
+  }
+};
 
 type SavedScoreData = {
   score?: number;
@@ -92,6 +122,23 @@ export interface TierScore {
 };
 
 function App() {
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      return localStorage.getItem('sandbox-secure-theme') === 'light' ? 'light' : 'dark';
+    } catch {
+      return 'dark';
+    }
+  });
+
+  useEffect(() => {
+    document.body.dataset.theme = theme;
+    try {
+      localStorage.setItem('sandbox-secure-theme', theme);
+    } catch {
+      // The theme still applies for this session if storage is unavailable.
+    }
+  }, [theme]);
+
   const [screen, setScreen] =
     useState<Screen>('dashboard');
 
@@ -166,6 +213,8 @@ function App() {
   const attemptStartedAtRef = useRef(0);
   const stepStartedAtRef = useRef(0);
   const attemptSavedRef = useRef(false);
+  const attemptWasTimedRef = useRef(false);
+  const dailyTrialRef = useRef<{ date: string; type: 'timeAttack' | 'accuracy' } | null>(null);
   const verifiedCommandsByStepRef = useRef<Record<string, string[]>>({});
   const attemptTelemetryRef = useRef({ hintsOpened: 0, hintLevelsShown: [] as number[], timePerStepSeconds: {} as Record<string, number>, wrongCommandsByStep: {} as Record<string, number>, wrongDecisionCount: 0 });
 
@@ -179,11 +228,20 @@ function App() {
 
   const [isMuted, setIsMuted] =
     useState(false);
+  const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem('sandbox-secure-music') !== 'off');
+  const [audioVolume, setAudioVolume] = useState(() => Number(localStorage.getItem('sandbox-secure-volume') ?? 0.22));
+  const [showSettings, setShowSettings] = useState(false);
+
+  const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
+  const backgroundTrackRef = useRef<string | null>(null);
+  const backgroundRoleRef = useRef<'app' | 'mission' | null>(null);
 
   const [missionOrigin, setMissionOrigin] =
     useState<
       'academy' | 'missions'
     >('missions');
+
+  const checkpointKey = user ? `sandbox-secure-mission-checkpoint-${user.uid}` : null;
 
   const [showBriefing, setShowBriefing] =
     useState(false);
@@ -216,6 +274,32 @@ function App() {
   const [caseNotes, setCaseNotes] = useState<string[]>([]);
   const [caseConfidence, setCaseConfidence] = useState('');
 
+  useEffect(() => {
+    if (!checkpointKey || !activeMission || questStep >= activeMission.steps.length) return;
+    try {
+      localStorage.setItem(checkpointKey, JSON.stringify({
+        missionId: activeMission.id,
+        questStep,
+        timeLeft,
+        isThreatActive,
+        missionOrigin,
+        containedTarget,
+        disabledService,
+        removedPersistence,
+        caseNotes,
+        caseConfidence,
+        currentPath
+      }));
+    } catch {
+      // The in-memory checkpoint remains available for this session.
+    }
+  }, [checkpointKey, activeMission, questStep, timeLeft, isThreatActive, missionOrigin, containedTarget, disabledService, removedPersistence, caseNotes, caseConfidence, currentPath]);
+
+  useEffect(() => {
+    localStorage.setItem('sandbox-secure-music', musicEnabled ? 'on' : 'off');
+    localStorage.setItem('sandbox-secure-volume', String(audioVolume));
+  }, [musicEnabled, audioVolume]);
+
   const sendSysMsg = (
     text: string
   ) => {
@@ -242,6 +326,9 @@ function App() {
       tier: activeMission.tier,
       concept: activeMission.briefing.concept,
       outcome,
+      challengeMode: attemptWasTimedRef.current,
+      dailyChallengeDate: dailyTrialRef.current?.date,
+      dailyChallengeType: dailyTrialRef.current?.type,
       startedAt: new Date(startedAt).toISOString(),
       completedAt: new Date(completedAt).toISOString(),
       totalTimeSeconds: Math.max(0, Math.round((completedAt - startedAt) / 1000)),
@@ -256,20 +343,87 @@ function App() {
       | 'success'
       | 'error'
       | 'scan'
+      | 'levelComplete'
   ) => {
     if (isMuted) return;
+    const source = type === 'error'
+      ? errorSound
+      : type === 'levelComplete'
+      ? levelCompleteSound
+      : null;
+    if (!source) return;
 
-    const audio =
-      new Audio(
-        `/assets/audio/${type}.mp3`
-      );
-
-    audio.volume = 0.3;
-
-    audio
-      .play()
-      .catch(() => {});
+    const audio = new Audio(source);
+    audio.volume = Math.min(1, audioVolume * (type === 'levelComplete' ? 2.5 : 1.8));
+    void audio.play().catch(() => {});
   };
+
+  useEffect(() => {
+    const activeMissionId = activeMission?.id;
+    const isPlayingMission = Boolean(activeMissionId) && screen === 'terminal' && !showVictory && !showMissionFailed;
+    const missionTracks = [missionMusicOne, missionMusicTwo];
+    let nextTrack: string | null = null;
+    let nextRole: 'app' | 'mission' | null = null;
+
+    if (bootStage === 'authenticated' && isPlayingMission) {
+      nextRole = 'mission';
+      if (backgroundRoleRef.current === 'mission' && missionTracks.includes(backgroundTrackRef.current ?? '')) {
+        nextTrack = backgroundTrackRef.current;
+      } else {
+        // The app soundtrack is Main sound2, so choose a different track when
+        // entering a mission to make the scene change immediately audible.
+        const availableTracks = missionTracks.filter(track => track !== backgroundTrackRef.current);
+        nextTrack = availableTracks[Math.floor(Math.random() * availableTracks.length)];
+      }
+    } else if (bootStage === 'authenticated') {
+      nextRole = 'app';
+      nextTrack = missionMusicTwo;
+    }
+
+    if (nextTrack !== backgroundTrackRef.current) {
+      backgroundAudioRef.current?.pause();
+      backgroundAudioRef.current = null;
+      backgroundTrackRef.current = nextTrack;
+      if (nextTrack) {
+        const nextAudio = new Audio(nextTrack);
+        nextAudio.loop = true;
+        nextAudio.volume = audioVolume;
+        backgroundAudioRef.current = nextAudio;
+      }
+    }
+    backgroundRoleRef.current = nextRole;
+
+    const audio = backgroundAudioRef.current;
+    if (!audio) return;
+    if (isMuted || !musicEnabled) {
+      audio.pause();
+    } else {
+      audio.loop = true;
+      audio.volume = audioVolume;
+      void audio.play().catch(() => {});
+    }
+  }, [bootStage, screen, activeMission?.id, showVictory, showMissionFailed, isMuted, musicEnabled, audioVolume]);
+
+  useEffect(() => () => {
+    backgroundAudioRef.current?.pause();
+    backgroundAudioRef.current = null;
+    backgroundTrackRef.current = null;
+    backgroundRoleRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const resumeBackgroundAudio = () => {
+      if (!isMuted && musicEnabled && backgroundAudioRef.current?.paused) {
+        void backgroundAudioRef.current.play().catch(() => {});
+      }
+    };
+    window.addEventListener('pointerdown', resumeBackgroundAudio, { passive: true });
+    window.addEventListener('keydown', resumeBackgroundAudio);
+    return () => {
+      window.removeEventListener('pointerdown', resumeBackgroundAudio);
+      window.removeEventListener('keydown', resumeBackgroundAudio);
+    };
+  }, [isMuted, musicEnabled]);
 
   const maybeShowOnboarding = (
     uid: string
@@ -399,6 +553,30 @@ function App() {
               setCompletedMissions(
                 progress.completedMissions
               );
+
+              try {
+                const checkpoint = JSON.parse(localStorage.getItem(`sandbox-secure-mission-checkpoint-${currentUser.uid}`) ?? 'null') as {
+                  missionId?: string; questStep?: number; timeLeft?: number; isThreatActive?: boolean;
+                  missionOrigin?: 'academy' | 'missions'; containedTarget?: string; disabledService?: string;
+                  removedPersistence?: string[]; caseNotes?: string[]; caseConfidence?: string; currentPath?: string;
+                } | null;
+                const savedMission = [...MISSIONS, ...BRIDGE_MISSIONS, ...TUTORIAL_MISSIONS].find(mission => mission.id === checkpoint?.missionId);
+                if (savedMission) {
+                  setActiveMission(savedMission);
+                  setQuestStep(Math.min(Math.max(checkpoint?.questStep ?? 0, 0), savedMission.steps.length - 1));
+                  setTimeLeft(Math.max(0, checkpoint?.timeLeft ?? savedMission.timerLimit ?? 300));
+                  setIsThreatActive(Boolean(checkpoint?.isThreatActive));
+                  setMissionOrigin(checkpoint?.missionOrigin ?? 'academy');
+                  setContainedTarget(checkpoint?.containedTarget ?? '');
+                  setDisabledService(checkpoint?.disabledService ?? '');
+                  setRemovedPersistence(checkpoint?.removedPersistence ?? []);
+                  setCaseNotes(checkpoint?.caseNotes ?? []);
+                  setCaseConfidence(checkpoint?.caseConfidence ?? '');
+                  setCurrentPath(checkpoint?.currentPath ?? '/home/operator');
+                }
+              } catch {
+                // Ignore malformed or unavailable local checkpoints.
+              }
             } catch (
               error
             ) {
@@ -413,6 +591,7 @@ function App() {
           } else {
             setUserScores({});
             setCompletedMissions([]);
+            setActiveMission(null);
             setIsFakeAdmin(false);
           }
 
@@ -481,6 +660,7 @@ function App() {
   useEffect(() => {
     if (
       !isThreatActive ||
+      screen !== 'terminal' ||
       timeLeft <= 0
     ) {
       return;
@@ -506,6 +686,7 @@ function App() {
       );
   }, [
     isThreatActive,
+    screen,
     timeLeft,
     questStep,
     persistMissionAttempt
@@ -707,6 +888,7 @@ function App() {
       setUser(null);
       setUserScores({});
       setCompletedMissions([]);
+      setActiveMission(null);
 
       setIsFakeAdmin(
         false
@@ -722,6 +904,7 @@ function App() {
   const startMission = (
     mission: Mission
   ) => {
+    dailyTrialRef.current = null;
     setMissionOrigin(
       'missions'
     );
@@ -738,6 +921,7 @@ function App() {
   const startMissionById = (
     missionId: string
   ) => {
+    dailyTrialRef.current = null;
     const allMissions = [
       ...MISSIONS,
       ...BRIDGE_MISSIONS,
@@ -764,6 +948,31 @@ function App() {
         true
       );
     }
+  };
+
+  const startDailyTrial = () => {
+    if (!user || hasUsedDailyTrial(user.uid)) return;
+    const daily = getDailyTrialDetails();
+    const isTimeAttack = daily.type === 'timeAttack';
+    const practiceMission = TUTORIAL_MISSIONS[(new Date().getDate() - 1) % TUTORIAL_MISSIONS.length];
+    const dailyMission: Mission = {
+      ...practiceMission,
+      id: `daily-${daily.dateKey}`,
+      title: `Daily ${isTimeAttack ? 'Time Attack' : 'Accuracy Trial'}: ${daily.missionTitle}`,
+      intro: isTimeAttack
+        ? 'HANDLER: Daily time attack. Work through the familiar training case carefully before the timer ends. Speed helps only when your steps are correct.'
+        : 'HANDLER: Daily accuracy trial. There is no timer. Choose commands deliberately and use the evidence to reach the supported conclusion.',
+      scenario: `${practiceMission.scenario} This is today’s one-attempt ${isTimeAttack ? 'timed' : 'accuracy'} trial.`,
+      timerLimit: isTimeAttack ? 180 : 0,
+      difficulty: 'standard'
+    };
+    try {
+      localStorage.setItem(`sandbox-secure-daily-trial-${user.uid}-${daily.dateKey}`, 'used');
+    } catch {
+      // The attempt can still be played if browser storage is unavailable.
+    }
+    startMission(dailyMission);
+    dailyTrialRef.current = { date: daily.dateKey, type: daily.type };
   };
 
   const confirmStartMission =
@@ -795,6 +1004,7 @@ function App() {
       setIsThreatActive(
         !untimed && pendingMission.timerLimit > 0
       );
+      attemptWasTimedRef.current = !untimed && pendingMission.timerLimit > 0;
 
       setTimeLeft(
         pendingMission.timerLimit ||
@@ -944,6 +1154,8 @@ function App() {
           1;
 
       if (isLastStep) {
+        if (checkpointKey) localStorage.removeItem(checkpointKey);
+        playSound('levelComplete');
         persistMissionAttempt('completed');
         setQuestStep(activeMission.steps.length);
         setIsThreatActive(
@@ -1284,6 +1496,8 @@ function App() {
         authSuccess={
           authSuccess
         }
+        theme={theme}
+        onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
         handleLogin={
           handleLogin
         }
@@ -1298,7 +1512,7 @@ function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-black text-[#4ade80] font-mono overflow-hidden flex flex-col relative">
+    <div data-theme={theme} className="h-screen w-screen bg-black text-[#4ade80] font-mono overflow-hidden flex flex-col relative">
 
       <a href="#main-content" className="sr-only z-[100] bg-black p-3 text-green-300 focus:not-sr-only focus:absolute focus:left-3 focus:top-3">
         Skip to main content
@@ -1410,6 +1624,14 @@ function App() {
 
         <div className="col-start-2 row-start-1 flex items-center justify-end gap-2 text-xs sm:ml-auto sm:gap-4">
 
+          {activeMission && !showVictory && !showMissionFailed && <button
+            type="button"
+            onClick={() => setScreen(screen === 'terminal' ? missionOrigin === 'academy' ? 'academy' : 'missions' : 'terminal')}
+            className="border border-cyan-700 px-2 py-1 font-bold text-cyan-300 hover:border-cyan-400"
+          >
+            {screen === 'terminal' ? 'SAVE & PAUSE' : <><Play size={12} className="mr-1 inline" />RESUME MISSION</>}
+          </button>}
+
           <div className="text-right">
 
             <p className="text-green-900 text-[10px]">
@@ -1434,6 +1656,10 @@ function App() {
             {isMuted
               ? '🔇'
               : '🔊'}
+          </button>
+
+          <button type="button" onClick={() => setShowSettings(true)} aria-label="Open settings" title="Settings" className="border border-green-900 p-2 text-green-400 hover:border-green-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400">
+            <Settings size={16} />
           </button>
 
           <button
@@ -1469,12 +1695,18 @@ function App() {
                 true
               )
             }
+            onStartDailyTrial={startDailyTrial}
+            dailyTrialPlayed={user ? hasUsedDailyTrial(user.uid) : false}
+            dailyTrialDate={getDailyTrialDetails().dateKey}
+            dailyTrialType={getDailyTrialDetails().type}
+            dailyTrialMissionTitle={getDailyTrialDetails().missionTitle}
           />
         )}
 
-        {screen ===
-          'academy' && (
+        {(screen === 'academy' || activeTier !== null) && (
+          <div className={screen === 'academy' ? 'block h-full' : 'hidden'}>
           <AcademyScreen
+            progressScope={user?.uid ?? 'guest'}
             activeTier={
               activeTier
             }
@@ -1494,6 +1726,7 @@ function App() {
               completedMissions
             }
           />
+          </div>
         )}
 
         {screen ===
@@ -1508,9 +1741,8 @@ function App() {
           />
         )}
 
-        {screen ===
-          'terminal' &&
-          activeMission && (
+        {activeMission && (
+          <div className={screen === 'terminal' ? 'block h-full' : 'hidden'}>
             <TerminalScreen
               key={`${activeMission.id}-${missionRunNumber}`}
               activeMission={
@@ -1557,11 +1789,13 @@ function App() {
               removedPersistence={removedPersistence}
               onCaseNotesChange={setCaseNotes}
               onCaseConfidenceChange={setCaseConfidence}
+              onShowMissionGuide={() => setShowMissionToolGuide(true)}
               playSound={
                 playSound
               }
             />
-          )}
+          </div>
+        )}
 
         {screen ===
           'profile' && (
@@ -1574,6 +1808,21 @@ function App() {
         )}
 
       </main>
+
+      {showSettings && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={() => setShowSettings(false)}>
+        <section className="w-full max-w-lg border border-cyan-700 bg-[#071014] p-5 shadow-2xl sm:p-7" onClick={event => event.stopPropagation()}>
+          <div className="flex items-start justify-between gap-4 border-b border-cyan-900 pb-4">
+            <div><p className="text-[10px] uppercase tracking-[0.25em] text-cyan-500">Player preferences</p><h2 id="settings-title" className="mt-1 text-2xl font-black text-cyan-200">Settings</h2></div>
+            <button onClick={() => setShowSettings(false)} className="border border-cyan-800 px-3 py-2 text-xs font-bold text-cyan-200">CLOSE</button>
+          </div>
+          <div className="mt-5 space-y-5">
+            <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-bold text-white">Appearance</p><p className="text-xs text-gray-400">Choose the screen theme.</p></div><button onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} className="border border-green-700 px-3 py-2 text-xs font-bold text-green-300">{theme === 'dark' ? 'LIGHT MODE' : 'DARK MODE'}</button></div>
+            <label className="flex items-center justify-between gap-4"><span><span className="block text-sm font-bold text-white">Background music</span><span className="text-xs text-gray-400">Play music across game tabs.</span></span><input type="checkbox" checked={musicEnabled} onChange={event => setMusicEnabled(event.target.checked)} className="h-5 w-5 accent-cyan-500" /></label>
+            <label className="block"><span className="block text-sm font-bold text-white">Music and effect volume · {Math.round(audioVolume * 100)}%</span><input type="range" min="0" max="1" step="0.01" value={audioVolume} onChange={event => setAudioVolume(Number(event.target.value))} className="mt-3 w-full accent-cyan-500" /></label>
+            <label className="flex items-center justify-between gap-4"><span><span className="block text-sm font-bold text-white">Sound effects</span><span className="text-xs text-gray-400">Command errors and mission completion sounds.</span></span><input type="checkbox" checked={!isMuted} onChange={event => setIsMuted(!event.target.checked)} className="h-5 w-5 accent-cyan-500" /></label>
+          </div>
+        </section>
+      </div>}
 
       <BriefingModal
         show={
@@ -1646,6 +1895,8 @@ function App() {
           setShowVictory(
             false
           );
+
+          setActiveMission(null);
 
           setScreen(
             missionOrigin

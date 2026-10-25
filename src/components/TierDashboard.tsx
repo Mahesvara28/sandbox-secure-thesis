@@ -59,6 +59,7 @@ interface TierDashboardProps {
       finalTotal?: number;
     }
   >;
+  progressScope?: string;
 }
 
 type Stage =
@@ -70,6 +71,22 @@ type Stage =
   | 'review-select'
   | 'review';
 
+const shuffledQuestions = (questions: Question[]): Question[] => {
+  const copy = questions.map(question => ({ ...question, options: [...question.options] }));
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+    const answer = copy[index].options[copy[index].correctAnswer];
+    const options = copy[index].options;
+    for (let optionIndex = options.length - 1; optionIndex > 0; optionIndex -= 1) {
+      const optionSwapIndex = Math.floor(Math.random() * (optionIndex + 1));
+      [options[optionIndex], options[optionSwapIndex]] = [options[optionSwapIndex], options[optionIndex]];
+    }
+    copy[index].correctAnswer = options.indexOf(answer);
+  }
+  return copy;
+};
+
 export const TierDashboard = ({
   tierName,
   preTestQuestions,
@@ -78,8 +95,17 @@ export const TierDashboard = ({
   onComplete,
   onStartMission,
   completedMissions,
-  userScores
+  userScores,
+  progressScope = 'local'
 }: TierDashboardProps) => {
+
+  const [assessmentQuestions] = useState(() => ({
+    pre: tierName === 'BEGINNER' ? shuffledQuestions(preTestQuestions) : preTestQuestions,
+    post: tierName === 'BEGINNER' ? shuffledQuestions(postTestQuestions) : postTestQuestions
+  }));
+
+  const activePreTestQuestions = assessmentQuestions.pre;
+  const activePostTestQuestions = assessmentQuestions.post;
 
   const [showCommandGuide, setShowCommandGuide] = useState(false);
 
@@ -129,9 +155,9 @@ export const TierDashboard = ({
 
   const [reviewAssessment, setReviewAssessment] = useState<'pre' | 'post'>('post');
   const [answerKeyOnly, setAnswerKeyOnly] = useState(false);
-  const [reviewReturnStage, setReviewReturnStage] = useState<'missions' | 'complete'>('complete');
+  const [reviewReturnStage, setReviewReturnStage] = useState<'missions' | 'complete' | 'review-select'>('complete');
 
-  const openAnswerKey = (assessment: 'pre' | 'post', returnStage: 'missions' | 'complete') => {
+  const openAnswerKey = (assessment: 'pre' | 'post', returnStage: 'missions' | 'complete' | 'review-select') => {
     setReviewAssessment(assessment);
     setAnswerKeyOnly(true);
     setReviewReturnStage(returnStage);
@@ -141,7 +167,7 @@ export const TierDashboard = ({
   const openPostAnswerReview = () => {
     setReviewAssessment('post');
     setAnswerKeyOnly(false);
-    setReviewReturnStage('complete');
+    setReviewReturnStage('review-select');
     setStage('review');
   };
 
@@ -169,16 +195,16 @@ export const TierDashboard = ({
 
   const finalPercentage =
     finalScore !== null &&
-    postTestQuestions.length > 0
+    activePostTestQuestions.length > 0
       ? Math.round(
           (finalScore /
-            postTestQuestions.length) *
+            activePostTestQuestions.length) *
             100
         )
       : 0;
 
-  const prePercentage = preTestScore !== null && preTestQuestions.length > 0
-    ? Math.round((preTestScore / preTestQuestions.length) * 100)
+  const prePercentage = preTestScore !== null && activePreTestQuestions.length > 0
+    ? Math.round((preTestScore / activePreTestQuestions.length) * 100)
     : 0;
   const scoreChange = finalPercentage - prePercentage;
 
@@ -243,7 +269,7 @@ export const TierDashboard = ({
 
                   <p className="text-xl font-black text-green-300">
                     {
-                      preTestQuestions.length
+                      activePreTestQuestions.length
                     }
                   </p>
 
@@ -322,8 +348,9 @@ export const TierDashboard = ({
     return (
       <QuizModule
         title={`${tierName} Pre-Assessment`}
+        progressScope={progressScope}
         questions={
-          preTestQuestions
+          activePreTestQuestions
         }
         showReviewAfterComplete={
           false
@@ -408,7 +435,7 @@ export const TierDashboard = ({
 
                 <p className="text-2xl font-black text-green-300">
                   {preTestScore ?? 0}/
-                  {preTestQuestions.length}
+                  {activePreTestQuestions.length}
                 </p>
 
               </div>
@@ -607,8 +634,9 @@ export const TierDashboard = ({
     return (
       <QuizModule
         title={`${tierName} Post-Assessment`}
+        progressScope={progressScope}
         questions={
-          postTestQuestions
+          activePostTestQuestions
         }
         continueLabel="Choose Review"
         onComplete={(
@@ -641,7 +669,7 @@ export const TierDashboard = ({
   }
 
   if (stage === 'review') {
-    const reviewQuestions = reviewAssessment === 'pre' ? preTestQuestions : postTestQuestions;
+    const reviewQuestions = reviewAssessment === 'pre' ? activePreTestQuestions : activePostTestQuestions;
     return (
       <QuizModule
         title={`${tierName} ${reviewAssessment === 'pre' ? 'Pre-Assessment' : 'Post-Assessment'}`}
@@ -663,18 +691,18 @@ export const TierDashboard = ({
           <p className="text-xs tracking-widest text-green-700">ASSESSMENT REVIEW</p>
           <h1 className="mt-2 text-3xl font-black text-green-300">Choose an answer review</h1>
           <p className="mt-3 text-sm leading-6 text-green-600">Review your post-assessment choices or open the correct-answer guide for either assessment.</p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {finalAnswers && (
               <button onClick={openPostAnswerReview} className="border border-cyan-700/60 p-4 text-left hover:border-cyan-400">
                 <span className="block text-sm font-bold text-cyan-300">Review my post-test answers</span>
                 <span className="mt-1 block text-xs text-green-700">See your selections, correct answers, and explanations.</span>
               </button>
             )}
-            <button onClick={() => openAnswerKey('post', 'complete')} className="border border-green-800 p-4 text-left hover:border-green-400">
+            <button onClick={() => openAnswerKey('post', 'review-select')} className="min-h-32 border border-green-800 bg-green-950/20 p-5 text-left transition-colors hover:border-green-400 hover:bg-green-950/40">
               <span className="block text-sm font-bold text-green-300">Post-test answer key</span>
               <span className="mt-1 block text-xs text-green-700">View every correct answer and its explanation.</span>
             </button>
-            <button onClick={() => openAnswerKey('pre', 'complete')} className="border border-green-800 p-4 text-left hover:border-green-400">
+            <button onClick={() => openAnswerKey('pre', 'review-select')} className="min-h-32 border border-green-800 bg-green-950/20 p-5 text-left transition-colors hover:border-green-400 hover:bg-green-950/40">
               <span className="block text-sm font-bold text-green-300">Pre-test answer key</span>
               <span className="mt-1 block text-xs text-green-700">Review the foundation questions and correct answers.</span>
             </button>
@@ -738,7 +766,7 @@ export const TierDashboard = ({
               <p className="text-6xl font-black text-green-300">
                 {finalScore ?? 0}
                 <span className="text-2xl text-green-700">
-                  /{postTestQuestions.length}
+                  /{activePostTestQuestions.length}
                 </span>
               </p>
 
@@ -760,7 +788,7 @@ export const TierDashboard = ({
 
                   <p className="text-2xl font-black text-green-300">
                     {preTestScore ?? 0}/
-                    {preTestQuestions.length}
+                    {activePreTestQuestions.length}
                   </p>
 
                 </div>
@@ -773,7 +801,7 @@ export const TierDashboard = ({
 
                   <p className="text-2xl font-black text-green-300">
                     {finalScore ?? 0}/
-                    {postTestQuestions.length}
+                    {activePostTestQuestions.length}
                   </p>
 
                 </div>

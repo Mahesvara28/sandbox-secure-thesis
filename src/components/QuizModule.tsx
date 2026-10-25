@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CheckCircle,
   XCircle,
@@ -28,6 +28,7 @@ interface QuizModuleProps {
   onContinueAfterComplete?: () => void;
   reviewAnswers?: (number | null)[];
   continueLabel?: string;
+  progressScope?: string;
 }
 
 export const QuizModule = ({
@@ -38,23 +39,36 @@ export const QuizModule = ({
   showReviewAfterComplete = false,
   onContinueAfterComplete,
   reviewAnswers,
-  continueLabel = 'Continue'
+  continueLabel = 'Continue',
+  progressScope = 'local'
 }: QuizModuleProps) => {
+  const progressStorageKey = `sandbox-secure-assessment-checkpoint-${progressScope}-${title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
+  const readAssessmentCheckpoint = () => {
+    if (reviewAnswers) return null;
+    try {
+      return JSON.parse(localStorage.getItem(progressStorageKey) ?? 'null') as { currentQuestionId?: string; answers?: Record<string, string | null> } | null;
+    } catch {
+      return null;
+    }
+  };
+  const savedCheckpoint = readAssessmentCheckpoint();
   const answerKeyOnly = Boolean(
     reviewAnswers &&
     reviewAnswers.length === questions.length &&
     reviewAnswers.every(answer => answer === null)
   );
   const [currentIndex, setCurrentIndex] =
-    useState(0);
+    useState(() => Math.max(0, questions.findIndex(question => String(question.id) === savedCheckpoint?.currentQuestionId)));
 
   const [selectedOption, setSelectedOption] =
     useState<number | null>(null);
 
   const [answers, setAnswers] =
     useState<(number | null)[]>(
-      () =>
-        reviewAnswers ?? Array(questions.length).fill(null)
+      () => reviewAnswers ?? questions.map(question => {
+        const savedAnswer = savedCheckpoint?.answers?.[String(question.id)];
+        return savedAnswer ? question.options.indexOf(savedAnswer) : null;
+      })
     );
 
   const [isFinished, setIsFinished] =
@@ -76,6 +90,30 @@ export const QuizModule = ({
 
   const [showReview, setShowReview] =
     useState(Boolean(reviewAnswers));
+
+  useEffect(() => {
+    if (reviewAnswers) return;
+    if (isFinished) {
+      try { localStorage.removeItem(progressStorageKey); } catch { /* Storage is optional. */ }
+      return;
+    }
+    if (!answers.some(answer => answer !== null)) {
+      if (currentIndex === 0) localStorage.removeItem(progressStorageKey);
+      return;
+    }
+    try {
+      const savedAnswers = Object.fromEntries(questions.map((question, index) => [
+        String(question.id),
+        answers[index] === null ? null : question.options[answers[index] as number]
+      ]));
+      localStorage.setItem(progressStorageKey, JSON.stringify({
+        currentQuestionId: String(questions[currentIndex]?.id ?? ''),
+        answers: savedAnswers
+      }));
+    } catch {
+      // Assessments remain usable when browser storage is disabled.
+    }
+  }, [answers, currentIndex, isFinished, questions, reviewAnswers, progressStorageKey]);
 
   if (questions.length === 0) {
     return (
@@ -174,6 +212,12 @@ export const QuizModule = ({
     setIsFinished(
       true
     );
+
+    try {
+      localStorage.removeItem(progressStorageKey);
+    } catch {
+      // Assessment submission still proceeds if storage is unavailable.
+    }
 
     onComplete(
       safeScore,
@@ -376,7 +420,7 @@ export const QuizModule = ({
                               {!answerKeyOnly && isUserAnswer &&
                                 !isCorrectAnswer && (
                                   <span className="ml-3 text-xs">
-                                    YOUR ANSWER
+                                    YOUR ANSWER · INCORRECT
                                   </span>
                                 )}
                             </div>

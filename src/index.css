@@ -25,6 +25,92 @@ body {
   scrollbar-width: none;
 }
 
+/* Optional print-friendly theme. Color classes remain the source of truth in
+   dark mode; these high-specificity overrides remap common surfaces and text. */
+body[data-theme='light'] {
+  background: #f3f6f4;
+  color: #1f2933;
+  color-scheme: light;
+}
+
+body[data-theme='light'] #root > div,
+body[data-theme='light'] main,
+body[data-theme='light'] [class*="bg-[#050807]"],
+body[data-theme='light'] [class*="bg-[#050a08]"],
+body[data-theme='light'] [class*="bg-black"] {
+  background-color: #f1f5f2 !important;
+  color: #1f2933;
+}
+
+body[data-theme='light'] [class*="bg-[#08100c]"],
+body[data-theme='light'] [class*="bg-[#06100d]"] { background-color: #ffffff !important; }
+body[data-theme='light'] [class*="bg-[#071014]"] { background-color: #edf5f6 !important; }
+body[data-theme='light'] [class*="bg-[#050a08]"] { background-color: #ffffff !important; }
+body[data-theme='light'] [class*="bg-green-500/"] { background-color: #e4f1e7 !important; }
+body[data-theme='light'] [class~="bg-green-500"] { background-color: #166534 !important; }
+body[data-theme='light'] [class~="bg-green-400"] { background-color: #15803d !important; }
+body[data-theme='light'] [class~="bg-green-700"] { background-color: #166534 !important; }
+body[data-theme='light'] [class*="bg-green-950"],
+body[data-theme='light'] [class*="bg-green-900"] { background-color: #edf5ef !important; }
+body[data-theme='light'] [class*="bg-cyan-950"] { background-color: #edf7f8 !important; }
+body[data-theme='light'] [class*="bg-cyan-900"] { background-color: #e1f1f3 !important; }
+body[data-theme='light'] [class*="bg-blue-950"] { background-color: #eef3fa !important; }
+body[data-theme='light'] [class*="bg-yellow-950"] { background-color: #fff8e8 !important; }
+body[data-theme='light'] [class*="bg-yellow-900"] { background-color: #fff6df !important; }
+body[data-theme='light'] [class*="bg-red-950"] { background-color: #fff0f0 !important; }
+body[data-theme='light'] [class*="bg-red-500/"] { background-color: #fdeaea !important; }
+body[data-theme='light'] [class*="bg-purple-950"] { background-color: #f6f0fb !important; }
+
+body[data-theme='light'] [class*="text-green-"] { color: #14532d !important; }
+body[data-theme='light'] [class*="text-[#4ade80]"] { color: #14532d !important; }
+body[data-theme='light'] [class*="text-cyan-"] { color: #164e63 !important; }
+body[data-theme='light'] [class*="text-blue-"] { color: #1e40af !important; }
+body[data-theme='light'] [class*="text-yellow-"] { color: #854d0e !important; }
+body[data-theme='light'] [class*="text-red-"] { color: #991b1b !important; }
+body[data-theme='light'] [class*="text-purple-"] { color: #6b21a8 !important; }
+body[data-theme='light'] [class*="text-gray-"] { color: #374151 !important; }
+body[data-theme='light'] [class~="text-white"] { color: #17231c !important; }
+body[data-theme='light'] [class~="bg-green-500"][class~="text-black"] {
+  background-color: #166534 !important;
+  color: #ffffff !important;
+}
+body[data-theme='light'] [class*="hover:bg-green-"][class*="hover:text-black"]:hover {
+  background-color: #166534 !important;
+  color: #ffffff !important;
+}
+
+body[data-theme='light'] [class*="border-green-"] { border-color: #9bb2a0 !important; }
+body[data-theme='light'] [class*="border-cyan-"] { border-color: #8bbbc1 !important; }
+body[data-theme='light'] [class*="border-blue-"] { border-color: #a4b7d1 !important; }
+body[data-theme='light'] [class*="border-yellow-"] { border-color: #d8bf83 !important; }
+body[data-theme='light'] [class*="border-red-"] { border-color: #d5a0a0 !important; }
+body[data-theme='light'] [class*="border-purple-"] { border-color: #bba3cf !important; }
+body[data-theme='light'] [class*="opacity-"] { opacity: 1 !important; }
+
+body[data-theme='light'] .fixed.inset-0[class*="bg-black"] {
+  background-color: rgb(15 23 42 / 72%) !important;
+}
+
+.terminal-line {
+  animation: terminal-line-in 160ms ease-out both;
+}
+
+@keyframes terminal-line-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @media print {
   @page {
     margin: 14mm;

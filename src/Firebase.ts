@@ -15,8 +15,11 @@ import {
   setDoc,
   addDoc,
   collection,
-  getDocs
+  getDocs,
+  query,
+  where
 } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
@@ -33,6 +36,7 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+const storage = getStorage(app);
 export const googleProvider =
   new GoogleAuthProvider();
 
@@ -122,6 +126,17 @@ export const loginWithEmail = async (
 
 export const logOut = async () => {
   await signOut(auth);
+};
+
+export const uploadUserAvatar = async (user: import('firebase/auth').User, file: File) => {
+  if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
+  if (file.size > 5 * 1024 * 1024) throw new Error('Profile images must be 5 MB or smaller.');
+  const extension = file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'image';
+  const avatarRef = ref(storage, `users/${user.uid}/profile/avatar.${extension}`);
+  await uploadBytes(avatarRef, file, { contentType: file.type });
+  const photoURL = await getDownloadURL(avatarRef);
+  await updateProfile(user, { photoURL });
+  return photoURL;
 };
 
 export const getUserProgress = async (
@@ -330,6 +345,9 @@ export interface MissionAttemptRecord {
   tier: string;
   concept: string;
   outcome: 'completed' | 'timed_out';
+  challengeMode?: boolean;
+  dailyChallengeDate?: string;
+  dailyChallengeType?: 'timeAttack' | 'accuracy';
   startedAt: string;
   completedAt: string;
   totalTimeSeconds: number;
@@ -344,6 +362,45 @@ export interface MissionAttemptRecord {
 // existing score or completedMissions fields on users/{uid}.
 export const saveMissionAttempt = async (userId: string, attempt: MissionAttemptRecord) => {
   await addDoc(collection(db, 'users', userId, 'missionAttempts'), attempt);
+
+  if (attempt.outcome !== 'completed' || attempt.dailyChallengeType !== 'timeAttack' || !attempt.dailyChallengeDate) return;
+
+  try {
+    await setDoc(doc(db, 'dailyTimeAttackEntries', `${attempt.dailyChallengeDate}_${userId}`), {
+      uid: userId,
+      nickname: `Operator-${userId.slice(0, 5).toUpperCase()}`,
+      challengeDate: attempt.dailyChallengeDate,
+      missionId: attempt.missionId,
+      missionTitle: attempt.missionTitle,
+      clearTimeSeconds: attempt.totalTimeSeconds,
+      completedAt: attempt.completedAt
+    });
+  } catch (error) {
+    // Keep the training attempt even when leaderboard permissions are not configured yet.
+    console.warn('Time-attack attempt saved, but leaderboard entry could not be updated:', error);
+  }
+};
+
+export interface LeaderboardEntry {
+  uid: string;
+  nickname: string;
+  challengeDate: string;
+  missionId: string;
+  missionTitle: string;
+  clearTimeSeconds: number;
+  completedAt: string;
+}
+
+export const getDailyTimeAttackEntries = async (challengeDate: string): Promise<LeaderboardEntry[]> => {
+  const dailyEntriesQuery = query(
+    collection(db, 'dailyTimeAttackEntries'),
+    where('challengeDate', '==', challengeDate)
+  );
+  const snapshot = await getDocs(dailyEntriesQuery);
+  return snapshot.docs
+    .map(item => ({ uid: item.id, ...item.data() } as LeaderboardEntry))
+    .sort((left, right) => left.clearTimeSeconds - right.clearTimeSeconds || left.completedAt.localeCompare(right.completedAt))
+    .slice(0, 10);
 };
 
 export const getMissionAttempts = async (userId: string): Promise<MissionAttemptRecord[]> => {

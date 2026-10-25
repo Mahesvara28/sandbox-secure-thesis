@@ -100,7 +100,9 @@ export const TerminalModule: React.FC<TerminalModuleProps> = ({
     ) {
       lastNonceRef.current = nonce;
       addHistory('sys', systemMessage);
-      playSound('success');
+      if (/^\[(ERROR|DECISION NOT SUPPORTED|NOT THE CURRENT OBJECTIVE|MISSION FAILED)\]/i.test(systemMessage)) {
+        playSound('error');
+      }
     }
   }, [nonce, systemMessage, playSound]);
 
@@ -841,6 +843,10 @@ Type "help" to see available commands.`
   return (
     <div className="flex flex-col h-full font-mono text-[13px] bg-black/90 p-4 rounded border border-green-900/50 shadow-inner">
 
+      <div className="mb-3 border-l-2 border-cyan-700 bg-cyan-950/20 px-3 py-2 font-sans text-[10px] leading-4 text-cyan-200">
+        SIMULATED TERMINAL · Commands and system changes affect this training scenario only. Use the Command Guide to check tool syntax and limits.
+      </div>
+
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto mb-2 space-y-1 pr-2 scrollbar-hide"
@@ -848,7 +854,7 @@ Type "help" to see available commands.`
         {history.map((line, i) => (
           <div
             key={`${line.id}-${i}`}
-            className={`whitespace-pre-wrap break-words ${
+            className={`terminal-line whitespace-pre-wrap break-words ${
               line.type === 'user'
                 ? 'text-white'
                 : line.type === 'error'

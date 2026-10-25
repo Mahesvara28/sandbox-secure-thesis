@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { getMissionAttempts, getAssessmentAttempts } from '../Firebase';
+import { getMissionAttempts, getAssessmentAttempts, getDailyTimeAttackEntries } from '../Firebase';
+import type { LeaderboardEntry, MissionAttemptRecord } from '../Firebase';
+import { uploadUserAvatar } from '../Firebase';
 
 import {
   Terminal,
@@ -19,7 +21,10 @@ import {
   Database,
   BarChart3,
   HelpCircle,
-  Lock
+  Lock,
+  Eye,
+  EyeOff,
+  Upload
 } from 'lucide-react';
 
 import type {
@@ -148,6 +153,8 @@ interface AuthScreenProps {
 
   authError: string;
   authSuccess: boolean;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
 
   regUsername: string;
 
@@ -177,6 +184,8 @@ export const AuthScreen = ({
   setAuthMode,
   authError,
   authSuccess,
+  theme,
+  onToggleTheme,
   regUsername,
   setRegUsername,
   regEmail,
@@ -187,17 +196,24 @@ export const AuthScreen = ({
   handleRegister,
   handleGoogleLogin
 }: AuthScreenProps) => {
+  const [showPassword, setShowPassword] = useState(false);
+  const [logoLoaded, setLogoLoaded] = useState(true);
+
   return (
     <div className="min-h-screen bg-[#050807] text-green-400 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
+
+        <div className="mb-3 flex justify-end">
+          <button type="button" onClick={onToggleTheme} className="border border-green-500/30 px-3 py-2 text-xs text-green-300 hover:border-green-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+            {theme === 'dark' ? 'LIGHT MODE' : 'DARK MODE'}
+          </button>
+        </div>
 
         <div className="border border-green-500/30 bg-[#08100c] shadow-[0_0_50px_rgba(34,197,94,0.06)]">
 
           <div className="border-b border-green-500/20 p-6 text-center">
 
-            <div className="mx-auto w-16 h-16 border border-green-500/40 rounded-lg flex items-center justify-center mb-4">
-              <Shield size={32} />
-            </div>
+            {logoLoaded ? <img src="/logo.png" alt="Sandbox Secure logo" onError={() => setLogoLoaded(false)} className="mx-auto mb-4 h-20 max-w-56 object-contain" /> : <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-lg border border-green-500/40"><Shield size={32} /></div>}
 
             <h1 className="text-2xl font-bold tracking-[0.25em]">
               SANDBOX SECURE
@@ -284,27 +300,19 @@ export const AuthScreen = ({
                     PASSWORD
                   </label>
 
-                  <input
-                    value={
-                      regPassword
-                    }
-                    onChange={e =>
-                      setRegPassword(
-                        e.target.value
-                      )
-                    }
-                    onKeyDown={e => {
-                      if (
-                        e.key ===
-                        'Enter'
-                      ) {
-                        handleLogin();
-                      }
-                    }}
-                    type="password"
-                    className="w-full bg-black border border-green-500/20 px-4 py-3 outline-none focus:border-green-500/60 text-green-300"
-                    placeholder="••••••••"
-                  />
+                  <div className="relative">
+                    <input
+                      value={regPassword}
+                      onChange={e => setRegPassword(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleLogin(); }}
+                      type={showPassword ? 'text' : 'password'}
+                      className="w-full bg-black border border-green-500/20 px-4 py-3 pr-12 outline-none focus:border-green-500/60 text-green-300"
+                      placeholder="••••••••"
+                    />
+                    <button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-0 right-1 inline-flex w-10 items-center justify-center text-green-400 hover:text-green-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400">
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
 
                 <button
@@ -387,19 +395,18 @@ export const AuthScreen = ({
                     PASSWORD
                   </label>
 
-                  <input
-                    value={
-                      regPassword
-                    }
-                    onChange={e =>
-                      setRegPassword(
-                        e.target.value
-                      )
-                    }
-                    type="password"
-                    className="w-full bg-black border border-green-500/20 px-4 py-3 outline-none focus:border-green-500/60 text-green-300"
-                    placeholder="••••••••"
-                  />
+                  <div className="relative">
+                    <input
+                      value={regPassword}
+                      onChange={e => setRegPassword(e.target.value)}
+                      type={showPassword ? 'text' : 'password'}
+                      className="w-full bg-black border border-green-500/20 px-4 py-3 pr-12 outline-none focus:border-green-500/60 text-green-300"
+                      placeholder="••••••••"
+                    />
+                    <button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-0 right-1 inline-flex w-10 items-center justify-center text-green-400 hover:text-green-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400">
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
 
                 <button
@@ -457,14 +464,72 @@ interface DashboardScreenProps {
   ) => void;
 
   onShowGuide: () => void;
+  onStartDailyTrial: () => void;
+  dailyTrialPlayed: boolean;
+  dailyTrialDate: string;
+  dailyTrialType: 'timeAttack' | 'accuracy';
+  dailyTrialMissionTitle: string;
 }
 
 export const DashboardScreen = ({
   user,
   userScores,
   setScreen,
-  onShowGuide
+  onShowGuide,
+  onStartDailyTrial,
+  dailyTrialPlayed,
+  dailyTrialDate,
+  dailyTrialType,
+  dailyTrialMissionTitle
 }: DashboardScreenProps) => {
+  const [missionAttempts, setMissionAttempts] = useState<MissionAttemptRecord[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardUnavailable, setLeaderboardUnavailable] = useState(false);
+  const userId = user?.uid;
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.resolve().then(() => userId ? getMissionAttempts(userId) : []).then(attempts => {
+      if (!cancelled) setMissionAttempts(attempts);
+    }).catch(error => {
+      console.error('Could not load dashboard mission history:', error);
+    });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (dailyTrialType !== 'timeAttack') {
+      setLeaderboard([]);
+      setLeaderboardUnavailable(false);
+      return () => { cancelled = true; };
+    }
+    void getDailyTimeAttackEntries(dailyTrialDate).then(entries => {
+      if (!cancelled) {
+        setLeaderboard(entries);
+        setLeaderboardUnavailable(false);
+      }
+    }).catch(error => {
+      console.warn('Could not load the daily time-attack leaderboard. Check sign-in and Firestore rules for dailyTimeAttackEntries:', error);
+      if (!cancelled) setLeaderboardUnavailable(true);
+    });
+    return () => { cancelled = true; };
+  }, [userId, dailyTrialDate, dailyTrialType]);
+
+  const bestMissionAttempts = new Map<string, { accuracy: number; points: number }>();
+  missionAttempts.forEach(attempt => {
+    if (attempt.outcome !== 'completed') return;
+    const wrongCommands = Object.values(attempt.wrongCommandsByStep ?? {}).reduce((sum, count) => sum + count, 0);
+    const accuracy = Math.max(0, 100 - wrongCommands * 6 - attempt.wrongDecisionCount * 15 - attempt.hintsOpened * 2);
+    const timeBonus = attempt.challengeMode ? Math.max(0, Math.floor((2100 - attempt.totalTimeSeconds) / 30)) : 0;
+    const points = accuracy + timeBonus;
+    const currentBest = bestMissionAttempts.get(attempt.missionId);
+    if (!currentBest || points > currentBest.points) bestMissionAttempts.set(attempt.missionId, { accuracy, points });
+  });
+  const missionPoints = [...bestMissionAttempts.values()].reduce((total, result) => total + result.points, 0);
+  const missionAccuracy = bestMissionAttempts.size
+    ? Math.round([...bestMissionAttempts.values()].reduce((total, result) => total + result.accuracy, 0) / bestMissionAttempts.size)
+    : 0;
   const scoreEntries =
     Object.values(
       userScores
@@ -512,6 +577,8 @@ export const DashboardScreen = ({
 
           <div>
 
+            {user?.photoURL && <img src={user.photoURL} alt="Your profile" className="mb-4 h-14 w-14 rounded-full border border-green-500/40 object-cover" />}
+
             <div className="flex items-center gap-2 text-xs text-green-500/50 tracking-widest mb-3">
               <Activity size={14} />
               OPERATOR CONSOLE
@@ -542,6 +609,22 @@ export const DashboardScreen = ({
 
         </div>
 
+      </section>
+
+      <section className="flex flex-col gap-4 border border-cyan-700/50 bg-cyan-950/20 p-5 sm:flex-row sm:items-center sm:justify-between" aria-label="Recommended starting point">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">New to cybersecurity?</p>
+          <h2 className="mt-1 text-lg font-bold text-white">Start in the Security Academy</h2>
+          <p className="mt-1 text-sm text-gray-300">Begin with the Beginner certification. It explains the basics before asking you to investigate.</p>
+        </div>
+        <button type="button" onClick={() => setScreen('academy')} className="shrink-0 border border-cyan-400 bg-cyan-400 px-5 py-3 text-xs font-black uppercase text-black transition-colors hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+          Start learning →
+        </button>
+      </section>
+
+      <section className="flex flex-col gap-4 border border-yellow-700/50 bg-yellow-950/10 p-5 sm:flex-row sm:items-center sm:justify-between" aria-label="Daily training trial">
+        <div><p className="text-xs font-bold uppercase tracking-widest text-yellow-400">Daily training trial · one attempt</p><h2 className="mt-1 text-lg font-bold text-white">{dailyTrialType === 'timeAttack' ? 'Time Attack' : 'Accuracy Trial'}: {dailyTrialMissionTitle}</h2><p className="mt-1 text-sm text-gray-300">A short rotating practice scenario. Time Attack uses a countdown and competes for the fastest clear time; Accuracy Trial rewards careful command choices.</p><p className="mt-2 text-[10px] text-gray-500">Available once per calendar day in this browser profile.</p></div>
+        <button type="button" disabled={dailyTrialPlayed} onClick={onStartDailyTrial} className="shrink-0 border border-yellow-500 px-5 py-3 text-xs font-black uppercase text-yellow-200 transition-colors hover:bg-yellow-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50">{dailyTrialPlayed ? 'Trial used today' : 'Start daily trial →'}</button>
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -577,6 +660,36 @@ export const DashboardScreen = ({
         </div>
 
       </div>
+
+      <section className="border border-cyan-700/40 bg-cyan-950/10 p-5 sm:p-6" aria-label="Personal training progress">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-cyan-500">Your training record</p>
+            <h2 className="mt-1 text-xl font-black text-cyan-200">Progress, accuracy, and points</h2>
+          </div>
+          <p className="text-[10px] text-gray-400">Best completed run per mission · points reward careful, accurate work</p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="border border-cyan-900/70 bg-black/30 p-4"><p className="text-[10px] uppercase tracking-widest text-gray-400">Mission points</p><p className="mt-1 text-3xl font-black text-cyan-200">{missionPoints}</p></div>
+          <div className="border border-cyan-900/70 bg-black/30 p-4"><p className="text-[10px] uppercase tracking-widest text-gray-400">Best-run accuracy</p><p className="mt-1 text-3xl font-black text-cyan-200">{bestMissionAttempts.size ? `${missionAccuracy}%` : '—'}</p></div>
+          <div className="border border-cyan-900/70 bg-black/30 p-4"><p className="text-[10px] uppercase tracking-widest text-gray-400">Missions completed</p><p className="mt-1 text-3xl font-black text-cyan-200">{bestMissionAttempts.size}</p></div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2" aria-label="Achievements">
+          <span className="border border-green-800 bg-green-950/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-green-300">{bestMissionAttempts.size > 0 ? 'First case completed' : 'First case · ready to earn'}</span>
+          <span className={`border px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${missionAccuracy >= 90 ? 'border-cyan-600 bg-cyan-950/30 text-cyan-200' : 'border-gray-700 bg-black/20 text-gray-400'}`}>{missionAccuracy >= 90 ? 'Careful analyst · 90% accuracy' : 'Careful analyst · reach 90% accuracy'}</span>
+          <span className={`border px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${bestMissionAttempts.size >= 5 ? 'border-yellow-700 bg-yellow-950/20 text-yellow-200' : 'border-gray-700 bg-black/20 text-gray-400'}`}>{bestMissionAttempts.size >= 5 ? 'Field operator · 5 cases' : `Field operator · ${bestMissionAttempts.size}/5 cases`}</span>
+        </div>
+        <p className="mt-3 text-[10px] leading-4 text-gray-500">Accuracy is an estimate from recorded wrong commands, decision errors, and hint use. It is a learning progress indicator, not a formal certification score.</p>
+      </section>
+
+      <section className="border border-yellow-700/50 bg-yellow-950/10 p-5 sm:p-6" aria-label="Daily time attack leaderboard">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-yellow-500">Daily challenge · {dailyTrialDate}</p><h2 className="mt-1 text-xl font-black text-yellow-200">Time Attack leaderboard</h2><p className="mt-1 text-xs text-gray-300">Today’s mission: {dailyTrialMissionTitle}</p></div>
+          <p className="text-[10px] text-gray-400">Fastest completed clear time · names are anonymous operator IDs</p>
+        </div>
+        {dailyTrialType !== 'timeAttack' ? <p className="mt-4 border border-yellow-900/50 bg-black/30 p-4 text-xs text-gray-300">Today is an Accuracy Trial, so there is no timed ranking today. The next Time Attack will use a different rotating mission.</p> : leaderboardUnavailable ? <p className="mt-4 border border-yellow-800/70 bg-black/30 p-4 text-xs leading-5 text-yellow-200">Could not load entries. Confirm you are signed in and that the Firestore `dailyTimeAttackEntries` read rule is published, then refresh.</p> : leaderboard.length === 0 ? <p className="mt-4 border border-yellow-900/50 bg-black/30 p-4 text-xs text-gray-400">No one has completed today’s Time Attack yet. Finish it to add a clear time.</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[420px] text-left text-xs"><thead className="text-[10px] uppercase tracking-widest text-gray-400"><tr><th className="pb-3 pr-3">Rank</th><th className="pb-3 pr-3">Operator</th><th className="pb-3">Clear time</th></tr></thead><tbody>{leaderboard.map((entry, index) => <tr key={entry.uid} className={`border-t border-yellow-900/40 ${entry.uid === userId ? 'bg-yellow-950/30 text-yellow-100' : 'text-gray-200'}`}><td className="py-3 pr-3 font-bold text-yellow-300">#{index + 1}</td><td className="py-3 pr-3">{entry.nickname}{entry.uid === userId ? ' · YOU' : ''}</td><td className="py-3 font-bold">{Math.floor(entry.clearTimeSeconds / 60)}:{String(entry.clearTimeSeconds % 60).padStart(2, '0')}</td></tr>)}</tbody></table></div>}
+        <p className="mt-3 text-[10px] text-gray-500">For presentation only. Entries are submitted by the game client and are not tamper-proof.</p>
+      </section>
 
       <section className="border border-green-500/20 bg-[#08100c] p-6">
 
@@ -762,6 +875,7 @@ const getLockedBy = (
 
 interface AcademyScreenProps {
   activeTier: Tier | null;
+  progressScope?: string;
 
   setActiveTier: (
     tier: Tier | null
@@ -792,7 +906,8 @@ export const AcademyScreen = ({
   userScores,
   handleQuizComplete,
   onStartMission,
-  completedMissions
+  completedMissions,
+  progressScope = 'local'
 }: AcademyScreenProps) => {
   if (
     activeTier &&
@@ -842,6 +957,7 @@ export const AcademyScreen = ({
         tierName={
           activeTier
         }
+        progressScope={progressScope}
         preTestQuestions={
           tierData.preTest
         }
@@ -1373,6 +1489,7 @@ interface TerminalScreenProps {
   removedPersistence: string[];
   onCaseNotesChange: (update: (previous: string[]) => string[]) => void;
   onCaseConfidenceChange: (confidence: string) => void;
+  onShowMissionGuide: () => void;
 
   playSound: (
     type:
@@ -1403,6 +1520,7 @@ export const TerminalScreen = ({
   removedPersistence,
   onCaseNotesChange,
   onCaseConfidenceChange,
+  onShowMissionGuide,
   playSound
 }: TerminalScreenProps) => {
   const [command, setCommand] =
@@ -1421,10 +1539,7 @@ export const TerminalScreen = ({
   const [showCommandGuide, setShowCommandGuide] = useState(false);
   const [showMissionPrimer, setShowMissionPrimer] = useState(false);
 
-  const currentStep =
-    activeMission.steps[
-      questStep
-    ];
+  const currentStep = activeMission.steps[Math.min(questStep, activeMission.steps.length - 1)];
   const isCertificationMission = activeMission.id.startsWith('m') || activeMission.id.startsWith('bridge-');
 
   const recordEvidenceNote = (note: string) => {
@@ -1998,10 +2113,18 @@ export const TerminalScreen = ({
 
             {isCertificationMission && <button
               onClick={() => setShowCommandGuide(true)}
-              className="border border-cyan-700/50 bg-[#071014] p-3 text-xs text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+              className="border border-cyan-500/70 bg-cyan-950/30 p-3 text-xs font-bold text-cyan-200 transition-colors hover:border-cyan-300 hover:bg-cyan-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
               <BookOpen size={16} className="mx-auto mb-1" />
-              COMMAND GUIDE
+              COMMAND GUIDE · RECOMMENDED
+            </button>}
+
+            {isCertificationMission && <button
+              onClick={onShowMissionGuide}
+              className="border border-cyan-700/50 bg-[#071014] p-3 text-xs text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+            >
+              <HelpCircle size={16} className="mx-auto mb-1" />
+              SCREEN GUIDE
             </button>}
 
             {activeMission.primer && <button
@@ -2013,6 +2136,10 @@ export const TerminalScreen = ({
             </button>}
 
           </div>
+
+          {isCertificationMission && <p className="border-l-2 border-cyan-700 bg-cyan-950/10 px-3 py-2 text-[11px] leading-5 text-cyan-200">
+            Suggested workflow: read the objective, check the Command Guide for a suitable tool, then use a hint if you still need a clue.
+          </p>}
 
           <div className="border border-green-500/20 bg-[#08100c] p-4">
 
@@ -2146,6 +2273,27 @@ export const ProfileScreen = ({
   userScores
 }: ProfileScreenProps) => {
   const [exportMessage, setExportMessage] = useState('');
+  const [profilePhoto, setProfilePhoto] = useState(user?.photoURL ?? null);
+  const [photoMessage, setPhotoMessage] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarUpload = async (file?: File) => {
+    if (!user || !file) return;
+    setUploadingPhoto(true);
+    setPhotoMessage('');
+    try {
+      const url = await uploadUserAvatar(user, file);
+      setProfilePhoto(url);
+      setPhotoMessage('Profile picture updated.');
+    } catch (error) {
+      console.error('Could not upload profile image:', error);
+      setPhotoMessage(error instanceof Error ? error.message : 'Upload failed. Check Firebase Storage access.');
+    } finally {
+      setUploadingPhoto(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
+  };
   const scoreEntries =
     Object.values(
       userScores
@@ -2257,11 +2405,12 @@ export const ProfileScreen = ({
 
         <div className="flex flex-col md:flex-row items-center md:items-start gap-5">
 
-          <div className="w-20 h-20 rounded-full border border-green-500/30 flex items-center justify-center bg-black">
-            <User
-              size={34}
-              className="text-green-400"
-            />
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-green-500/30 bg-black">
+              {profilePhoto ? <img src={profilePhoto} alt="Profile" className="h-full w-full object-cover" /> : <User size={34} className="text-green-400" />}
+            </div>
+            <input ref={avatarInputRef} type="file" accept="image/*" className="sr-only" onChange={event => void handleAvatarUpload(event.target.files?.[0])} />
+            <button type="button" disabled={!user || uploadingPhoto} onClick={() => avatarInputRef.current?.click()} className="inline-flex items-center gap-1 border border-cyan-800 px-2 py-1 text-[10px] font-bold uppercase text-cyan-300 hover:border-cyan-400 disabled:opacity-50"><Upload size={12} />{uploadingPhoto ? 'Uploading…' : 'Upload photo'}</button>
           </div>
 
           <div className="text-center md:text-left">
@@ -2287,6 +2436,7 @@ export const ProfileScreen = ({
           </div>
 
         </div>
+        {photoMessage && <p className="mt-3 text-center text-xs text-cyan-200 md:text-left" role="status">{photoMessage}</p>}
 
       </section>
 
