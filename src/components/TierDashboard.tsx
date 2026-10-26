@@ -465,7 +465,7 @@ export const TierDashboard = ({
 
           {showCommandGuide && <CommandFieldGuide tier={tierName} onClose={() => setShowCommandGuide(false)} />}
 
-          <div className="space-y-4">
+          <div className="relative space-y-4 before:absolute before:bottom-5 before:left-[21px] before:top-5 before:w-px before:bg-green-800/60">
 
             {tierMissions.map(
               (
@@ -485,7 +485,7 @@ export const TierDashboard = ({
                 return (
                   <div
                     key={mission.id}
-                    className={`border p-5 ${
+                    className={`roadmap-node-card relative border p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(34,197,94,0.08)] ${
                       completed
                         ? 'border-green-500/40 bg-green-500/5'
                         : unlocked
@@ -539,8 +539,14 @@ export const TierDashboard = ({
                             {mission.title}
                           </h2>
 
-                          <p className="text-sm text-green-600 mt-1">
-                            {mission.intro}
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                            <span className="rounded-full border border-cyan-800 px-2 py-1 text-cyan-300">{mission.category ?? 'case'} · {mission.difficulty}</span>
+                            <span className="rounded-full border border-green-900 px-2 py-1 text-green-500">~{Math.max(3, Math.ceil(mission.steps.length * 1.5))} min</span>
+                            {completed && <span className="rounded-sm border border-green-500/50 bg-green-500/10 px-2 py-1 font-bold tracking-wider text-green-300">RESOLVED</span>}
+                          </div>
+
+                          <p className="mt-2 text-sm leading-6 text-green-700">
+                            {mission.learningGoal ?? mission.intro}
                           </p>
 
                         </div>

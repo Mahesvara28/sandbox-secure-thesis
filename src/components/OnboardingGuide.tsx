@@ -22,7 +22,7 @@ const guideSteps = [
     title: 'WELCOME, OPERATOR',
     subtitle: 'Your interface tour',
     description:
-      'You are entering a simulated cybersecurity training environment. Your objective is to learn, investigate incidents, and complete security operations.',
+      'This is a cybersecurity learning study. All commands are simulated; your progress and mission attempt data are saved. Use the training to learn, investigate incidents, and complete security operations.',
     icon: LayoutDashboard,
     color: 'green',
     visual: 'WELCOME'
@@ -30,7 +30,7 @@ const guideSteps = [
   {
     title: 'DASHBOARD',
     subtitle: 'Your home screen',
-    description: 'Use the Dashboard to see your pre-test and post-test scores, open the Academy, or find standalone practice missions. You can reopen this tour with How to Play.',
+    description: 'Continue opens your next certification step. The status strip shows your rank, XP, streak, and mission count. More has Progress, Badges, and the time leaderboard when today’s challenge is a Time Attack. Choose one tab at a time; use How to Play to revisit this guide.',
     icon: LayoutDashboard,
     color: 'blue',
     visual: 'DASHBOARD'
@@ -56,7 +56,7 @@ const guideSteps = [
   {
     title: 'PROFILE & SUPPORT',
     subtitle: 'Scores and help',
-    description: 'Profile shows your assessment results. Use How to Play on the Dashboard to revisit this interface tour. Your first Academy mission also introduces the tools used during investigations.',
+    description: 'Profile holds your assessment results, full badge wall, and completed case archive. Use How to Play in More to revisit this tour. Your first Academy mission also introduces the investigation tools.',
     icon: UserRound,
     color: 'purple',
     visual: 'PROFILE'
@@ -236,7 +236,7 @@ const OnboardingGuide = ({ onComplete }: OnboardingGuideProps) => {
                 <button
                   onClick={previousStep}
                   disabled={isFirst}
-                  className="flex items-center gap-2 px-4 py-2 border border-green-900 text-green-700 text-xs font-bold uppercase hover:border-green-500 hover:text-green-400 disabled:opacity-20 disabled:hover:border-green-900 disabled:hover:text-green-700 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 border border-green-900 text-green-700 text-xs font-bold uppercase hover:border-green-500 hover:text-green-400 disabled:opacity-20 disabled:hover:border-green-900 disabled:hover:text-green-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                 >
                   <ChevronLeft size={16} />
                   Back
@@ -244,14 +244,14 @@ const OnboardingGuide = ({ onComplete }: OnboardingGuideProps) => {
 
                 <button
                   onClick={onComplete}
-                  className="text-[10px] text-gray-600 hover:text-gray-300 uppercase transition-colors"
+                  className="text-[10px] text-gray-600 hover:text-gray-300 uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                 >
                   Skip Orientation
                 </button>
 
                 <button
                   onClick={nextStep}
-                  className="flex items-center gap-2 px-5 py-2 border border-green-500 bg-green-500/10 text-green-400 text-xs font-bold uppercase hover:bg-green-500 hover:text-black transition-all"
+                  className="flex items-center gap-2 px-5 py-2 border border-green-500 bg-green-500/10 text-green-400 text-xs font-bold uppercase hover:bg-green-500 hover:text-black transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                 >
                   {isLast ? 'Start Training' : 'Next'}
                   <ChevronRight size={16} />

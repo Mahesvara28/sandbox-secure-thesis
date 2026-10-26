@@ -1,8 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { getMissionAttempts, getAssessmentAttempts, getDailyTimeAttackEntries } from '../Firebase';
+import logoImage from '../assets/logo.jpg';
+import { getMissionAttempts, getAssessmentAttempts, getDailyTimeAttackEntries, saveProgression } from '../Firebase';
 import type { LeaderboardEntry, MissionAttemptRecord } from '../Firebase';
-import { uploadUserAvatar } from '../Firebase';
+import { AVATARS, getAvatarById, type AvatarId } from '../data/avatars';
+import { Avatar } from './Avatar';
+import { ACHIEVEMENTS } from '../data/achievements';
+import { applyCertificationRewards, rankProgress, type PlayerProgression, getTierLearningGain } from '../data/progression';
+import { AchievementBadge, GameCard, ProgressBar, SectionHeader } from './GameUI';
 
 import {
   Terminal,
@@ -24,7 +30,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Upload
 } from 'lucide-react';
 
 import type {
@@ -34,6 +39,7 @@ import type {
 
 import {
   MISSIONS,
+  BRIDGE_MISSIONS,
   TUTORIAL_MISSIONS,
   TIERS,
   MOCK_FILES,
@@ -48,8 +54,12 @@ export type TierScoreLike = {
   total: number;
   preTestScore?: number;
   preTestTotal?: number;
+  preTestFirstScore?: number;
+  preTestFirstTotal?: number;
   finalScore?: number;
   finalTotal?: number;
+  firstFinalScore?: number;
+  firstFinalTotal?: number;
 };
 
 const splitTerminalArgs = (line: string) => line.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map(value => value.replace(/^['"]|['"]$/g, '')) ?? [];
@@ -198,250 +208,70 @@ export const AuthScreen = ({
 }: AuthScreenProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const [logoLoaded, setLogoLoaded] = useState(true);
+  const fieldClass = 'min-h-12 w-full rounded-lg border border-[var(--game-border)] bg-[var(--game-page)] px-4 py-3 text-[var(--game-text)] outline-none transition placeholder:text-[var(--game-muted)]/70 focus:border-[var(--game-green)] focus:ring-2 focus:ring-[var(--game-green)]/20';
+  const activeTabClass = 'min-h-11 flex-1 rounded-md bg-[var(--game-surface-raised)] px-3 text-sm font-semibold text-[var(--game-text)] shadow-sm';
+  const inactiveTabClass = 'min-h-11 flex-1 rounded-md px-3 text-sm font-medium text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]';
 
   return (
-    <div className="min-h-screen bg-[#050807] text-green-400 flex items-center justify-center p-6">
-      <div className="w-full max-w-md">
-
-        <div className="mb-3 flex justify-end">
-          <button type="button" onClick={onToggleTheme} className="border border-green-500/30 px-3 py-2 text-xs text-green-300 hover:border-green-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-            {theme === 'dark' ? 'LIGHT MODE' : 'DARK MODE'}
-          </button>
-        </div>
-
-        <div className="border border-green-500/30 bg-[#08100c] shadow-[0_0_50px_rgba(34,197,94,0.06)]">
-
-          <div className="border-b border-green-500/20 p-6 text-center">
-
-            {logoLoaded ? <img src="/logo.png" alt="Sandbox Secure logo" onError={() => setLogoLoaded(false)} className="mx-auto mb-4 h-20 max-w-56 object-contain" /> : <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-lg border border-green-500/40"><Shield size={32} /></div>}
-
-            <h1 className="text-2xl font-bold tracking-[0.25em]">
-              SANDBOX SECURE
-            </h1>
-
-            <p className="text-xs text-green-500/50 mt-2 tracking-widest">
-              CYBERSECURITY TRAINING SIMULATION
-            </p>
-
-          </div>
-
-          <div className="p-6">
-
-            <div className="flex border-b border-green-500/20 mb-6">
-
-              <button
-                onClick={() =>
-                  setAuthMode(
-                    'login'
-                  )
-                }
-                className={`flex-1 py-3 text-sm tracking-widest ${
-                  authMode ===
-                  'login'
-                    ? 'text-green-400 border-b-2 border-green-400'
-                    : 'text-green-500/40'
-                }`}
-              >
-                LOGIN
-              </button>
-
-              <button
-                onClick={() =>
-                  setAuthMode(
-                    'register'
-                  )
-                }
-                className={`flex-1 py-3 text-sm tracking-widest ${
-                  authMode ===
-                  'register'
-                    ? 'text-green-400 border-b-2 border-green-400'
-                    : 'text-green-500/40'
-                }`}
-              >
-                REGISTER
-              </button>
-
+    <div className="app-atmosphere flex min-h-screen items-center justify-center bg-[var(--game-page)] p-3 text-[var(--game-text)] sm:p-6">
+      <main className="game-card grid w-full max-w-5xl overflow-hidden rounded-2xl shadow-[var(--game-shadow)] md:min-h-[620px] md:grid-cols-[1.05fr_0.95fr]">
+        <section className="flex flex-col justify-center border-b border-[var(--game-border)] bg-[var(--game-surface-raised)] p-5 sm:p-8 md:border-b-0 md:border-r md:p-10" aria-labelledby="auth-brand-title">
+          <div className="mx-auto w-full max-w-xl">
+            <div className="overflow-hidden rounded-xl border border-[var(--game-border)] bg-[#050907] shadow-lg">
+              {logoLoaded ? <img src={logoImage} alt="Sandbox Secure cybersecurity training" onError={() => setLogoLoaded(false)} className="block h-auto w-full object-contain" /> : <div className="flex aspect-video items-center justify-center text-[var(--game-green)]"><Shield size={64} aria-hidden="true" /></div>}
             </div>
+            <div className="mt-6">
+              <p className="game-eyebrow">Cybersecurity training simulation</p>
+              <h1 id="auth-brand-title" className="mt-2 text-2xl font-bold leading-tight text-[var(--game-text)] sm:text-3xl">Learn security by doing.</h1>
+              <p className="mt-3 max-w-lg text-sm leading-6 text-[var(--game-muted)]">Build confidence through guided investigations, simulated tools, and clear explanations of each decision.</p>
+            </div>
+            <div className="mt-6 grid gap-2 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3">
+              {[['01', 'Learn the tools'], ['02', 'Investigate evidence'], ['03', 'Explain your findings']].map(([number, label]) => <div key={number} className="flex items-center gap-3 rounded-lg border border-[var(--game-border)] bg-[var(--game-surface)]/70 px-3 py-3"><span className="font-mono text-xs font-bold text-[var(--game-green)]">{number}</span><span className="text-xs font-medium text-[var(--game-text)]">{label}</span></div>)}
+            </div>
+          </div>
+        </section>
 
-            {authMode ===
-            'login' ? (
-              <div className="space-y-4">
-
-                <div>
-                  <label className="block text-xs text-green-500/60 mb-2">
-                    EMAIL
-                  </label>
-
-                  <input
-                    value={
-                      regEmail
-                    }
-                    onChange={e =>
-                      setRegEmail(
-                        e.target.value
-                      )
-                    }
-                    onKeyDown={e => {
-                      if (
-                        e.key ===
-                        'Enter'
-                      ) {
-                        handleLogin();
-                      }
-                    }}
-                    type="email"
-                    className="w-full bg-black border border-green-500/20 px-4 py-3 outline-none focus:border-green-500/60 text-green-300"
-                    placeholder="operator@example.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-green-500/60 mb-2">
-                    PASSWORD
-                  </label>
-
-                  <div className="relative">
-                    <input
-                      value={regPassword}
-                      onChange={e => setRegPassword(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleLogin(); }}
-                      type={showPassword ? 'text' : 'password'}
-                      className="w-full bg-black border border-green-500/20 px-4 py-3 pr-12 outline-none focus:border-green-500/60 text-green-300"
-                      placeholder="••••••••"
-                    />
-                    <button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-0 right-1 inline-flex w-10 items-center justify-center text-green-400 hover:text-green-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400">
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  onClick={
-                    handleLogin
-                  }
-                  className="w-full bg-green-500 text-black font-bold py-3 hover:bg-green-400"
-                >
-                  AUTHENTICATE
-                </button>
-
-                <div className="relative py-2">
-
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-green-500/10" />
-                  </div>
-
-                  <div className="relative flex justify-center">
-                    <span className="bg-[#08100c] px-3 text-xs text-green-500/30">
-                      OR
-                    </span>
-                  </div>
-
-                </div>
-
-                <button
-                  onClick={
-                    handleGoogleLogin
-                  }
-                  className="w-full border border-green-500/20 py-3 text-sm hover:border-green-500/50"
-                >
-                  CONTINUE WITH GOOGLE
-                </button>
-
-              </div>
-            ) : (
-              <div className="space-y-4">
-
-                <div>
-                  <label className="block text-xs text-green-500/60 mb-2">
-                    OPERATOR NAME
-                  </label>
-
-                  <input
-                    value={
-                      regUsername
-                    }
-                    onChange={e =>
-                      setRegUsername(
-                        e.target.value
-                      )
-                    }
-                    className="w-full bg-black border border-green-500/20 px-4 py-3 outline-none focus:border-green-500/60 text-green-300"
-                    placeholder="operator01"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-green-500/60 mb-2">
-                    EMAIL
-                  </label>
-
-                  <input
-                    value={
-                      regEmail
-                    }
-                    onChange={e =>
-                      setRegEmail(
-                        e.target.value
-                      )
-                    }
-                    type="email"
-                    className="w-full bg-black border border-green-500/20 px-4 py-3 outline-none focus:border-green-500/60 text-green-300"
-                    placeholder="operator@example.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-green-500/60 mb-2">
-                    PASSWORD
-                  </label>
-
-                  <div className="relative">
-                    <input
-                      value={regPassword}
-                      onChange={e => setRegPassword(e.target.value)}
-                      type={showPassword ? 'text' : 'password'}
-                      className="w-full bg-black border border-green-500/20 px-4 py-3 pr-12 outline-none focus:border-green-500/60 text-green-300"
-                      placeholder="••••••••"
-                    />
-                    <button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-0 right-1 inline-flex w-10 items-center justify-center text-green-400 hover:text-green-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400">
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  onClick={
-                    handleRegister
-                  }
-                  className="w-full bg-green-500 text-black font-bold py-3 hover:bg-green-400"
-                >
-                  CREATE OPERATOR
-                </button>
-
-              </div>
-            )}
-
-            {authError && (
-              <div className="mt-4 border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-400">
-                {authError}
-              </div>
-            )}
-
-            {authSuccess && (
-              <div className="mt-4 border border-green-500/30 bg-green-500/5 p-3 text-xs text-green-400">
-                ACCOUNT CREATED SUCCESSFULLY
-              </div>
-            )}
-
+        <section className="flex flex-col justify-center p-5 sm:p-8 md:p-10" aria-labelledby="auth-form-title">
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div><p className="game-eyebrow">Operator access</p><h2 id="auth-form-title" className="mt-1 text-xl font-bold text-[var(--game-text)]">{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h2></div>
+            <button type="button" onClick={onToggleTheme} className="min-h-11 rounded-lg border border-[var(--game-border)] px-3 py-2 text-xs font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-track)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            </button>
           </div>
 
-          <div className="border-t border-green-500/10 p-4 text-center text-[10px] text-green-500/30 tracking-widest">
-            AUTHORIZED TRAINING ENVIRONMENT ONLY
+          <div role="tablist" aria-label="Account access options" onKeyDown={event => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+            const currentIndex = tabs.indexOf(document.activeElement as HTMLButtonElement);
+            const nextIndex = (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            tabs[nextIndex]?.focus();
+            tabs[nextIndex]?.click();
+          }} className="mb-6 flex gap-1 rounded-lg border border-[var(--game-border)] bg-[var(--game-page)] p-1">
+            <button id="auth-tab-login" type="button" role="tab" tabIndex={authMode === 'login' ? 0 : -1} aria-selected={authMode === 'login'} aria-controls="auth-form-panel" onClick={() => setAuthMode('login')} className={authMode === 'login' ? activeTabClass : inactiveTabClass}>Sign in</button>
+            <button id="auth-tab-register" type="button" role="tab" tabIndex={authMode === 'register' ? 0 : -1} aria-selected={authMode === 'register'} aria-controls="auth-form-panel" onClick={() => setAuthMode('register')} className={authMode === 'register' ? activeTabClass : inactiveTabClass}>Create account</button>
           </div>
 
-        </div>
+          <div id="auth-form-panel" role="tabpanel" aria-labelledby={authMode === 'login' ? 'auth-tab-login' : 'auth-tab-register'}>
+            {authMode === 'login' ? <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
+              <div><label htmlFor="login-email" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Email address</label><input id="login-email" name="email" autoComplete="email" required type="email" value={regEmail} onChange={event => setRegEmail(event.target.value)} className={fieldClass} placeholder="operator@example.com" /></div>
+              <div><label htmlFor="login-password" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Password</label><div className="relative"><input id="login-password" name="password" autoComplete="current-password" required value={regPassword} onChange={event => setRegPassword(event.target.value)} type={showPassword ? 'text' : 'password'} className={`${fieldClass} pr-12`} placeholder="Enter your password" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-1 right-1 inline-flex w-10 items-center justify-center rounded-md text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
+              <button type="submit" className="min-h-12 w-full rounded-lg bg-[var(--game-green)] px-4 py-3 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Sign in</button>
+              <div className="flex items-center gap-3 py-1" aria-hidden="true"><span className="h-px flex-1 bg-[var(--game-border)]" /><span className="text-xs text-[var(--game-muted)]">or</span><span className="h-px flex-1 bg-[var(--game-border)]" /></div>
+              <button type="button" onClick={() => void handleGoogleLogin()} className="min-h-12 w-full rounded-lg border border-[var(--game-border)] px-4 py-3 text-sm font-semibold text-[var(--game-text)] transition hover:border-[var(--game-cyan)] hover:bg-[var(--game-track)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Continue with Google</button>
+            </form> : <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleRegister(); }}>
+              <div><label htmlFor="register-name" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Operator name</label><input id="register-name" name="name" autoComplete="nickname" required value={regUsername} onChange={event => setRegUsername(event.target.value)} className={fieldClass} placeholder="Choose a display name" /></div>
+              <div><label htmlFor="register-email" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Email address</label><input id="register-email" name="email" autoComplete="email" required type="email" value={regEmail} onChange={event => setRegEmail(event.target.value)} className={fieldClass} placeholder="operator@example.com" /></div>
+              <div><label htmlFor="register-password" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Password</label><div className="relative"><input id="register-password" name="new-password" autoComplete="new-password" required minLength={6} value={regPassword} onChange={event => setRegPassword(event.target.value)} type={showPassword ? 'text' : 'password'} className={`${fieldClass} pr-12`} placeholder="At least 6 characters" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-1 right-1 inline-flex w-10 items-center justify-center rounded-md text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
+              <button type="submit" className="min-h-12 w-full rounded-lg bg-[var(--game-green)] px-4 py-3 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Create account</button>
+            </form>}
+          </div>
 
-      </div>
+          {authError && <div className="mt-5 rounded-lg border border-[var(--game-red)]/40 bg-[var(--game-red)]/10 p-3 text-sm text-[var(--game-red)]" role="alert">{authError}</div>}
+          {authSuccess && <div className="mt-5 rounded-lg border border-[var(--game-green)]/40 bg-[var(--game-green)]/10 p-3 text-sm text-[var(--game-text)]" role="status">Account created successfully.</div>}
+          <p className="mt-6 border-t border-[var(--game-border)] pt-4 text-center text-xs leading-5 text-[var(--game-muted)]">Authorized training environment · Commands are simulated for learning.</p>
+        </section>
+      </main>
     </div>
   );
 };
@@ -464,11 +294,17 @@ interface DashboardScreenProps {
   ) => void;
 
   onShowGuide: () => void;
+  onContinue: () => void;
   onStartDailyTrial: () => void;
   dailyTrialPlayed: boolean;
   dailyTrialDate: string;
   dailyTrialType: 'timeAttack' | 'accuracy';
   dailyTrialMissionTitle: string;
+  progression: PlayerProgression;
+  isLoadingProgress: boolean;
+  onProgressionChange: (progression: PlayerProgression) => void;
+  completedMissions: string[];
+  progressLoadFailed?: boolean;
 }
 
 export const DashboardScreen = ({
@@ -476,34 +312,40 @@ export const DashboardScreen = ({
   userScores,
   setScreen,
   onShowGuide,
+  onContinue,
   onStartDailyTrial,
   dailyTrialPlayed,
   dailyTrialDate,
   dailyTrialType,
-  dailyTrialMissionTitle
+  dailyTrialMissionTitle,
+  progression,
+  isLoadingProgress,
+  onProgressionChange,
+  completedMissions,
+  progressLoadFailed = false
 }: DashboardScreenProps) => {
-  const [missionAttempts, setMissionAttempts] = useState<MissionAttemptRecord[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardUnavailable, setLeaderboardUnavailable] = useState(false);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [activeMoreTab, setActiveMoreTab] = useState<'progress' | 'badges' | 'leaderboard' | null>(null);
+  const reduceMotion = useReducedMotion();
   const userId = user?.uid;
 
+  const rank = rankProgress(progression.xp);
+  const currentTier = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).find(tier => {
+    const score = userScores[tier];
+    return score?.preTestScore === undefined || !score?.finalTotal || (score.finalScore ?? 0) / score.finalTotal < 0.7;
+  }) ?? 'EXPERT';
+  const currentTierMissions = [...(currentTier === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []), ...MISSIONS.filter(mission => mission.tier === currentTier)];
+  const nextMission = currentTierMissions.find(mission => !completedMissions.includes(mission.id));
+  const currentTierCompleted = currentTierMissions.filter(mission => completedMissions.includes(mission.id)).length;
+  const tierProgressPercent = currentTierMissions.length ? currentTierCompleted / currentTierMissions.length * 100 : 0;
+  const currentTierScore = userScores[currentTier];
+  const currentTierAllMissionsComplete = currentTierMissions.length > 0 && currentTierMissions.every(mission => completedMissions.includes(mission.id));
+  const dailyChallengeAvailable = currentTierAllMissionsComplete || Object.values(userScores).some(score => score.finalScore !== undefined);
   useEffect(() => {
     let cancelled = false;
-    void Promise.resolve().then(() => userId ? getMissionAttempts(userId) : []).then(attempts => {
-      if (!cancelled) setMissionAttempts(attempts);
-    }).catch(error => {
-      console.error('Could not load dashboard mission history:', error);
-    });
-    return () => { cancelled = true; };
-  }, [userId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (dailyTrialType !== 'timeAttack') {
-      setLeaderboard([]);
-      setLeaderboardUnavailable(false);
-      return () => { cancelled = true; };
-    }
+    if (!dailyChallengeAvailable || activeMoreTab !== 'leaderboard' || dailyTrialType !== 'timeAttack') return () => { cancelled = true; };
     void getDailyTimeAttackEntries(dailyTrialDate).then(entries => {
       if (!cancelled) {
         setLeaderboard(entries);
@@ -512,303 +354,134 @@ export const DashboardScreen = ({
     }).catch(error => {
       console.warn('Could not load the daily time-attack leaderboard. Check sign-in and Firestore rules for dailyTimeAttackEntries:', error);
       if (!cancelled) setLeaderboardUnavailable(true);
-    });
+    }).finally(() => { if (!cancelled) setLeaderboardLoading(false); });
     return () => { cancelled = true; };
-  }, [userId, dailyTrialDate, dailyTrialType]);
+  }, [userId, dailyTrialDate, dailyTrialType, dailyChallengeAvailable, activeMoreTab]);
 
-  const bestMissionAttempts = new Map<string, { accuracy: number; points: number }>();
-  missionAttempts.forEach(attempt => {
-    if (attempt.outcome !== 'completed') return;
-    const wrongCommands = Object.values(attempt.wrongCommandsByStep ?? {}).reduce((sum, count) => sum + count, 0);
-    const accuracy = Math.max(0, 100 - wrongCommands * 6 - attempt.wrongDecisionCount * 15 - attempt.hintsOpened * 2);
-    const timeBonus = attempt.challengeMode ? Math.max(0, Math.floor((2100 - attempt.totalTimeSeconds) / 30)) : 0;
-    const points = accuracy + timeBonus;
-    const currentBest = bestMissionAttempts.get(attempt.missionId);
-    if (!currentBest || points > currentBest.points) bestMissionAttempts.set(attempt.missionId, { accuracy, points });
-  });
-  const missionPoints = [...bestMissionAttempts.values()].reduce((total, result) => total + result.points, 0);
-  const missionAccuracy = bestMissionAttempts.size
-    ? Math.round([...bestMissionAttempts.values()].reduce((total, result) => total + result.accuracy, 0) / bestMissionAttempts.size)
-    : 0;
-  const scoreEntries =
-    Object.values(
-      userScores
-    ).filter(
-      item =>
-        item.finalScore !==
-          undefined &&
-        item.finalTotal !==
-          undefined
-    );
+  const toggleMoreTab = (tab: 'progress' | 'badges' | 'leaderboard') => {
+    const next = activeMoreTab === tab ? null : tab;
+    if (next === 'leaderboard' && dailyTrialType === 'timeAttack') {
+      setLeaderboardLoading(true);
+      setLeaderboardUnavailable(false);
+    }
+    setActiveMoreTab(next);
+  };
 
-  const totalScore =
-    scoreEntries.reduce(
-      (sum, item) =>
-        sum +
-        (item.finalScore ??
-          0),
-      0
-    );
+  const handleMoreTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const currentIndex = tabs.indexOf(document.activeElement as HTMLButtonElement);
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[nextIndex]?.focus();
+    tabs[nextIndex]?.click();
+  };
 
-  const totalPossible =
-    scoreEntries.reduce(
-      (sum, item) =>
-        sum +
-        (item.finalTotal ??
-          0),
-      0
-    );
+  useEffect(() => {
+    if (!user || isLoadingProgress || progressLoadFailed) return;
+    const tiers = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).map(id => {
+      const missionIds = [...(id === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []), ...MISSIONS.filter(mission => mission.tier === id)].map(mission => mission.id);
+      const score = userScores[id];
+      return { id, missionIds, completedMissionIds: completedMissions, preTestTaken: score?.preTestScore !== undefined, postTestTaken: score?.finalScore !== undefined, passed: Boolean(score?.finalTotal && (score.finalScore ?? 0) / score.finalTotal >= 0.7) };
+    });
+    const next = applyCertificationRewards(progression, tiers);
+    if (next.xp !== progression.xp || next.rank !== progression.rank || next.badges.length !== progression.badges.length || next.tierRewards.length !== progression.tierRewards.length) {
+      onProgressionChange(next);
+      void saveProgression(user.uid, next).catch(error => console.warn('Could not save tier rewards:', error));
+    }
+  }, [user, userScores, completedMissions, progression, onProgressionChange, isLoadingProgress, progressLoadFailed]);
 
-  const percentage =
-    totalPossible > 0
-      ? Math.round(
-          (totalScore /
-            totalPossible) *
-            100
-        )
-      : 0;
+  const completedMissionCount = new Set(completedMissions).size;
+  const isNewUser = !Object.values(userScores).some(score => score.preTestScore !== undefined) && completedMissionCount === 0;
+  const hasScoreData = Object.values(userScores).some(score => score.preTestScore !== undefined || score.finalScore !== undefined);
+  const visibleMoreTabs = [
+    ...(hasScoreData ? [{ id: 'progress' as const, label: 'Progress' }] : []),
+    { id: 'badges' as const, label: 'Badges' },
+    ...(dailyChallengeAvailable && dailyTrialType === 'timeAttack' ? [{ id: 'leaderboard' as const, label: 'Leaderboard' }] : [])
+  ];
+  const completedTierCount = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).filter(tier => {
+    const tierMissions = [...(tier === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []), ...MISSIONS.filter(mission => mission.tier === tier)];
+    const score = userScores[tier];
+    return tierMissions.length > 0 && tierMissions.every(mission => completedMissions.includes(mission.id)) && score?.finalScore !== undefined;
+  }).length;
+  const hasCompletedTier = completedTierCount > 0;
+  const showLearningGain = hasCompletedTier;
+  const gainForTier = (data?: TierScoreLike) => getTierLearningGain(
+    data?.preTestScore !== undefined ? { score: data.preTestFirstScore ?? data.preTestScore, total: data.preTestFirstTotal ?? data.preTestTotal } : undefined,
+    data?.finalScore !== undefined ? { score: data.firstFinalScore ?? data.finalScore, total: data.firstFinalTotal ?? data.finalTotal } : undefined
+  );
+  const badgePeek = [
+    ...ACHIEVEMENTS.filter(achievement => achievement.active && progression.badges.includes(achievement.id)),
+    ...ACHIEVEMENTS.filter(achievement => achievement.active && !progression.badges.includes(achievement.id))
+  ].slice(0, 3);
+  const pathDescription = 'This learning study uses simulated commands and saves your progress and attempts. Path: pre-test → missions → post-test.';
+  const heroTitle = currentTierScore?.preTestScore === undefined
+    ? `Start your ${currentTier[0]}${currentTier.slice(1).toLowerCase()} pre-test`
+    : nextMission
+      ? `Continue: ${nextMission.title}`
+      : `Take the ${currentTier[0]}${currentTier.slice(1).toLowerCase()} post-test`;
+  const heroDescription = isNewUser
+    ? pathDescription
+    : nextMission?.learningGoal ?? `Complete the ${currentTier} post-test to finish this certification tier.`;
 
   return (
-    <div className="mx-auto min-h-full w-full max-w-[1480px] space-y-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+    <div className="mx-auto min-h-full w-full max-w-6xl space-y-7 px-4 py-5 font-sans sm:px-6 lg:px-8 lg:py-8">
+      <GameCard className="continue-hero p-5 sm:p-8 lg:p-10">
+        <p className="game-eyebrow">Next step · {currentTier}</p>
+        <h1 className="mt-2 max-w-3xl text-3xl font-bold leading-tight text-[var(--game-text)] sm:text-4xl">{heroTitle}</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--game-muted)]">{heroDescription}</p>
+        {!isNewUser && <p className="mt-3 text-xs leading-5 text-[var(--game-muted)]">Learning study · all commands are simulated · progress and attempt data are saved.</p>}
+        {!isNewUser && nextMission && <p className="mt-3 text-sm text-[var(--game-muted)]">{nextMission.difficulty} mission · about {Math.max(3, Math.ceil(nextMission.steps.length * 1.5))} min</p>}
+        {!isNewUser && <ProgressBar value={tierProgressPercent} label={`${currentTier} mission progress`} className="mt-5 max-w-2xl" />}
+        <button type="button" onClick={onContinue} className="mt-6 min-h-12 rounded-md bg-[var(--game-green)] px-6 py-3 text-sm font-bold text-black shadow-md transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2">{currentTierScore?.preTestScore === undefined ? 'Start pre-test' : 'Continue training'} <ChevronRight size={16} className="ml-1 inline" /></button>
+      </GameCard>
 
-      <section className="border border-green-500/20 bg-[#08100c] p-6">
+      {!isNewUser && !isLoadingProgress && <div className="game-card grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-3 sm:gap-4 sm:p-4" aria-label="Training status">
+        <div className="min-w-0"><div className="flex flex-col text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2"><span className="truncate font-semibold text-[var(--game-text)]">{rank.current.name}</span><span className="whitespace-nowrap text-[var(--game-muted)]">{progression.xp}{rank.next ? `/${rank.next.threshold}` : ''} XP</span></div><div role="img" aria-label={rank.next ? `${rank.percent}% progress to ${rank.next.name}` : 'Maximum rank'}><ProgressBar value={rank.percent} className="mt-2" /></div></div>
+        <p className="whitespace-nowrap rounded-full border border-[var(--game-border)] px-2 py-2 text-center text-xs font-semibold text-[var(--game-text)] sm:px-3">{progression.streak.current}d streak</p>
+        <p className="whitespace-nowrap text-right text-xs text-[var(--game-text)]"><span className="font-semibold">{currentTierCompleted}/{currentTierMissions.length}</span><span className="block sm:inline sm:pl-1">missions</span></p>
+      </div>}
 
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+      {!isNewUser && <>
+        {dailyChallengeAvailable && <GameCard className="border-[var(--game-cyan)] p-4 sm:p-5" aria-label="Daily challenge">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="game-eyebrow">Daily challenge · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyTrialType === 'timeAttack' ? 'Time Attack' : 'Accuracy Trial'}: {dailyTrialMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">{dailyTrialType === 'timeAttack' ? 'Clear today’s case for a place on the optional time leaderboard.' : 'Practice careful decisions in today’s rotating case.'}</p></div><button type="button" disabled={dailyTrialPlayed} onClick={onStartDailyTrial} className="min-h-11 shrink-0 rounded-md border border-[var(--game-cyan)] px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyTrialPlayed ? 'Completed today' : 'Start today’s challenge'}</button></div>
+        </GameCard>}
 
-          <div>
-
-            {user?.photoURL && <img src={user.photoURL} alt="Your profile" className="mb-4 h-14 w-14 rounded-full border border-green-500/40 object-cover" />}
-
-            <div className="flex items-center gap-2 text-xs text-green-500/50 tracking-widest mb-3">
-              <Activity size={14} />
-              OPERATOR CONSOLE
-            </div>
-
-            <h1 className="text-3xl font-black text-green-300 uppercase">
-              Welcome,{' '}
-              {user?.displayName ||
-                'Operator'}
-            </h1>
-
-            <p className="text-green-500/50 mt-2 max-w-xl">
-              Train your cybersecurity skills through safe simulated
-              environments, guided missions, and incident-response scenarios.
-            </p>
-
-          </div>
-
-          <button
-            onClick={
-              onShowGuide
-            }
-              className="flex items-center justify-center gap-2 border border-green-500/30 px-5 py-3 text-sm hover:bg-green-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-          >
-            <HelpCircle size={17} />
-            HOW TO PLAY
-          </button>
-
-        </div>
-
-      </section>
-
-      <section className="flex flex-col gap-4 border border-cyan-700/50 bg-cyan-950/20 p-5 sm:flex-row sm:items-center sm:justify-between" aria-label="Recommended starting point">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">New to cybersecurity?</p>
-          <h2 className="mt-1 text-lg font-bold text-white">Start in the Security Academy</h2>
-          <p className="mt-1 text-sm text-gray-300">Begin with the Beginner certification. It explains the basics before asking you to investigate.</p>
-        </div>
-        <button type="button" onClick={() => setScreen('academy')} className="shrink-0 border border-cyan-400 bg-cyan-400 px-5 py-3 text-xs font-black uppercase text-black transition-colors hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
-          Start learning →
-        </button>
-      </section>
-
-      <section className="flex flex-col gap-4 border border-yellow-700/50 bg-yellow-950/10 p-5 sm:flex-row sm:items-center sm:justify-between" aria-label="Daily training trial">
-        <div><p className="text-xs font-bold uppercase tracking-widest text-yellow-400">Daily training trial · one attempt</p><h2 className="mt-1 text-lg font-bold text-white">{dailyTrialType === 'timeAttack' ? 'Time Attack' : 'Accuracy Trial'}: {dailyTrialMissionTitle}</h2><p className="mt-1 text-sm text-gray-300">A short rotating practice scenario. Time Attack uses a countdown and competes for the fastest clear time; Accuracy Trial rewards careful command choices.</p><p className="mt-2 text-[10px] text-gray-500">Available once per calendar day in this browser profile.</p></div>
-        <button type="button" disabled={dailyTrialPlayed} onClick={onStartDailyTrial} className="shrink-0 border border-yellow-500 px-5 py-3 text-xs font-black uppercase text-yellow-200 transition-colors hover:bg-yellow-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50">{dailyTrialPlayed ? 'Trial used today' : 'Start daily trial →'}</button>
-      </section>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-        <div className="border border-green-500/20 bg-[#08100c] p-5">
-          <p className="text-xs text-green-500/40 tracking-widest">
-            TRAINING SCORE
-          </p>
-
-          <p className="text-3xl font-bold text-green-300 mt-2">
-            {percentage}%
-          </p>
-        </div>
-
-        <div className="border border-green-500/20 bg-[#08100c] p-5">
-          <p className="text-xs text-green-500/40 tracking-widest">
-            QUIZZES COMPLETED
-          </p>
-
-          <p className="text-3xl font-bold text-green-300 mt-2">
-            {scoreEntries.length}
-          </p>
-        </div>
-
-        <div className="border border-green-500/20 bg-[#08100c] p-5">
-          <p className="text-xs text-green-500/40 tracking-widest">
-            ACCESS LEVEL
-          </p>
-
-          <p className="text-3xl font-bold text-green-300 mt-2">
-            OPERATOR
-          </p>
-        </div>
-
-      </div>
-
-      <section className="border border-cyan-700/40 bg-cyan-950/10 p-5 sm:p-6" aria-label="Personal training progress">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-cyan-500">Your training record</p>
-            <h2 className="mt-1 text-xl font-black text-cyan-200">Progress, accuracy, and points</h2>
-          </div>
-          <p className="text-[10px] text-gray-400">Best completed run per mission · points reward careful, accurate work</p>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="border border-cyan-900/70 bg-black/30 p-4"><p className="text-[10px] uppercase tracking-widest text-gray-400">Mission points</p><p className="mt-1 text-3xl font-black text-cyan-200">{missionPoints}</p></div>
-          <div className="border border-cyan-900/70 bg-black/30 p-4"><p className="text-[10px] uppercase tracking-widest text-gray-400">Best-run accuracy</p><p className="mt-1 text-3xl font-black text-cyan-200">{bestMissionAttempts.size ? `${missionAccuracy}%` : '—'}</p></div>
-          <div className="border border-cyan-900/70 bg-black/30 p-4"><p className="text-[10px] uppercase tracking-widest text-gray-400">Missions completed</p><p className="mt-1 text-3xl font-black text-cyan-200">{bestMissionAttempts.size}</p></div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2" aria-label="Achievements">
-          <span className="border border-green-800 bg-green-950/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-green-300">{bestMissionAttempts.size > 0 ? 'First case completed' : 'First case · ready to earn'}</span>
-          <span className={`border px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${missionAccuracy >= 90 ? 'border-cyan-600 bg-cyan-950/30 text-cyan-200' : 'border-gray-700 bg-black/20 text-gray-400'}`}>{missionAccuracy >= 90 ? 'Careful analyst · 90% accuracy' : 'Careful analyst · reach 90% accuracy'}</span>
-          <span className={`border px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${bestMissionAttempts.size >= 5 ? 'border-yellow-700 bg-yellow-950/20 text-yellow-200' : 'border-gray-700 bg-black/20 text-gray-400'}`}>{bestMissionAttempts.size >= 5 ? 'Field operator · 5 cases' : `Field operator · ${bestMissionAttempts.size}/5 cases`}</span>
-        </div>
-        <p className="mt-3 text-[10px] leading-4 text-gray-500">Accuracy is an estimate from recorded wrong commands, decision errors, and hint use. It is a learning progress indicator, not a formal certification score.</p>
-      </section>
-
-      <section className="border border-yellow-700/50 bg-yellow-950/10 p-5 sm:p-6" aria-label="Daily time attack leaderboard">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-yellow-500">Daily challenge · {dailyTrialDate}</p><h2 className="mt-1 text-xl font-black text-yellow-200">Time Attack leaderboard</h2><p className="mt-1 text-xs text-gray-300">Today’s mission: {dailyTrialMissionTitle}</p></div>
-          <p className="text-[10px] text-gray-400">Fastest completed clear time · names are anonymous operator IDs</p>
-        </div>
-        {dailyTrialType !== 'timeAttack' ? <p className="mt-4 border border-yellow-900/50 bg-black/30 p-4 text-xs text-gray-300">Today is an Accuracy Trial, so there is no timed ranking today. The next Time Attack will use a different rotating mission.</p> : leaderboardUnavailable ? <p className="mt-4 border border-yellow-800/70 bg-black/30 p-4 text-xs leading-5 text-yellow-200">Could not load entries. Confirm you are signed in and that the Firestore `dailyTimeAttackEntries` read rule is published, then refresh.</p> : leaderboard.length === 0 ? <p className="mt-4 border border-yellow-900/50 bg-black/30 p-4 text-xs text-gray-400">No one has completed today’s Time Attack yet. Finish it to add a clear time.</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[420px] text-left text-xs"><thead className="text-[10px] uppercase tracking-widest text-gray-400"><tr><th className="pb-3 pr-3">Rank</th><th className="pb-3 pr-3">Operator</th><th className="pb-3">Clear time</th></tr></thead><tbody>{leaderboard.map((entry, index) => <tr key={entry.uid} className={`border-t border-yellow-900/40 ${entry.uid === userId ? 'bg-yellow-950/30 text-yellow-100' : 'text-gray-200'}`}><td className="py-3 pr-3 font-bold text-yellow-300">#{index + 1}</td><td className="py-3 pr-3">{entry.nickname}{entry.uid === userId ? ' · YOU' : ''}</td><td className="py-3 font-bold">{Math.floor(entry.clearTimeSeconds / 60)}:{String(entry.clearTimeSeconds % 60).padStart(2, '0')}</td></tr>)}</tbody></table></div>}
-        <p className="mt-3 text-[10px] text-gray-500">For presentation only. Entries are submitted by the game client and are not tamper-proof.</p>
-      </section>
-
-      <section className="border border-green-500/20 bg-[#08100c] p-6">
-
-        <h2 className="font-bold text-green-300 tracking-widest mb-4">
-          CERTIFICATION ASSESSMENT SCORES
-        </h2>
-
-        <div className="space-y-3">
-          {(['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).map(tier => {
-            const score = userScores[tier];
-            return (
-              <div key={tier} className="grid grid-cols-3 gap-3 border-b border-green-500/10 pb-3 text-xs">
-                <span className="text-green-300">{tier}</span>
-                <span className="text-green-500/60">PRE: {score?.preTestScore !== undefined ? `${score.preTestScore}/${score.preTestTotal ?? 0}` : 'NOT TAKEN'}</span>
-                <span className="text-green-500/60">POST: {score?.finalScore !== undefined ? `${score.finalScore}/${score.finalTotal ?? 0}` : 'NOT TAKEN'}</span>
+        <GameCard className="p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="shrink-0 text-sm font-semibold text-[var(--game-text)]">More</span>
+              <div role="tablist" aria-label="Dashboard details" aria-orientation="horizontal" onKeyDown={handleMoreTabKeyDown} className="flex min-w-0 gap-1 overflow-x-auto scrollbar-hide">
+                {visibleMoreTabs.map(tab => <button key={tab.id} id={`dashboard-tab-${tab.id}`} type="button" role="tab" aria-selected={activeMoreTab === tab.id} aria-controls="dashboard-more-panel" onClick={() => toggleMoreTab(tab.id)} className={`min-h-11 shrink-0 rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] ${activeMoreTab === tab.id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-text)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:bg-[var(--game-track)]'}`}>
+                  {tab.label}{tab.id === 'badges' ? ` · ${progression.badges.length}/${ACHIEVEMENTS.filter(item => item.active).length}` : ''}
+                </button>)}
               </div>
-            );
-          })}
-        </div>
-
-      </section>
-
-      <section>
-
-        <div className="flex items-center justify-between mb-4">
-
-          <h2 className="text-lg font-bold tracking-widest text-green-300">
-            TRAINING MODULES
-          </h2>
-
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-          <button
-            onClick={() =>
-              setScreen(
-                'academy'
-              )
-            }
-            className="text-left border border-green-500/20 bg-[#08100c] p-6 hover:border-green-500/50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
-          >
-            <GraduationCap
-              size={28}
-              className="text-green-400 mb-4"
-            />
-
-            <h3 className="text-lg font-bold text-green-300">
-              ACADEMY
-            </h3>
-
-            <p className="text-sm text-green-500/40 mt-2">
-              Learn cybersecurity concepts and complete knowledge checks.
-            </p>
-
-            <div className="flex items-center gap-1 text-xs text-green-500/60 mt-5">
-              ENTER ACADEMY
-              <ChevronRight size={14} />
             </div>
-          </button>
-
-          <button
-            onClick={() =>
-              setScreen(
-                'missions'
-              )
-            }
-            className="text-left border border-green-500/20 bg-[#08100c] p-6 hover:border-green-500/50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
-          >
-            <Target
-              size={28}
-              className="text-green-400 mb-4"
-            />
-
-            <h3 className="text-lg font-bold text-green-300">
-              MISSIONS
-            </h3>
-
-            <p className="text-sm text-green-500/40 mt-2">
-              Investigate simulated incidents and solve cybersecurity
-              scenarios.
-            </p>
-
-            <div className="flex items-center gap-1 text-xs text-green-500/60 mt-5">
-              VIEW MISSIONS
-              <ChevronRight size={14} />
-            </div>
-          </button>
-
-          <button
-            onClick={
-              onShowGuide
-            }
-            className="text-left border border-green-500/20 bg-[#08100c] p-6 hover:border-green-500/50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
-          >
-            <BookOpen
-              size={28}
-              className="text-green-400 mb-4"
-            />
-
-            <h3 className="text-lg font-bold text-green-300">
-              HOW TO PLAY
-            </h3>
-
-            <p className="text-sm text-green-500/40 mt-2">
-              Learn how the terminal, missions, hints, maps, and objectives
-              work.
-            </p>
-
-            <div className="flex items-center gap-1 text-xs text-green-500/60 mt-5">
-              START GUIDE
-              <ChevronRight size={14} />
-            </div>
-          </button>
-
-        </div>
-
-      </section>
-
+            <button type="button" onClick={onShowGuide} className="min-h-11 shrink-0 rounded-md px-2 text-sm font-medium text-[var(--game-muted)] hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]"><HelpCircle size={16} className="mr-1 inline" />How to Play</button>
+          </div>
+          <div className={`mt-3 min-h-0 overflow-hidden border-t border-[var(--game-border)] pt-3 ${activeMoreTab ? 'min-h-48' : ''}`}>
+            <AnimatePresence mode="wait" initial={false}>{activeMoreTab && visibleMoreTabs.some(tab => tab.id === activeMoreTab) && <motion.div key={activeMoreTab} id="dashboard-more-panel" role="tabpanel" aria-labelledby={`dashboard-tab-${activeMoreTab}`} tabIndex={0} initial={reduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduceMotion ? 0 : 0.16 }} className="max-h-96 overflow-y-auto overscroll-contain pr-1">
+              {activeMoreTab === 'progress' && hasScoreData && <div id="dashboard-progress-details" className="space-y-4">
+                <div><h2 className="text-base font-bold text-[var(--game-text)]">Assessment results</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Pre-test and post-test scores are shown for each tier.</p></div>
+                <div className="space-y-3">{(['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).filter(tier => userScores[tier]?.preTestScore !== undefined || userScores[tier]?.finalScore !== undefined).map(tier => { const data = userScores[tier]; const gain = gainForTier(data); return <div key={tier} className="grid gap-2 rounded-md border border-[var(--game-border)] p-3 text-sm sm:grid-cols-[100px_1fr_1fr_1fr] sm:items-center"><span className="font-semibold text-[var(--game-text)]">{tier}</span><span className="text-[var(--game-muted)]">Pre-test: {data?.preTestScore !== undefined ? `${data.preTestScore}/${data.preTestTotal ?? 0}` : 'Not taken'}</span><span className="text-[var(--game-muted)]">Post-test (best): {data?.finalScore !== undefined ? `${data.finalScore}/${data.finalTotal ?? 0}` : 'Not taken'}</span>{showLearningGain && gain !== null && <span className="font-semibold text-[var(--game-text)]">Gain (first attempts): {gain > 0 ? '+' : ''}{gain} pp</span>}</div>; })}</div>
+                <p className="text-xs leading-5 text-[var(--game-muted)]">Gain compares first pre-test and first post-test attempts when recorded; older records use their saved scores. This is descriptive and does not change certification scoring.</p>
+                <button type="button" onClick={() => setScreen('profile')} className="min-h-11 text-sm font-semibold text-[var(--game-text)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View all results in Profile</button>
+              </div>}
+              {activeMoreTab === 'badges' && <div id="dashboard-badge-peek" className="space-y-3" aria-label="Badge preview">
+                <div><h2 className="text-base font-bold text-[var(--game-text)]">{progression.badges.length} of {ACHIEVEMENTS.filter(item => item.active).length} badges earned</h2><p className="mt-1 text-sm text-[var(--game-muted)]">A quick look at your achievements.</p></div>
+                <div className="flex flex-wrap items-center gap-3">{badgePeek.map(achievement => { const Icon = achievement.icon === 'shield' ? Shield : achievement.icon === 'target' ? Target : achievement.icon === 'sparkles' ? Activity : Award; const earned = progression.badges.includes(achievement.id); return <span key={achievement.id} title={achievement.name} aria-label={`${achievement.name}${earned ? ', earned' : ', next up'}`} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border ${earned ? 'border-[var(--game-green)] text-[var(--game-green)]' : 'border-[var(--game-border)] text-[var(--game-muted)]'}`}><Icon size={18} aria-hidden="true" /></span>; })}</div>
+                <button type="button" onClick={() => setScreen('profile')} className="min-h-11 text-sm font-semibold text-[var(--game-text)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View all badges in Profile</button>
+              </div>}
+              {activeMoreTab === 'leaderboard' && dailyTrialType === 'timeAttack' && <div id="dashboard-leaderboard" className="space-y-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-bold text-[var(--game-text)]">Today’s time leaderboard</h2><p className="text-sm text-[var(--game-muted)]">{dailyTrialDate} · {dailyTrialMissionTitle}</p></div><p className="text-xs text-[var(--game-muted)]">Names are anonymous operator IDs.</p></div>
+                <p className="text-xs text-[var(--game-muted)]">Speed is a challenge only; certification progress rewards evidence and accuracy.</p>
+                {leaderboardLoading ? <p className="text-sm text-[var(--game-muted)]">Loading entries…</p> : leaderboardUnavailable ? <p className="text-sm text-[var(--game-muted)]">Could not load entries. Check sign-in and the dailyTimeAttackEntries read rule.</p> : leaderboard.length === 0 ? <p className="text-sm text-[var(--game-muted)]">No one has completed today’s Time Attack yet.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr><th className="pb-2 pr-3">Rank</th><th className="pb-2 pr-3">Operator</th><th className="pb-2">Clear time</th></tr></thead><tbody>{leaderboard.map((entry, index) => <tr key={`${entry.uid}-${index}`} className="border-t border-[var(--game-border)] text-[var(--game-text)]"><td className="py-2 pr-3 font-semibold">#{index + 1}</td><td className="py-2 pr-3">{entry.nickname}{entry.uid === userId ? ' · YOU' : ''}</td><td className="py-2 font-semibold">{Math.floor(entry.clearTimeSeconds / 60)}:{String(entry.clearTimeSeconds % 60).padStart(2, '0')}</td></tr>)}</tbody></table></div>}
+                <p className="text-xs text-[var(--game-muted)]">Entries are submitted by the game client and are not tamper-proof.</p>
+              </div>}
+            </motion.div>}</AnimatePresence>
+          </div>
+        </GameCard>
+      </>}
     </div>
   );
 };
@@ -1330,14 +1003,14 @@ export const MissionsScreen = ({
               );
 
             return (
-              <div
+              <GameCard
                 key={
                   mission.id
                 }
-                className={`border bg-[#08100c] p-5 ${
+                className={`p-5 ${
                   completed
-                    ? 'border-green-500/40'
-                    : 'border-green-500/20 hover:border-green-500/40'
+                    ? 'border-[var(--game-green)]'
+                    : ''
                 }`}
               >
 
@@ -1365,13 +1038,14 @@ export const MissionsScreen = ({
 
                     <div>
 
-                      <h2 className="text-lg font-bold text-green-300">
+                      <p className="game-eyebrow">CASE FILE · {String(index + 1).padStart(2, '0')} · {mission.category ?? 'practice'}</p>
+                      <h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">
                         {
                           mission.title
                         }
                       </h2>
 
-                      <p className="text-xs text-green-500/40 mt-1">
+                      <p className="mt-1 text-sm leading-6 text-[var(--game-muted)]">
                         {
                           mission.scenario
                         }
@@ -1380,6 +1054,8 @@ export const MissionsScreen = ({
                       <p className="text-sm text-green-500/50 mt-3">
                         {mission.learningGoal}
                       </p>
+
+                      {completed && <span className="mt-3 inline-block rotate-[-2deg] border border-green-500/50 px-2 py-1 text-[10px] font-bold tracking-[0.18em] text-green-300">RESOLVED</span>}
 
                       <div className="flex flex-wrap gap-4 mt-4 text-xs text-green-500/40">
 
@@ -1421,7 +1097,7 @@ export const MissionsScreen = ({
                         mission
                       )
                     }
-                    className="shrink-0 flex items-center justify-center gap-2 border border-green-500 px-5 py-2 text-xs font-bold uppercase hover:bg-green-500 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                    className="shrink-0 flex min-h-11 items-center justify-center gap-2 rounded-md border border-green-500 px-5 py-2 text-xs font-bold uppercase text-green-300 transition hover:-translate-y-0.5 hover:bg-green-500 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
                   >
                     <Play
                       size={13}
@@ -1434,7 +1110,7 @@ export const MissionsScreen = ({
 
                 </div>
 
-              </div>
+              </GameCard>
             );
           }
         )}
@@ -1489,6 +1165,7 @@ interface TerminalScreenProps {
   removedPersistence: string[];
   onCaseNotesChange: (update: (previous: string[]) => string[]) => void;
   onCaseConfidenceChange: (confidence: string) => void;
+  onSkillSignal: (signal: 'evidence' | 'calibrated-report') => void;
   onShowMissionGuide: () => void;
 
   playSound: (
@@ -1520,6 +1197,7 @@ export const TerminalScreen = ({
   removedPersistence,
   onCaseNotesChange,
   onCaseConfidenceChange,
+  onSkillSignal,
   onShowMissionGuide,
   playSound
 }: TerminalScreenProps) => {
@@ -1545,6 +1223,7 @@ export const TerminalScreen = ({
   const recordEvidenceNote = (note: string) => {
     setEvidenceNotes(previous => previous.includes(note) ? previous : [...previous, note]);
     onCaseNotesChange(previous => previous.includes(note) ? previous : [...previous, note]);
+    onSkillSignal('evidence');
   };
 
   const inspectEvidence = (id: string) => {
@@ -1705,6 +1384,9 @@ export const TerminalScreen = ({
       const confidence = args[0]?.toLowerCase();
       if (!confidence || !['low', 'medium', 'high'].includes(confidence)) return 'Usage: assess [low|medium|high] [supported finding]';
       onCaseConfidenceChange(confidence);
+      const finding = args.slice(1).join(' ').trim();
+      const overclaims = /\b(definitely|certainly|proved|proves|confirmed breach|stolen|exfiltrated|compromised)\b/i.test(finding);
+      if (evidenceNotes.length > 0 && finding.length > 0 && !overclaims && (confidence !== 'high' || evidenceNotes.length >= 2)) onSkillSignal('calibrated-report');
       const notes = evidenceNotes.length ? evidenceNotes.map((note, index) => `  ${index + 1}. ${note}`).join('\n') : '  No evidence notes recorded.';
       return `Assessment recorded · Confidence: ${confidence.toUpperCase()}\nFinding: ${args.slice(1).join(' ') || 'no finding supplied'}\nEvidence notes (${evidenceNotes.length}):\n${notes}\nConfidence describes support for this conclusion, not certainty about identity or intent.`;
     }
@@ -2265,35 +1947,90 @@ interface ProfileScreenProps {
     string,
     TierScoreLike
   >;
+  progression: PlayerProgression;
+  completedMissions: string[];
+  onProgressionChange: (progression: PlayerProgression) => void;
+  avatarId: AvatarId;
+  progressLoadFailed: boolean;
+  onSaveAvatarChoice: (avatarId: AvatarId) => Promise<void>;
 
 }
 
 export const ProfileScreen = ({
   user,
-  userScores
+  userScores,
+  progression,
+  completedMissions,
+  onProgressionChange,
+  avatarId,
+  progressLoadFailed,
+  onSaveAvatarChoice
 }: ProfileScreenProps) => {
   const [exportMessage, setExportMessage] = useState('');
-  const [profilePhoto, setProfilePhoto] = useState(user?.photoURL ?? null);
-  const [photoMessage, setPhotoMessage] = useState('');
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [archive, setArchive] = useState<MissionAttemptRecord[]>([]);
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+  const [localAvatar, setLocalAvatar] = useState<{ uid: string; id: AvatarId } | null>(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const [avatarMessage, setAvatarMessage] = useState('');
+  const avatarOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedAvatarId = localAvatar?.uid === user?.uid ? localAvatar?.id ?? getAvatarById(avatarId).id : getAvatarById(avatarId).id;
 
-  const handleAvatarUpload = async (file?: File) => {
-    if (!user || !file) return;
-    setUploadingPhoto(true);
-    setPhotoMessage('');
+  const chooseAvatar = async (nextAvatarId: AvatarId) => {
+    if (!user || progressLoadFailed || savingAvatar || nextAvatarId === selectedAvatarId) return;
+    const previousAvatarId = selectedAvatarId;
+    setLocalAvatar({ uid: user.uid, id: nextAvatarId });
+    setAvatarMessage('');
+    setSavingAvatar(true);
     try {
-      const url = await uploadUserAvatar(user, file);
-      setProfilePhoto(url);
-      setPhotoMessage('Profile picture updated.');
+      await onSaveAvatarChoice(nextAvatarId);
+      setAvatarMessage('Avatar updated.');
     } catch (error) {
-      console.error('Could not upload profile image:', error);
-      setPhotoMessage(error instanceof Error ? error.message : 'Upload failed. Check Firebase Storage access.');
+      console.error('Could not save avatar choice:', error);
+      setLocalAvatar({ uid: user.uid, id: previousAvatarId });
+      setAvatarMessage('Couldn’t save your avatar. Try again.');
     } finally {
-      setUploadingPhoto(false);
-      if (avatarInputRef.current) avatarInputRef.current.value = '';
+      setSavingAvatar(false);
     }
   };
+
+  const handleAvatarKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = AVATARS.findIndex(avatar => avatar.id === selectedAvatarId);
+    const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+    const nextIndex = (currentIndex + direction + AVATARS.length) % AVATARS.length;
+    const nextAvatar = AVATARS[nextIndex];
+    avatarOptionRefs.current[nextIndex]?.focus();
+    void chooseAvatar(nextAvatar.id);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) return;
+    void getMissionAttempts(user.uid).then(attempts => {
+      if (!cancelled) setArchive(attempts.filter(attempt => attempt.outcome === 'completed'));
+    }).catch(error => console.warn('Could not load case archive:', error));
+    return () => { cancelled = true; };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const added = new Set<string>();
+    for (const tier of ['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const) {
+      const tierMissions = [...(tier === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []), ...MISSIONS.filter(mission => mission.tier === tier)];
+      const allCasesDone = tierMissions.length > 0 && tierMissions.every(mission => completedMissions.includes(mission.id));
+      const score = userScores[tier];
+      const passed = Boolean(score?.finalTotal && (score.finalScore ?? 0) / score.finalTotal >= 0.7);
+      if (allCasesDone && passed && !progression.badges.includes('clearance-granted')) added.add('clearance-granted');
+      if (allCasesDone && score?.preTestScore !== undefined && score.finalScore !== undefined && !progression.badges.includes('full-circle')) added.add('full-circle');
+    }
+    if (added.size) {
+      const next = { ...progression, badges: [...new Set([...progression.badges, ...added])] };
+      onProgressionChange(next);
+      void saveProgression(user.uid, next).catch(error => console.warn('Could not save certification achievement:', error));
+    }
+  }, [user, userScores, completedMissions, progression, onProgressionChange]);
+
   const scoreEntries =
     Object.values(
       userScores
@@ -2331,6 +2068,13 @@ export const ProfileScreen = ({
             100
         )
       : 0;
+  const profileLearningGain = (data: TierScoreLike) => getTierLearningGain(
+    data.preTestScore !== undefined ? { score: data.preTestFirstScore ?? data.preTestScore, total: data.preTestFirstTotal ?? data.preTestTotal } : undefined,
+    data.finalScore !== undefined ? { score: data.firstFinalScore ?? data.finalScore, total: data.firstFinalTotal ?? data.finalTotal } : undefined
+  );
+  const learningGainEntries = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const)
+    .map(tier => ({ tier, data: userScores[tier], gain: userScores[tier] ? profileLearningGain(userScores[tier]) : null }))
+    .filter((entry): entry is { tier: Tier; data: TierScoreLike; gain: number } => Boolean(entry.data && entry.gain !== null));
 
   const exportLearningData = async () => {
     if (!user) return;
@@ -2350,7 +2094,7 @@ export const ProfileScreen = ({
         URL.revokeObjectURL(url);
       };
       if (attempts.length) {
-        const headers = ['missionId', 'missionTitle', 'tier', 'concept', 'outcome', 'startedAt', 'completedAt', 'totalTimeSeconds', 'hintsOpened', 'hintLevelsShown', 'timePerStepSeconds', 'wrongCommandsByStep', 'wrongDecisionCount'];
+        const headers = ['missionId', 'missionTitle', 'tier', 'concept', 'outcome', 'startedAt', 'completedAt', 'totalTimeSeconds', 'hintsOpened', 'hintLevelsShown', 'timePerStepSeconds', 'wrongCommandsByStep', 'wrongDecisionCount', 'challengeMode', 'dailyChallengeDate', 'dailyChallengeType', 'skillSignals', 'xpAwarded'];
         const rows = attempts.map(attempt => headers.map(header => escapeCsv(typeof attempt[header as keyof typeof attempt] === 'object' ? JSON.stringify(attempt[header as keyof typeof attempt]) : attempt[header as keyof typeof attempt])).join(','));
         const groups = new Map<string, { missionTitle: string; tier: string; concept: string; attempts: number; completed: number; totalSeconds: number; hints: number; wrongCommands: number; wrongDecisions: number }>();
         attempts.forEach(attempt => {
@@ -2399,18 +2143,15 @@ export const ProfileScreen = ({
   };
 
   return (
-    <div className="mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+    <div className="mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 font-sans sm:px-6 lg:px-8 lg:py-7">
 
       <section className="border border-green-500/20 bg-[#08100c] p-6">
 
         <div className="flex flex-col md:flex-row items-center md:items-start gap-5">
 
           <div className="flex flex-col items-center gap-2">
-            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-green-500/30 bg-black">
-              {profilePhoto ? <img src={profilePhoto} alt="Profile" className="h-full w-full object-cover" /> : <User size={34} className="text-green-400" />}
-            </div>
-            <input ref={avatarInputRef} type="file" accept="image/*" className="sr-only" onChange={event => void handleAvatarUpload(event.target.files?.[0])} />
-            <button type="button" disabled={!user || uploadingPhoto} onClick={() => avatarInputRef.current?.click()} className="inline-flex items-center gap-1 border border-cyan-800 px-2 py-1 text-[10px] font-bold uppercase text-cyan-300 hover:border-cyan-400 disabled:opacity-50"><Upload size={12} />{uploadingPhoto ? 'Uploading…' : 'Upload photo'}</button>
+            <Avatar avatarId={selectedAvatarId} size="large" />
+            <button type="button" aria-expanded={avatarPickerOpen} aria-controls="profile-avatar-picker" disabled={!user || progressLoadFailed || savingAvatar} onClick={() => setAvatarPickerOpen(open => !open)} className="min-h-11 rounded-md border border-cyan-800 px-3 py-2 text-xs font-bold text-cyan-200 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-50">{savingAvatar ? 'Saving…' : 'Change avatar'}</button>
           </div>
 
           <div className="text-center md:text-left">
@@ -2436,9 +2177,40 @@ export const ProfileScreen = ({
           </div>
 
         </div>
-        {photoMessage && <p className="mt-3 text-center text-xs text-cyan-200 md:text-left" role="status">{photoMessage}</p>}
+
+        {avatarPickerOpen && <div id="profile-avatar-picker" className="mt-5 border-t border-[var(--game-border)] pt-4">
+          <p className="mb-3 text-sm font-semibold text-[var(--game-text)]">Choose a preset avatar</p>
+          <div role="radiogroup" aria-label="Choose your profile avatar" onKeyDown={handleAvatarKeyDown} className="flex flex-wrap gap-3">
+            {AVATARS.map((avatar, index) => {
+              const selected = selectedAvatarId === avatar.id;
+              return <button key={avatar.id} ref={element => { avatarOptionRefs.current[index] = element; }} type="button" role="radio" aria-checked={selected} aria-label={avatar.label} tabIndex={selected ? 0 : -1} disabled={!user || progressLoadFailed || savingAvatar} onClick={() => void chooseAvatar(avatar.id)} className={`relative flex min-h-16 min-w-16 items-center justify-center rounded-full border-2 p-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--game-surface)] disabled:cursor-not-allowed disabled:opacity-50 ${selected ? 'border-[var(--game-green)] ring-2 ring-[var(--game-green)]' : 'border-[var(--game-border)] hover:border-[var(--game-cyan)]'}`}>
+                <Avatar avatarId={avatar.id} />
+                {selected && <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-[var(--game-surface)] bg-[var(--game-green)] text-xs font-black text-black" aria-hidden="true">✓</span>}
+              </button>;
+            })}
+          </div>
+          {progressLoadFailed && <p className="mt-3 text-xs text-[var(--game-muted)]">Avatar changes are unavailable until saved progress loads successfully.</p>}
+          {avatarMessage && <p className="mt-3 text-xs text-[var(--game-text)]" role="status">{avatarMessage}</p>}
+        </div>}
 
       </section>
+
+      <GameCard className="p-5 sm:p-6">
+        <SectionHeader eyebrow="Clearance profile" title={`${rankProgress(progression.xp).current.name} · ${progression.xp} XP`} detail={`${progression.streak.current} day streak · ${progression.streak.longest} day personal best`} />
+        <ProgressBar value={rankProgress(progression.xp).percent} label={rankProgress(progression.xp).next ? `Progress to ${rankProgress(progression.xp).next?.name}` : 'Maximum rank'} />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">{ACHIEVEMENTS.map(achievement => <AchievementBadge key={achievement.id} achievement={achievement} earned={progression.badges.includes(achievement.id)} />)}</div>
+      </GameCard>
+
+      {learningGainEntries.length > 0 && <GameCard className="p-5 sm:p-6">
+        <SectionHeader eyebrow="Assessment progress" title="Learning gain · first attempts" detail="Percentage-point change between the first pre-test and post-test attempts." />
+        <div className="mt-4 space-y-2">{learningGainEntries.map(({ tier, gain }) => <div key={tier} className="flex items-center justify-between gap-3 rounded-md border border-[var(--game-border)] p-3 text-sm"><span className="font-semibold text-[var(--game-text)]">{tier}</span><span className="font-bold text-[var(--game-text)]">{gain > 0 ? '+' : ''}{gain} pp</span></div>)}</div>
+        <p className="mt-3 text-xs leading-5 text-[var(--game-muted)]">Older records without first-attempt fields use their saved assessment scores. Total score and average below reflect best saved post-test scores.</p>
+      </GameCard>}
+
+      <GameCard className="p-5 sm:p-6">
+        <SectionHeader eyebrow="Resolved case files" title="Case Archive" detail="Completed practice and certification cases with their learning takeaway." />
+        {archive.length ? <div className="space-y-2">{archive.map((attempt, index) => <article key={`${attempt.missionId}-${attempt.completedAt}-${index}`} className="flex flex-col gap-2 rounded-md border border-[var(--game-border)] bg-[var(--game-surface)] p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-[var(--game-text)]">{attempt.missionTitle} <span className="ml-2 rounded border border-[var(--game-green)] px-2 py-0.5 text-[10px] text-[var(--game-green)]">RESOLVED</span></p><p className="mt-1 text-xs text-[var(--game-muted)]">{attempt.concept} · {new Date(attempt.completedAt).toLocaleDateString()}</p></div><p className="text-xs text-[var(--game-muted)]">Takeaway: {attempt.concept}</p></article>)}</div> : <div className="empty-state">No resolved cases yet. Complete a mission to start your archive.</div>}
+      </GameCard>
 
       <section className="flex flex-col gap-3 border border-cyan-900/60 bg-[#071014] p-4 sm:flex-row sm:items-center sm:justify-between">
         <div><p className="text-xs font-bold uppercase tracking-widest text-cyan-300">Learning data</p><p className="mt-1 text-xs text-gray-400">Download mission and assessment summaries plus detailed attempt rows for this account as CSV.</p>{exportMessage && <p className="mt-2 text-xs text-cyan-200" role="status">{exportMessage}</p>}</div>
@@ -2457,7 +2229,7 @@ export const ProfileScreen = ({
             />
 
             <span className="text-xs text-green-500/50">
-              TOTAL SCORE
+              BEST POST-TEST SCORE
             </span>
 
           </div>
@@ -2480,7 +2252,7 @@ export const ProfileScreen = ({
             />
 
             <span className="text-xs text-green-500/50">
-              AVERAGE
+              BEST-SCORE AVERAGE
             </span>
 
           </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
+import { motion } from 'framer-motion';
 import type { User as FirebaseUser } from 'firebase/auth';
 import errorSound from './assets/error.mp3';
 import levelCompleteSound from './assets/level complete.mp3';
@@ -16,8 +17,15 @@ import {
   saveCompletedMissions,
   savePreTestScore,
   getUserProgress,
-  saveMissionAttempt
+  saveMissionAttempt,
+  saveProgression,
+  saveAvatarChoice
 } from './Firebase';
+import { ACHIEVEMENTS } from './data/achievements';
+import { getMissionXp, normalizeProgression, rankProgress, type PlayerProgression } from './data/progression';
+import { Toast } from './components/GameUI';
+import { CONTENT_VERSION } from './data/contentVersion';
+import { DEFAULT_AVATAR_ID, getAvatarById, type AvatarId } from './data/avatars';
 
 import {
   BootScreen,
@@ -108,8 +116,12 @@ type SavedScoreData = {
   total?: number;
   preTestScore?: number;
   preTestTotal?: number;
+  preTestFirstScore?: number;
+  preTestFirstTotal?: number;
   finalScore?: number;
   finalTotal?: number;
+  firstFinalScore?: number;
+  firstFinalTotal?: number;
 };
 
 export interface TierScore {
@@ -117,8 +129,12 @@ export interface TierScore {
   total: number;
   preTestScore?: number;
   preTestTotal?: number;
+  preTestFirstScore?: number;
+  preTestFirstTotal?: number;
   finalScore?: number;
   finalTotal?: number;
+  firstFinalScore?: number;
+  firstFinalTotal?: number;
 };
 
 function App() {
@@ -177,9 +193,23 @@ function App() {
 
   const [isLoadingAuth, setIsLoadingAuth] =
     useState(true);
+  const [progressLoadFailed, setProgressLoadFailed] = useState(false);
+  const progressLoadFailedRef = useRef(false);
+  const [progressLoadRetryCount, setProgressLoadRetryCount] = useState(0);
 
   const [completedMissions, setCompletedMissions] =
     useState<string[]>([]);
+  const [avatarId, setAvatarId] = useState<AvatarId>(DEFAULT_AVATAR_ID);
+
+  const [playerProgression, setPlayerProgression] = useState<PlayerProgression>(() => normalizeProgression(null));
+  const playerProgressionRef = useRef<PlayerProgression>(playerProgression);
+  const [earnedToast, setEarnedToast] = useState('');
+  const [missionReport, setMissionReport] = useState<{
+    evidence: number; accuracy: number; verification: number; independence: number;
+    xpEarned: number; rankBefore: string; rankAfter: string; newBadges: string[];
+    evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number;
+    elapsedSeconds: number; timed: boolean;
+  } | null>(null);
 
   const [activeTier, setActiveTier] =
     useState<Tier | null>(null);
@@ -214,6 +244,10 @@ function App() {
   const stepStartedAtRef = useRef(0);
   const attemptSavedRef = useRef(false);
   const attemptWasTimedRef = useRef(false);
+  const evidenceBeforeResponseRef = useRef(false);
+  const responseActionsRef = useRef(0);
+  const verifiedActionsRef = useRef(0);
+  const calibratedReportRef = useRef(false);
   const dailyTrialRef = useRef<{ date: string; type: 'timeAttack' | 'accuracy' } | null>(null);
   const verifiedCommandsByStepRef = useRef<Record<string, string[]>>({});
   const attemptTelemetryRef = useRef({ hintsOpened: 0, hintLevelsShown: [] as number[], timePerStepSeconds: {} as Record<string, number>, wrongCommandsByStep: {} as Record<string, number>, wrongDecisionCount: 0 });
@@ -227,7 +261,7 @@ function App() {
     >('none');
 
   const [isMuted, setIsMuted] =
-    useState(false);
+    useState(() => localStorage.getItem('sandbox-secure-sfx') !== 'on');
   const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem('sandbox-secure-music') !== 'off');
   const [audioVolume, setAudioVolume] = useState(() => Number(localStorage.getItem('sandbox-secure-volume') ?? 0.22));
   const [showSettings, setShowSettings] = useState(false);
@@ -242,6 +276,58 @@ function App() {
     >('missions');
 
   const checkpointKey = user ? `sandbox-secure-mission-checkpoint-${user.uid}` : null;
+
+  const syncProgression = (next: PlayerProgression) => {
+    playerProgressionRef.current = next;
+    setPlayerProgression(next);
+  };
+
+  const awardMissionProgression = (mission: Mission, caseRecord: string[], confidence: string) => {
+    if (progressLoadFailedRef.current) return null;
+    const current = playerProgressionRef.current;
+    const isOptionalDailyChallenge = mission.id.startsWith('daily-');
+    const previousStats = current.missionStats[mission.id] ?? { completions: 0 };
+    const firstCompletion = previousStats.completions === 0;
+    const evidenceFirst = evidenceBeforeResponseRef.current && responseActionsRef.current > 0;
+    const verifiedAll = responseActionsRef.current > 0 && verifiedActionsRef.current >= responseActionsRef.current;
+    const calibratedReport = calibratedReportRef.current && Boolean(confidence) && caseRecord.length > 0;
+    const hintsUsed = attemptTelemetryRef.current.hintsOpened;
+    const wrongCommands = Object.values(attemptTelemetryRef.current.wrongCommandsByStep).reduce((sum, count) => sum + count, 0);
+    const evidenceGrade = evidenceFirst ? 3 : caseRecord.length > 0 ? 2 : 0;
+    const accuracyGrade = wrongCommands === 0 && attemptTelemetryRef.current.wrongDecisionCount === 0 ? 3 : wrongCommands + attemptTelemetryRef.current.wrongDecisionCount <= 2 ? 2 : 1;
+    const verificationGrade = responseActionsRef.current === 0 ? 2 : verifiedAll ? 3 : 1;
+    const independenceGrade = hintsUsed === 0 ? 3 : hintsUsed <= 2 ? 2 : 1;
+    const grade = [evidenceGrade, accuracyGrade, verificationGrade, independenceGrade].reduce((sum, value) => sum + value, 0) / 4;
+    const newBadges = [
+      evidenceFirst && 'evidence-first',
+      calibratedReport && 'measured-words',
+      verifiedAll && 'trust-verify',
+      hintsUsed === 0 && 'independent'
+    ].filter((badge): badge is string => typeof badge === 'string' && !current.badges.includes(badge));
+    const baseXp = firstCompletion && !isOptionalDailyChallenge ? getMissionXp(mission.tier) : 0;
+    const skillXp = firstCompletion && !isOptionalDailyChallenge ? [evidenceFirst, calibratedReport, verifiedAll, hintsUsed === 0].filter(Boolean).length * 10 : 0;
+    const xpEarned = baseXp + skillXp;
+    const xp = current.xp + xpEarned;
+    const rankAfter = rankProgress(xp).current.name;
+    const today = getLocalDateKey();
+    const priorDate = current.streak.lastActiveDate;
+    const daysSince = priorDate ? Math.floor((new Date(`${today}T00:00:00`).getTime() - new Date(`${priorDate}T00:00:00`).getTime()) / 86400000) : 0;
+    const streakCurrent = !priorDate || daysSince > 2 ? 1 : daysSince <= 0 ? current.streak.current : current.streak.current + 1;
+    const nextBadges = isOptionalDailyChallenge ? current.badges : [...new Set([...current.badges, ...newBadges])];
+    const next = normalizeProgression({
+      ...current,
+      xp: isOptionalDailyChallenge ? current.xp : xp,
+      badges: nextBadges,
+      streak: { current: streakCurrent, longest: Math.max(current.streak.longest, streakCurrent), lastActiveDate: today },
+      missionStats: isOptionalDailyChallenge ? current.missionStats : {
+        ...current.missionStats,
+        [mission.id]: { completions: previousStats.completions + 1, bestGrade: Math.max(Number(previousStats.bestGrade ?? 0), grade).toFixed(2), hintsUsed, lastCompletedAt: new Date().toISOString() }
+      }
+    });
+    syncProgression(next);
+    if (user && !isFakeAdmin) void saveProgression(user.uid, next).catch(error => console.error('Could not save player progression:', error));
+    return { evidence: evidenceGrade, accuracy: accuracyGrade, verification: verificationGrade, independence: independenceGrade, xpEarned, rankBefore: current.rank, rankAfter: isOptionalDailyChallenge ? current.rank : rankAfter, newBadges: isOptionalDailyChallenge ? [] : newBadges, evidenceFirst, verifiedAll, calibratedReport, hintsUsed, elapsedSeconds: Math.max(0, Math.round((Date.now() - attemptStartedAtRef.current) / 1000)), timed: Boolean(mission.timerLimit) };
+  };
 
   const [showBriefing, setShowBriefing] =
     useState(false);
@@ -300,6 +386,10 @@ function App() {
     localStorage.setItem('sandbox-secure-volume', String(audioVolume));
   }, [musicEnabled, audioVolume]);
 
+  useEffect(() => {
+    localStorage.setItem('sandbox-secure-sfx', isMuted ? 'off' : 'on');
+  }, [isMuted]);
+
   const sendSysMsg = (
     text: string
   ) => {
@@ -309,8 +399,8 @@ function App() {
     );
   };
 
-  const persistMissionAttempt = useCallback((outcome: 'completed' | 'timed_out') => {
-    if (!activeMission || attemptSavedRef.current) return;
+  const persistMissionAttempt = useCallback((outcome: 'completed' | 'timed_out', report?: { xpEarned: number; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number }) => {
+    if (progressLoadFailedRef.current || !activeMission || attemptSavedRef.current) return;
     const completedAt = Date.now();
     const startedAt = attemptStartedAtRef.current || completedAt;
     const activeStep = Math.min(questStep, activeMission.steps.length - 1);
@@ -321,6 +411,7 @@ function App() {
     attemptSavedRef.current = true;
     if (!user || isFakeAdmin) return;
     void saveMissionAttempt(user.uid, {
+      contentVersion: CONTENT_VERSION,
       missionId: activeMission.id,
       missionTitle: activeMission.title,
       tier: activeMission.tier,
@@ -329,6 +420,8 @@ function App() {
       challengeMode: attemptWasTimedRef.current,
       dailyChallengeDate: dailyTrialRef.current?.date,
       dailyChallengeType: dailyTrialRef.current?.type,
+      skillSignals: report ? { evidenceFirst: report.evidenceFirst, responseActions: responseActionsRef.current, verifiedActions: verifiedActionsRef.current, verifiedAll: report.verifiedAll, calibratedReport: report.calibratedReport, hintsUsed: report.hintsUsed } : undefined,
+      xpAwarded: report?.xpEarned,
       startedAt: new Date(startedAt).toISOString(),
       completedAt: new Date(completedAt).toISOString(),
       totalTimeSeconds: Math.max(0, Math.round((completedAt - startedAt) / 1000)),
@@ -375,7 +468,7 @@ function App() {
         const availableTracks = missionTracks.filter(track => track !== backgroundTrackRef.current);
         nextTrack = availableTracks[Math.floor(Math.random() * availableTracks.length)];
       }
-    } else if (bootStage === 'authenticated') {
+    } else if (bootStage !== 'booting') {
       nextRole = 'app';
       nextTrack = missionMusicTwo;
     }
@@ -452,6 +545,7 @@ function App() {
   };
 
   useEffect(() => {
+    let cancelled = false;
     const unsub =
       onAuthStateChanged(
         auth,
@@ -460,23 +554,27 @@ function App() {
             !currentUser &&
             isFakeAdmin
           ) {
-            setIsLoadingAuth(
-              false
-            );
+            progressLoadFailedRef.current = false;
+            setProgressLoadFailed(false);
+            if (!cancelled) setIsLoadingAuth(false);
 
             return;
           }
 
+          if (cancelled) return;
           setUser(
             currentUser
           );
 
           if (currentUser) {
+            progressLoadFailedRef.current = true;
+            setIsLoadingAuth(true);
             try {
               const progress =
                 await getUserProgress(
                   currentUser.uid
                 );
+              if (cancelled) return;
 
               const savedScores =
                 progress.scores;
@@ -527,6 +625,9 @@ function App() {
                           )
                         : undefined,
 
+                    preTestFirstScore: scoreData.preTestFirstScore !== undefined ? Number(scoreData.preTestFirstScore) : undefined,
+                    preTestFirstTotal: scoreData.preTestFirstTotal !== undefined ? Number(scoreData.preTestFirstTotal) : undefined,
+
                     finalScore:
                       scoreData.finalScore !==
                       undefined
@@ -541,7 +642,9 @@ function App() {
                         ? Number(
                             scoreData.finalTotal
                           )
-                        : undefined
+                        : undefined,
+                    firstFinalScore: scoreData.firstFinalScore !== undefined ? Number(scoreData.firstFinalScore) : undefined,
+                    firstFinalTotal: scoreData.firstFinalTotal !== undefined ? Number(scoreData.firstFinalTotal) : undefined
                   };
                 }
               );
@@ -553,6 +656,8 @@ function App() {
               setCompletedMissions(
                 progress.completedMissions
               );
+              setAvatarId(progress.avatarId);
+              syncProgression(normalizeProgression(progress.progression));
 
               try {
                 const checkpoint = JSON.parse(localStorage.getItem(`sandbox-secure-mission-checkpoint-${currentUser.uid}`) ?? 'null') as {
@@ -577,33 +682,40 @@ function App() {
               } catch {
                 // Ignore malformed or unavailable local checkpoints.
               }
+              progressLoadFailedRef.current = false;
+              setProgressLoadFailed(false);
             } catch (
               error
             ) {
+              if (cancelled) return;
               console.error(
                 'Error loading user progress:',
                 error
               );
 
-              setUserScores({});
-              setCompletedMissions([]);
+              progressLoadFailedRef.current = true;
+              setProgressLoadFailed(true);
             }
           } else {
+            progressLoadFailedRef.current = false;
+            setProgressLoadFailed(false);
             setUserScores({});
             setCompletedMissions([]);
+            setAvatarId(DEFAULT_AVATAR_ID);
             setActiveMission(null);
+            syncProgression(normalizeProgression(null));
             setIsFakeAdmin(false);
           }
 
-          setIsLoadingAuth(
-            false
-          );
+          if (!cancelled) setIsLoadingAuth(false);
         }
       );
 
-    return () =>
+    return () => {
+      cancelled = true;
       unsub();
-  }, [isFakeAdmin]);
+    };
+  }, [isFakeAdmin, progressLoadRetryCount]);
 
   useEffect(() => {
     const bootLines = [
@@ -904,6 +1016,7 @@ function App() {
   const startMission = (
     mission: Mission
   ) => {
+    if (progressLoadFailedRef.current) return;
     dailyTrialRef.current = null;
     setMissionOrigin(
       'missions'
@@ -921,6 +1034,7 @@ function App() {
   const startMissionById = (
     missionId: string
   ) => {
+    if (progressLoadFailedRef.current) return;
     dailyTrialRef.current = null;
     const allMissions = [
       ...MISSIONS,
@@ -951,7 +1065,15 @@ function App() {
   };
 
   const startDailyTrial = () => {
-    if (!user || hasUsedDailyTrial(user.uid)) return;
+    if (progressLoadFailedRef.current || !user || hasUsedDailyTrial(user.uid)) return;
+    const eligibleTier = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).find(tier => {
+      const score = userScores[tier];
+      return score?.preTestScore === undefined || !score?.finalTotal || (score.finalScore ?? 0) / score.finalTotal < 0.7;
+    }) ?? 'EXPERT';
+    const tierMissions = [...(eligibleTier === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []), ...MISSIONS.filter(mission => mission.tier === eligibleTier)];
+    const allMissionsComplete = tierMissions.length > 0 && tierMissions.every(mission => completedMissions.includes(mission.id));
+    const anyPostTestTaken = Object.values(userScores).some(score => score.finalScore !== undefined);
+    if (!allMissionsComplete && !anyPostTestTaken) return;
     const daily = getDailyTrialDetails();
     const isTimeAttack = daily.type === 'timeAttack';
     const practiceMission = TUTORIAL_MISSIONS[(new Date().getDate() - 1) % TUTORIAL_MISSIONS.length];
@@ -977,6 +1099,7 @@ function App() {
 
   const confirmStartMission =
     (untimed = false) => {
+      if (progressLoadFailedRef.current) return;
       if (
         !pendingMission
       ) {
@@ -997,6 +1120,11 @@ function App() {
       attemptStartedAtRef.current = Date.now();
       stepStartedAtRef.current = Date.now();
       attemptSavedRef.current = false;
+      evidenceBeforeResponseRef.current = false;
+      responseActionsRef.current = 0;
+      verifiedActionsRef.current = 0;
+      calibratedReportRef.current = false;
+      setMissionReport(null);
       verifiedCommandsByStepRef.current = {};
       attemptTelemetryRef.current = { hintsOpened: 0, hintLevelsShown: [], timePerStepSeconds: {}, wrongCommandsByStep: {}, wrongDecisionCount: 0 };
       setMissionRunNumber(previous => previous + 1);
@@ -1039,6 +1167,7 @@ function App() {
   const handleCommand = (
     cmd: string
   ) => {
+    if (progressLoadFailedRef.current) return;
     if (
       !activeMission
     ) {
@@ -1075,6 +1204,10 @@ function App() {
       .trim()
       .replace(/\s+/g, ' ');
     const normalizedInput = normalizeCommand(input);
+    const commandName = normalizedInput.split(' ')[0];
+    if (responseActionsRef.current > verifiedActionsRef.current && ['status', 'ps', 'ss', 'netstat', 'crontab', 'cat'].includes(commandName)) {
+      verifiedActionsRef.current += 1;
+    }
     const acceptedCommands = (currentStep.requiredCommands ? (currentStep.alternates ?? []) : [currentStep.cmd, ...(currentStep.alternates ?? [])])
       .map(normalizeCommand);
     if (/^ls(?:\s|$)/i.test(currentStep.cmd)) {
@@ -1147,6 +1280,7 @@ function App() {
         const removed = input.slice('remove-persistence '.length).trim();
         setRemovedPersistence(previous => previous.includes(removed) ? previous : [...previous, removed]);
       }
+      if (/^(block|disable-service|kill|remove-persistence)\s/i.test(input)) responseActionsRef.current += 1;
 
       const isLastStep =
         questStep ===
@@ -1156,7 +1290,9 @@ function App() {
       if (isLastStep) {
         if (checkpointKey) localStorage.removeItem(checkpointKey);
         playSound('levelComplete');
-        persistMissionAttempt('completed');
+        const report = awardMissionProgression(activeMission, caseNotes, caseConfidence);
+        setMissionReport(report);
+        persistMissionAttempt('completed', report ?? undefined);
         setQuestStep(activeMission.steps.length);
         setIsThreatActive(
           false
@@ -1266,6 +1402,11 @@ function App() {
     attemptStartedAtRef.current = Date.now();
     stepStartedAtRef.current = Date.now();
     attemptSavedRef.current = false;
+    evidenceBeforeResponseRef.current = false;
+    responseActionsRef.current = 0;
+    verifiedActionsRef.current = 0;
+    calibratedReportRef.current = false;
+    setMissionReport(null);
     verifiedCommandsByStepRef.current = {};
     attemptTelemetryRef.current = { hintsOpened: 0, hintLevelsShown: [], timePerStepSeconds: {}, wrongCommandsByStep: {}, wrongDecisionCount: 0 };
     setTimeLeft(0);
@@ -1282,6 +1423,7 @@ function App() {
       total: number,
       isPreTest: boolean = false
     ) => {
+      if (progressLoadFailedRef.current) return;
       const safeTotal =
         Math.max(
           0,
@@ -1409,6 +1551,8 @@ function App() {
                         scoreData.preTestTotal
                       )
                     : undefined,
+                preTestFirstScore: scoreData.preTestFirstScore !== undefined ? Number(scoreData.preTestFirstScore) : undefined,
+                preTestFirstTotal: scoreData.preTestFirstTotal !== undefined ? Number(scoreData.preTestFirstTotal) : undefined,
                 finalScore:
                   scoreData.finalScore !==
                   undefined
@@ -1422,7 +1566,9 @@ function App() {
                     ? Number(
                         scoreData.finalTotal
                       )
-                    : undefined
+                    : undefined,
+                firstFinalScore: scoreData.firstFinalScore !== undefined ? Number(scoreData.firstFinalScore) : undefined,
+                firstFinalTotal: scoreData.firstFinalTotal !== undefined ? Number(scoreData.firstFinalTotal) : undefined
               };
             }
           );
@@ -1434,6 +1580,7 @@ function App() {
           setCompletedMissions(
             progress.completedMissions
           );
+          syncProgression(normalizeProgression(progress.progression));
         } catch (
           error
         ) {
@@ -1456,6 +1603,24 @@ function App() {
           bootText
         }
       />
+    );
+  }
+
+  if (progressLoadFailed && user && !isFakeAdmin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--game-bg)] p-5 text-[var(--game-text)]" role="alert">
+        <section className="game-card w-full max-w-lg space-y-4 p-6 sm:p-8">
+          <h1 className="text-xl font-bold">Saved progress unavailable</h1>
+          <p className="text-sm leading-6 text-[var(--game-muted)]">We couldn’t load your saved progress.</p>
+          <p className="text-sm leading-6 text-[var(--game-muted)]">Check your internet connection. If you use an ad blocker or privacy extension, turn it off for this site, then retry.</p>
+          <button type="button" disabled={isLoadingAuth} onClick={() => {
+            setIsLoadingAuth(true);
+            setProgressLoadRetryCount(count => count + 1);
+          }} className="min-h-11 rounded-md bg-[var(--game-green)] px-5 py-2 font-semibold text-black disabled:cursor-wait disabled:opacity-60">
+            {isLoadingAuth ? 'Retrying…' : 'Retry'}
+          </button>
+        </section>
+      </div>
     );
   }
 
@@ -1529,7 +1694,15 @@ function App() {
             </span>
           </h1>
 
-          <div className="col-span-2 row-start-2 flex min-w-0 gap-1 overflow-x-auto scrollbar-hide text-xs font-bold uppercase sm:w-auto sm:gap-1.5 lg:gap-3 lg:text-sm">
+          <div role="tablist" aria-label="Main sections" onKeyDown={event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+            const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
+            const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+            tabs[nextIndex]?.focus();
+            tabs[nextIndex]?.click();
+          }} className={`${screen === 'terminal' ? 'col-span-2 row-start-2 flex min-w-0 gap-1 overflow-x-auto sm:w-auto sm:gap-1.5 lg:gap-3' : 'fixed inset-x-0 bottom-0 z-50 flex h-16 justify-around border-t border-green-900 bg-black/95 px-1 pb-[env(safe-area-inset-bottom)] pt-1 shadow-xl sm:static sm:z-auto sm:h-auto sm:justify-start sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:w-auto sm:gap-1.5 lg:gap-3'} scrollbar-hide text-xs font-bold uppercase lg:text-sm`}>
 
             <button
               onClick={() =>
@@ -1537,7 +1710,9 @@ function App() {
                   'dashboard'
                 )
               }
-              className={`px-3 lg:px-4 py-2 border transition-colors ${
+              role="tab"
+              aria-selected={screen === 'dashboard'}
+              className={`relative px-3 lg:px-4 py-2 border transition-colors ${
                 screen ===
                 'dashboard'
                   ? 'border-green-500 bg-green-500/5 text-green-300'
@@ -1546,6 +1721,7 @@ function App() {
               aria-current={screen === 'dashboard' ? 'page' : undefined}
               aria-label="Dashboard"
             >
+              {screen === 'dashboard' && <motion.span layoutId="main-nav-indicator" className="absolute inset-x-2 bottom-0 h-0.5 bg-green-400" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />}
               <LayoutDashboard
                 size={14}
                 className="inline mr-2"
@@ -1559,7 +1735,9 @@ function App() {
                   'academy'
                 )
               }
-              className={`px-3 lg:px-4 py-2 border transition-colors ${
+              role="tab"
+              aria-selected={screen === 'academy'}
+              className={`relative px-3 lg:px-4 py-2 border transition-colors ${
                 screen ===
                 'academy'
                   ? 'border-green-500 bg-green-500/5 text-green-300'
@@ -1568,6 +1746,7 @@ function App() {
               aria-current={screen === 'academy' ? 'page' : undefined}
               aria-label="Academy"
             >
+              {screen === 'academy' && <motion.span layoutId="main-nav-indicator" className="absolute inset-x-2 bottom-0 h-0.5 bg-green-400" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />}
               <GraduationCap
                 size={14}
                 className="inline mr-2"
@@ -1581,7 +1760,9 @@ function App() {
                   'missions'
                 )
               }
-              className={`px-3 lg:px-4 py-2 border transition-colors ${
+              role="tab"
+              aria-selected={screen === 'missions'}
+              className={`relative px-3 lg:px-4 py-2 border transition-colors ${
                 screen ===
                 'missions'
                   ? 'border-green-500 bg-green-500/5 text-green-300'
@@ -1590,6 +1771,7 @@ function App() {
               aria-current={screen === 'missions' ? 'page' : undefined}
               aria-label="Missions"
             >
+              {screen === 'missions' && <motion.span layoutId="main-nav-indicator" className="absolute inset-x-2 bottom-0 h-0.5 bg-green-400" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />}
               <Target
                 size={14}
                 className="inline mr-2"
@@ -1603,7 +1785,9 @@ function App() {
                   'profile'
                 )
               }
-              className={`px-3 lg:px-4 py-2 border transition-colors ${
+              role="tab"
+              aria-selected={screen === 'profile'}
+              className={`relative px-3 lg:px-4 py-2 border transition-colors ${
                 screen ===
                 'profile'
                   ? 'border-green-500 bg-green-500/5 text-green-300'
@@ -1612,6 +1796,7 @@ function App() {
               aria-current={screen === 'profile' ? 'page' : undefined}
               aria-label="Profile"
             >
+              {screen === 'profile' && <motion.span layoutId="main-nav-indicator" className="absolute inset-x-2 bottom-0 h-0.5 bg-green-400" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />}
               <ClipboardCheck
                 size={14}
                 className="inline mr-2"
@@ -1678,7 +1863,7 @@ function App() {
 
       </nav>
 
-      <main id="main-content" className="flex-1 overflow-y-auto bg-[#050807]">
+      <main id="main-content" className={`flex-1 overflow-y-auto ${screen === 'terminal' ? 'bg-[#050807]' : 'app-atmosphere pb-20 font-sans sm:pb-0'}`}>
 
         {screen ===
           'dashboard' && (
@@ -1695,11 +1880,28 @@ function App() {
                 true
               )
             }
+            onContinue={() => {
+              if (activeMission) {
+                setScreen('terminal');
+                return;
+              }
+              const nextTier = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).find(tier => {
+                const score = userScores[tier];
+                return score?.preTestScore === undefined || !score.finalTotal || (score.finalScore ?? 0) / score.finalTotal < 0.7;
+              }) ?? 'EXPERT';
+              setActiveTier(nextTier);
+              setScreen('academy');
+            }}
             onStartDailyTrial={startDailyTrial}
             dailyTrialPlayed={user ? hasUsedDailyTrial(user.uid) : false}
             dailyTrialDate={getDailyTrialDetails().dateKey}
             dailyTrialType={getDailyTrialDetails().type}
             dailyTrialMissionTitle={getDailyTrialDetails().missionTitle}
+            progression={playerProgression}
+            completedMissions={completedMissions}
+            isLoadingProgress={isLoadingAuth}
+            progressLoadFailed={progressLoadFailed}
+            onProgressionChange={syncProgression}
           />
         )}
 
@@ -1789,6 +1991,10 @@ function App() {
               removedPersistence={removedPersistence}
               onCaseNotesChange={setCaseNotes}
               onCaseConfidenceChange={setCaseConfidence}
+              onSkillSignal={signal => {
+                if (signal === 'evidence' && responseActionsRef.current === 0) evidenceBeforeResponseRef.current = true;
+                if (signal === 'calibrated-report') calibratedReportRef.current = true;
+              }}
               onShowMissionGuide={() => setShowMissionToolGuide(true)}
               playSound={
                 playSound
@@ -1804,6 +2010,16 @@ function App() {
             userScores={
               userScores
             }
+            progression={playerProgression}
+            completedMissions={completedMissions}
+            onProgressionChange={syncProgression}
+            avatarId={avatarId}
+            progressLoadFailed={progressLoadFailed}
+            onSaveAvatarChoice={async nextAvatarId => {
+              if (!user || progressLoadFailedRef.current) throw new Error('Saved progress is unavailable.');
+              await saveAvatarChoice(user.uid, nextAvatarId);
+              setAvatarId(getAvatarById(nextAvatarId).id);
+            }}
           />
         )}
 
@@ -1896,6 +2112,15 @@ function App() {
             false
           );
 
+          if (missionReport) {
+            const badgeNames = missionReport.newBadges.map(id => ACHIEVEMENTS.find(achievement => achievement.id === id)?.name ?? id);
+            const toastParts = [missionReport.xpEarned > 0 ? `+${missionReport.xpEarned} XP` : '', missionReport.rankBefore !== missionReport.rankAfter ? `Promoted to ${missionReport.rankAfter}` : '', ...badgeNames.map(name => `Badge earned: ${name}`)].filter(Boolean);
+            if (toastParts.length) {
+              setEarnedToast(toastParts.join(' · '));
+              window.setTimeout(() => setEarnedToast(''), 4500);
+            }
+          }
+
           setActiveMission(null);
 
           setScreen(
@@ -1905,6 +2130,7 @@ function App() {
         mission={activeMission}
         caseNotes={caseNotes}
         confidence={caseConfidence}
+        report={missionReport}
       />
 
       <MissionFailedModal
@@ -1944,6 +2170,8 @@ function App() {
       {showMissionToolGuide && (
         <MissionToolGuide onComplete={() => setShowMissionToolGuide(false)} />
       )}
+
+      {screen !== 'academy' && screen !== 'terminal' && <Toast message={earnedToast} onDismiss={() => setEarnedToast('')} />}
 
     </div>
   );

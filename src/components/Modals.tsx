@@ -3,7 +3,8 @@ import type { Mission } from '../data/gameData';
 
 const isSimulationShortcut = (command: string) => /^(help|inspect|report|preserve|record-evidence|assess|block|disable-service|remove-persistence|choose)\b/.test(command);
 import { CHEAT_SHEET } from '../data/gameData';
-import { motion } from 'framer-motion';
+import { ACHIEVEMENTS } from '../data/achievements';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useState } from 'react';
 
 const simulatedCommandEquivalent = (command: string) => {
@@ -153,7 +154,8 @@ export const CheatSheetModal = ({ show, onClose }: { show: boolean; onClose: () 
 };
 
 // --- Victory Modal (ADDED) ---
-export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidence = '' }: { show: boolean; onClose: () => void; mission: Mission | null; caseNotes?: string[]; confidence?: string }) => {
+export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidence = '', report }: { show: boolean; onClose: () => void; mission: Mission | null; caseNotes?: string[]; confidence?: string; report?: { evidence: number; accuracy: number; verification: number; independence: number; xpEarned: number; rankBefore: string; rankAfter: string; newBadges: string[]; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; elapsedSeconds: number; timed: boolean } | null }) => {
+  const reduceMotion = useReducedMotion();
   if (!show) return null;
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 animate-in fade-in duration-300">
@@ -163,6 +165,15 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
         <div className="h-1 w-full bg-green-500 mb-6 relative z-20"></div>
         <p className="text-white text-lg mb-1 relative z-20">Operation: <span className="text-green-400 font-bold">{mission?.title ?? 'Training exercise'}</span></p>
         <p className="text-green-600 text-xs uppercase tracking-widest mb-6 relative z-20">Objectives complete · review your takeaway</p>
+        {report && <motion.div initial={reduceMotion ? false : { opacity: 0, y: 10, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: reduceMotion ? 0 : 0.24 }} className="mb-4 space-y-3 text-left relative z-20">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {([['Evidence', report.evidence], ['Accuracy', report.accuracy], ['Verification', report.verification], ['Independence', report.independence]] as const).map(([label, grade]) => <div key={label} className="border border-green-900 bg-green-950/20 p-3"><p className="text-[10px] uppercase tracking-wider text-green-600">{label}</p><p className="mt-1 text-xl font-bold text-green-200">{'★'.repeat(grade)}{'☆'.repeat(3 - grade)}</p></div>)}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border border-cyan-800 bg-cyan-950/20 p-3"><span className="text-sm font-bold text-cyan-200">+{report.xpEarned} XP</span><span className="text-xs text-cyan-100">{report.rankBefore === report.rankAfter ? report.rankAfter : `Rank up: ${report.rankBefore} → ${report.rankAfter}`}</span><span className="text-xs text-gray-300">Hints used: {report.hintsUsed}</span></div>
+          {!report.timed && <p className="text-xs text-gray-400">Time on case: {Math.floor(report.elapsedSeconds / 60)}m {report.elapsedSeconds % 60}s · informational only</p>}
+          {report.newBadges.length > 0 && <p className="border border-yellow-800 bg-yellow-950/20 p-3 text-xs text-yellow-200">New badge{report.newBadges.length > 1 ? 's' : ''}: {report.newBadges.map(id => ACHIEVEMENTS.find(achievement => achievement.id === id)?.name ?? id).join(', ')}</p>}
+          <p className="text-xs leading-5 text-gray-400">Skill marks describe recorded actions in this simulation; they are motivational feedback, not assessment scores.</p>
+        </motion.div>}
         {mission && <div className="space-y-4 text-left relative z-20">
           <div className="border border-green-900 bg-green-950/10 p-4">
             <p className="text-[10px] font-bold uppercase tracking-widest text-green-600">What you practiced</p>

@@ -2,6 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark;
+  --game-page: #050907;
+  --game-surface: #0b1511;
+  --game-surface-raised: #102019;
+  --game-text: #e7f5eb;
+  --game-muted: #a4b9aa;
+  --game-green: #4ade80;
+  --game-cyan: #67e8f9;
+  --game-amber: #fbbf24;
+  --game-red: #f87171;
+  --game-border: rgb(148 180 157 / 22%);
+  --game-track: #1d3025;
+  --game-shadow: 0 14px 35px rgb(0 0 0 / 24%);
+  --game-radius: 7px;
+}
+
+body[data-theme='light'] {
+  color-scheme: light;
+  --game-page: #f2f6f3;
+  --game-surface: #ffffff;
+  --game-surface-raised: #eaf3ed;
+  --game-text: #15231a;
+  --game-muted: #52665a;
+  --game-green: #16813d;
+  --game-cyan: #08778a;
+  --game-amber: #95640a;
+  --game-red: #b42323;
+  --game-border: rgb(42 73 52 / 22%);
+  --game-track: #dbe6de;
+  --game-shadow: 0 12px 28px rgb(26 55 37 / 9%);
+}
+
+.game-card {
+  border: 1px solid var(--game-border);
+  border-radius: var(--game-radius);
+  background: linear-gradient(145deg, var(--game-surface-raised), var(--game-surface) 65%);
+  box-shadow: var(--game-shadow);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.game-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--game-green) 48%, var(--game-border));
+  box-shadow: 0 16px 36px rgb(0 0 0 / 22%), 0 0 22px color-mix(in srgb, var(--game-green) 10%, transparent);
+}
+
+.continue-hero {
+  background: radial-gradient(ellipse at 88% 10%, color-mix(in srgb, var(--game-green) 12%, transparent), transparent 48%), linear-gradient(140deg, var(--game-surface-raised), var(--game-surface));
+}
+
+.stat-tile {
+  min-width: 0;
+  border: 1px solid var(--game-border);
+  border-radius: var(--game-radius);
+  background: var(--game-surface);
+  padding: 1rem;
+  box-shadow: var(--game-shadow);
+}
+
+.stat-tile-cyan { border-top: 2px solid var(--game-cyan); }
+.stat-tile-amber { border-top: 2px solid var(--game-amber); }
+.game-eyebrow { color: var(--game-muted); font: 600 0.72rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
+
+.badge-card {
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  gap: 0.8rem;
+  border: 1px solid var(--game-border);
+  border-radius: var(--game-radius);
+  background: var(--game-surface);
+  padding: 0.85rem;
+}
+
+.badge-icon { display: grid; width: 2.4rem; height: 2.4rem; flex: 0 0 auto; place-items: center; border-radius: 999px; background: var(--game-track); color: var(--game-muted); }
+.badge-earned { border-color: color-mix(in srgb, var(--game-green) 55%, var(--game-border)); }
+.badge-earned .badge-icon { background: color-mix(in srgb, var(--game-green) 16%, var(--game-surface)); color: var(--game-green); }
+.badge-locked { filter: saturate(0.45); }
+.empty-state { border: 1px dashed var(--game-border); border-radius: var(--game-radius); padding: 1rem; color: var(--game-muted); font-size: 0.875rem; }
+
+.app-atmosphere {
+  background-color: var(--game-page);
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--game-green) 3%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--game-green) 3%, transparent) 1px, transparent 1px), radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--game-green) 7%, transparent), transparent 65%);
+  background-size: 32px 32px, 32px 32px, auto;
+}
+
 /* Base Styles */
 body {
   background-color: #000;
@@ -85,7 +172,8 @@ body[data-theme='light'] [class*="border-blue-"] { border-color: #a4b7d1 !import
 body[data-theme='light'] [class*="border-yellow-"] { border-color: #d8bf83 !important; }
 body[data-theme='light'] [class*="border-red-"] { border-color: #d5a0a0 !important; }
 body[data-theme='light'] [class*="border-purple-"] { border-color: #bba3cf !important; }
-body[data-theme='light'] [class*="opacity-"] { opacity: 1 !important; }
+body[data-theme='light'] :not(:disabled)[class*="opacity-"] { opacity: 1 !important; }
+body[data-theme='light'] :disabled { opacity: 0.55 !important; cursor: not-allowed !important; filter: saturate(0.65); }
 
 body[data-theme='light'] .fixed.inset-0[class*="bg-black"] {
   background-color: rgb(15 23 42 / 72%) !important;

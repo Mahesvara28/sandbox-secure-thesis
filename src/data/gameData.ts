@@ -587,9 +587,9 @@ export const MISSIONS: Mission[] = [
     title: 'Operation: Process Under Suspicion',
     tier: 'INTERMEDIATE',
     scenario:
-      'The previous investigation covered hosts and network services. This case shifts to processes: programs currently running on a server. The training server is already selected, so you do not need to connect with SSH. Begin by listing processes, then inspect one PID before deciding what to do.',
+      'Building on Bridge 1, you already used a process list and PID to separate an approved backup from a process needing review. Here, check the flagged process again, preserve its details, and decide whether scoped containment is justified.',
     intro:
-      'HANDLER: New tool, same investigation rhythm: observe, inspect, preserve, respond, verify. ps lists processes on this simulated server. High CPU is a clue, not proof of malware. Take your time; this first Intermediate mission is untimed.',
+      'HANDLER: Apply the process-list and PID skills from Bridge 1. The roster is a fresh snapshot; now add metadata and approval evidence, preserve it, then make and verify a scoped kill decision. High CPU remains a clue, not proof. This mission is untimed.',
     timerLimit: 0,
     learningGoal: 'Use process details and inventory context to assess an unapproved process, then perform a scoped simulated response.',
     difficulty: 'guided',
@@ -607,9 +607,9 @@ export const MISSIONS: Mission[] = [
     target: '2214',
     steps: [
       {
-        desc: 'List the currently running processes.',
+        desc: 'Refresh the process list and confirm the previously flagged PID is still running.',
         cmd: 'ps aux',
-        hint: 'Use ps aux to view running processes.'
+        hint: 'You practiced reading the process roster in Bridge 1. Use ps aux to confirm PID 2214 is still present before acting.'
       },
       {
         desc: 'Choose which process needs an individual review, using owner and path as well as CPU use.',
@@ -623,7 +623,7 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Investigate the suspicious process ID.',
         cmd: 'ps -p 2214',
-        hint: ['Use ps with -p to inspect one process by ID.', 'The PID shown by ps aux is 2214.', 'Submit: ps -p 2214']
+        hint: ['Building on Bridge 1, focus the process review on the flagged PID.', 'The process roster shows PID 2214.']
       },
       {
         desc: 'Check the executable metadata and approval status before deciding whether response is justified.',
@@ -761,7 +761,7 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Verify that the unapproved listener is no longer present.',
         cmd: 'netstat -tuln',
-        hint: ['Review the current listening-service list after the change.', 'The 4444/tcp entry should be absent.', 'Submit: netstat -tuln']
+        hint: ['Review the current listening-service list after the change.', 'Use netstat to confirm the 4444/tcp entry is absent.']
       }
     ],
     realWorld:
@@ -836,12 +836,12 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Classify the evidence as an attempted SQL injection. A log entry shows a request pattern, not proof that data was accessed.',
         cmd: 'report sql-injection-attempt',
-        hint: ['Inspect where the UNION SELECT text appears in the request.', 'User-controlled input containing SQL syntax is an injection indicator; the response code alone does not confirm impact.', 'Submit: report sql-injection-attempt']
+        hint: ['Inspect where the UNION SELECT text appears in the request.', 'User-controlled input containing SQL syntax is an injection indicator; the response code alone does not confirm impact.', 'Use report to classify the recorded request as an injection attempt, without claiming confirmed access.']
       },
       {
         desc: 'Return to your home directory.',
         cmd: 'cd ~',
-        hint: 'Use cd ~ after completing the investigation.'
+        hint: 'Use cd to return to the operator’s home directory after the investigation.'
       }
     ],
     realWorld:

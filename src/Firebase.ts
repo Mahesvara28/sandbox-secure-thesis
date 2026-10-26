@@ -19,7 +19,9 @@ import {
   query,
   where
 } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { normalizeProgression, type PlayerProgression } from './data/progression';
+import { CONTENT_VERSION } from './data/contentVersion';
+import { AVATARS, DEFAULT_AVATAR_ID, getAvatarById, type AvatarId } from './data/avatars';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
@@ -36,7 +38,6 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-const storage = getStorage(app);
 export const googleProvider =
   new GoogleAuthProvider();
 
@@ -128,17 +129,6 @@ export const logOut = async () => {
   await signOut(auth);
 };
 
-export const uploadUserAvatar = async (user: import('firebase/auth').User, file: File) => {
-  if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
-  if (file.size > 5 * 1024 * 1024) throw new Error('Profile images must be 5 MB or smaller.');
-  const extension = file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'image';
-  const avatarRef = ref(storage, `users/${user.uid}/profile/avatar.${extension}`);
-  await uploadBytes(avatarRef, file, { contentType: file.type });
-  const photoURL = await getDownloadURL(avatarRef);
-  await updateProfile(user, { photoURL });
-  return photoURL;
-};
-
 export const getUserProgress = async (
   userId: string
 ) => {
@@ -150,7 +140,9 @@ export const getUserProgress = async (
   if (!userSnap.exists()) {
     return {
       scores: {},
-      completedMissions: []
+      completedMissions: [],
+      progression: normalizeProgression(null),
+      avatarId: DEFAULT_AVATAR_ID
     };
   }
 
@@ -165,8 +157,33 @@ export const getUserProgress = async (
         data.completedMissions
       )
         ? data.completedMissions
-        : []
+        : [],
+    progression: normalizeProgression(data.progression),
+    avatarId: getAvatarById(data.avatarId).id
   };
+};
+
+export const saveAvatarChoice = async (userId: string, avatarId: string) => {
+  if (!AVATARS.some(avatar => avatar.id === avatarId)) {
+    throw new Error('Unknown avatar selection.');
+  }
+  await setDoc(doc(db, 'users', userId), { avatarId: avatarId as AvatarId }, { merge: true });
+};
+
+// Progression is additive. Existing assessment and mission fields remain intact.
+export const saveProgression = async (userId: string, progression: PlayerProgression) => {
+  const userRef = doc(db, 'users', userId);
+  const userSnap = await getDoc(userRef);
+  const saved = normalizeProgression(userSnap.data()?.progression);
+  const incoming = normalizeProgression(progression);
+  const next = normalizeProgression({
+    ...incoming,
+    xp: Math.max(saved.xp, incoming.xp),
+    badges: [...new Set([...saved.badges, ...incoming.badges])],
+    tierRewards: [...new Set([...saved.tierRewards, ...incoming.tierRewards])],
+    streak: { ...incoming.streak, longest: Math.max(saved.streak.longest, incoming.streak.longest) }
+  });
+  await setDoc(userRef, { progression: next }, { merge: true });
 };
 
 export const saveUserScore = async (
@@ -213,6 +230,7 @@ export const saveUserScore = async (
   const attemptNumber = Number(existingTierData.finalAttemptCount ?? 0) + 1;
   try {
     await addDoc(collection(db, 'users', userId, 'assessmentAttempts'), {
+      contentVersion: CONTENT_VERSION,
       tier,
       assessment: 'post',
       score: safeScore,
@@ -280,6 +298,7 @@ export const savePreTestScore = async (
   const attemptNumber = Number(existingTierData.preTestAttemptCount ?? 0) + 1;
   try {
     await addDoc(collection(db, 'users', userId, 'assessmentAttempts'), {
+      contentVersion: CONTENT_VERSION,
       tier,
       assessment: 'pre',
       score: safeScore,
@@ -321,11 +340,16 @@ export const saveCompletedMissions = async (
   missions: string[]
 ) => {
   try {
+    const userRef = doc(db, "users", uid);
+    const existingSnap = await getDoc(userRef);
+    const existing = existingSnap.data()?.completedMissions;
     await setDoc(
-      doc(db, "users", uid),
+      userRef,
       {
-        completedMissions:
-          missions
+        completedMissions: [...new Set([
+          ...(Array.isArray(existing) ? existing.filter((mission): mission is string => typeof mission === 'string') : []),
+          ...missions
+        ])]
       },
       { merge: true }
     );
@@ -340,6 +364,7 @@ export const saveCompletedMissions = async (
 };
 
 export interface MissionAttemptRecord {
+  contentVersion?: string;
   missionId: string;
   missionTitle: string;
   tier: string;
@@ -348,6 +373,8 @@ export interface MissionAttemptRecord {
   challengeMode?: boolean;
   dailyChallengeDate?: string;
   dailyChallengeType?: 'timeAttack' | 'accuracy';
+  skillSignals?: { evidenceFirst: boolean; responseActions: number; verifiedActions: number; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number };
+  xpAwarded?: number;
   startedAt: string;
   completedAt: string;
   totalTimeSeconds: number;
@@ -366,9 +393,9 @@ export const saveMissionAttempt = async (userId: string, attempt: MissionAttempt
   if (attempt.outcome !== 'completed' || attempt.dailyChallengeType !== 'timeAttack' || !attempt.dailyChallengeDate) return;
 
   try {
-    await setDoc(doc(db, 'dailyTimeAttackEntries', `${attempt.dailyChallengeDate}_${userId}`), {
+    await setDoc(doc(db, 'dailyTimeAttackEntries', `${userId}_${attempt.dailyChallengeDate}`), {
       uid: userId,
-      nickname: `Operator-${userId.slice(0, 5).toUpperCase()}`,
+      nickname: 'Operator',
       challengeDate: attempt.dailyChallengeDate,
       missionId: attempt.missionId,
       missionTitle: attempt.missionTitle,
@@ -409,6 +436,7 @@ export const getMissionAttempts = async (userId: string): Promise<MissionAttempt
 };
 
 export interface AssessmentAttemptRecord {
+  contentVersion?: string;
   tier: string;
   assessment: 'pre' | 'post';
   score: number;
