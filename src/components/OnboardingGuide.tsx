@@ -30,7 +30,7 @@ const guideSteps = [
   {
     title: 'DASHBOARD',
     subtitle: 'Your home screen',
-    description: 'Continue opens your next certification step. The status strip shows your rank, XP, streak, and mission count. More has Progress, Badges, and the time leaderboard when today’s challenge is a Time Attack. Choose one tab at a time; use How to Play to revisit this guide.',
+    description: 'Continue opens your next certification step. The status strip shows your rank, XP, streak, and mission count. The dashboard has separate daily Time Attack and Accuracy Trial cards. More has Progress, Badges, and the Time Attack leaderboard when daily challenges are available. Choose one tab at a time; use How to Play to revisit this guide.',
     icon: LayoutDashboard,
     color: 'blue',
     visual: 'DASHBOARD'

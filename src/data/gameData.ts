@@ -673,7 +673,7 @@ export const MISSIONS: Mission[] = [
 
   {
     id: 'm5',
-    title: 'Operation: Contain the Breach',
+    title: 'Operation: Contain The Breach',
     tier: 'INTERMEDIATE',
     scenario:
       'A suspicious process has been removed, but the system is still communicating with an unknown service. You must determine which network service is exposed and contain the threat.',

@@ -295,11 +295,12 @@ interface DashboardScreenProps {
 
   onShowGuide: () => void;
   onContinue: () => void;
-  onStartDailyTrial: () => void;
-  dailyTrialPlayed: boolean;
+  onStartDailyTrial: (type: 'timeAttack' | 'accuracy') => void;
+  dailyTimeAttackPlayed: boolean;
+  dailyAccuracyPlayed: boolean;
   dailyTrialDate: string;
-  dailyTrialType: 'timeAttack' | 'accuracy';
-  dailyTrialMissionTitle: string;
+  dailyTimeAttackMissionTitle: string;
+  dailyAccuracyMissionTitle: string;
   progression: PlayerProgression;
   isLoadingProgress: boolean;
   onProgressionChange: (progression: PlayerProgression) => void;
@@ -314,10 +315,11 @@ export const DashboardScreen = ({
   onShowGuide,
   onContinue,
   onStartDailyTrial,
-  dailyTrialPlayed,
+  dailyTimeAttackPlayed,
+  dailyAccuracyPlayed,
   dailyTrialDate,
-  dailyTrialType,
-  dailyTrialMissionTitle,
+  dailyTimeAttackMissionTitle,
+  dailyAccuracyMissionTitle,
   progression,
   isLoadingProgress,
   onProgressionChange,
@@ -345,7 +347,7 @@ export const DashboardScreen = ({
   const dailyChallengeAvailable = currentTierAllMissionsComplete || Object.values(userScores).some(score => score.finalScore !== undefined);
   useEffect(() => {
     let cancelled = false;
-    if (!dailyChallengeAvailable || activeMoreTab !== 'leaderboard' || dailyTrialType !== 'timeAttack') return () => { cancelled = true; };
+    if (!dailyChallengeAvailable || activeMoreTab !== 'leaderboard') return () => { cancelled = true; };
     void getDailyTimeAttackEntries(dailyTrialDate).then(entries => {
       if (!cancelled) {
         setLeaderboard(entries);
@@ -356,11 +358,11 @@ export const DashboardScreen = ({
       if (!cancelled) setLeaderboardUnavailable(true);
     }).finally(() => { if (!cancelled) setLeaderboardLoading(false); });
     return () => { cancelled = true; };
-  }, [userId, dailyTrialDate, dailyTrialType, dailyChallengeAvailable, activeMoreTab]);
+  }, [userId, dailyTrialDate, dailyChallengeAvailable, activeMoreTab]);
 
   const toggleMoreTab = (tab: 'progress' | 'badges' | 'leaderboard') => {
     const next = activeMoreTab === tab ? null : tab;
-    if (next === 'leaderboard' && dailyTrialType === 'timeAttack') {
+    if (next === 'leaderboard' && dailyChallengeAvailable) {
       setLeaderboardLoading(true);
       setLeaderboardUnavailable(false);
     }
@@ -397,7 +399,7 @@ export const DashboardScreen = ({
   const visibleMoreTabs = [
     ...(hasScoreData ? [{ id: 'progress' as const, label: 'Progress' }] : []),
     { id: 'badges' as const, label: 'Badges' },
-    ...(dailyChallengeAvailable && dailyTrialType === 'timeAttack' ? [{ id: 'leaderboard' as const, label: 'Leaderboard' }] : [])
+    ...(dailyChallengeAvailable ? [{ id: 'leaderboard' as const, label: 'Time Attack leaderboard' }] : [])
   ];
   const completedTierCount = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).filter(tier => {
     const tierMissions = [...(tier === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []), ...MISSIONS.filter(mission => mission.tier === tier)];
@@ -425,7 +427,7 @@ export const DashboardScreen = ({
     : nextMission?.learningGoal ?? `Complete the ${currentTier} post-test to finish this certification tier.`;
 
   return (
-    <div className="mx-auto min-h-full w-full max-w-6xl space-y-7 px-4 py-5 font-sans sm:px-6 lg:px-8 lg:py-8">
+    <div className="game-screen mx-auto min-h-full w-full max-w-6xl space-y-7 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
       <GameCard className="continue-hero p-5 sm:p-8 lg:p-10">
         <p className="game-eyebrow">Next step · {currentTier}</p>
         <h1 className="mt-2 max-w-3xl text-3xl font-bold leading-tight text-[var(--game-text)] sm:text-4xl">{heroTitle}</h1>
@@ -443,9 +445,14 @@ export const DashboardScreen = ({
       </div>}
 
       {!isNewUser && <>
-        {dailyChallengeAvailable && <GameCard className="border-[var(--game-cyan)] p-4 sm:p-5" aria-label="Daily challenge">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="game-eyebrow">Daily challenge · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyTrialType === 'timeAttack' ? 'Time Attack' : 'Accuracy Trial'}: {dailyTrialMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">{dailyTrialType === 'timeAttack' ? 'Clear today’s case for a place on the optional time leaderboard.' : 'Practice careful decisions in today’s rotating case.'}</p></div><button type="button" disabled={dailyTrialPlayed} onClick={onStartDailyTrial} className="min-h-11 shrink-0 rounded-md border border-[var(--game-cyan)] px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyTrialPlayed ? 'Completed today' : 'Start today’s challenge'}</button></div>
-        </GameCard>}
+        {dailyChallengeAvailable && <section className="grid gap-4 lg:grid-cols-2" aria-label="Daily challenges">
+          <GameCard className="border-[var(--game-cyan)] p-4 sm:p-5" aria-label="Daily Time Attack">
+            <div className="flex h-full flex-col justify-between gap-4"><div><p className="game-eyebrow">Daily Time Attack · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyTimeAttackMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Clear today’s timed case for a place on the Time Attack leaderboard.</p></div><button type="button" disabled={dailyTimeAttackPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('timeAttack')} className="min-h-11 w-full rounded-md border border-[var(--game-cyan)] px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyTimeAttackPlayed ? 'Attempt used today' : 'Start Time Attack'}</button></div>
+          </GameCard>
+          <GameCard className="border-[var(--game-green)] p-4 sm:p-5" aria-label="Daily Accuracy Trial">
+            <div className="flex h-full flex-col justify-between gap-4"><div><p className="game-eyebrow">Daily Accuracy Trial · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyAccuracyMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Work carefully through today’s untimed case. Accuracy is tracked independently from your Time Attack.</p></div><button type="button" disabled={dailyAccuracyPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('accuracy')} className="min-h-11 w-full rounded-md border border-[var(--game-green)] px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-green)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyAccuracyPlayed ? 'Attempt used today' : 'Start Accuracy Trial'}</button></div>
+          </GameCard>
+        </section>}
 
         <GameCard className="p-4 sm:p-5">
           <div className="flex items-center justify-between gap-3">
@@ -472,10 +479,10 @@ export const DashboardScreen = ({
                 <div className="flex flex-wrap items-center gap-3">{badgePeek.map(achievement => { const Icon = achievement.icon === 'shield' ? Shield : achievement.icon === 'target' ? Target : achievement.icon === 'sparkles' ? Activity : Award; const earned = progression.badges.includes(achievement.id); return <span key={achievement.id} title={achievement.name} aria-label={`${achievement.name}${earned ? ', earned' : ', next up'}`} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border ${earned ? 'border-[var(--game-green)] text-[var(--game-green)]' : 'border-[var(--game-border)] text-[var(--game-muted)]'}`}><Icon size={18} aria-hidden="true" /></span>; })}</div>
                 <button type="button" onClick={() => setScreen('profile')} className="min-h-11 text-sm font-semibold text-[var(--game-text)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View all badges in Profile</button>
               </div>}
-              {activeMoreTab === 'leaderboard' && dailyTrialType === 'timeAttack' && <div id="dashboard-leaderboard" className="space-y-3">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-bold text-[var(--game-text)]">Today’s time leaderboard</h2><p className="text-sm text-[var(--game-muted)]">{dailyTrialDate} · {dailyTrialMissionTitle}</p></div><p className="text-xs text-[var(--game-muted)]">Names are anonymous operator IDs.</p></div>
+              {activeMoreTab === 'leaderboard' && <div id="dashboard-leaderboard" className="space-y-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-bold text-[var(--game-text)]">Today’s Time Attack leaderboard</h2><p className="text-sm text-[var(--game-muted)]">{dailyTrialDate} · {dailyTimeAttackMissionTitle}</p></div><p className="text-xs text-[var(--game-muted)]">Players are shown by their saved username.</p></div>
                 <p className="text-xs text-[var(--game-muted)]">Speed is a challenge only; certification progress rewards evidence and accuracy.</p>
-                {leaderboardLoading ? <p className="text-sm text-[var(--game-muted)]">Loading entries…</p> : leaderboardUnavailable ? <p className="text-sm text-[var(--game-muted)]">Could not load entries. Check sign-in and the dailyTimeAttackEntries read rule.</p> : leaderboard.length === 0 ? <p className="text-sm text-[var(--game-muted)]">No one has completed today’s Time Attack yet.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr><th className="pb-2 pr-3">Rank</th><th className="pb-2 pr-3">Operator</th><th className="pb-2">Clear time</th></tr></thead><tbody>{leaderboard.map((entry, index) => <tr key={`${entry.uid}-${index}`} className="border-t border-[var(--game-border)] text-[var(--game-text)]"><td className="py-2 pr-3 font-semibold">#{index + 1}</td><td className="py-2 pr-3">{entry.nickname}{entry.uid === userId ? ' · YOU' : ''}</td><td className="py-2 font-semibold">{Math.floor(entry.clearTimeSeconds / 60)}:{String(entry.clearTimeSeconds % 60).padStart(2, '0')}</td></tr>)}</tbody></table></div>}
+                {leaderboardLoading ? <p className="text-sm text-[var(--game-muted)]">Loading entries…</p> : leaderboardUnavailable ? <p className="text-sm text-[var(--game-muted)]">Could not load entries. Check sign-in and the dailyTimeAttackEntries read rule.</p> : leaderboard.length === 0 ? <p className="text-sm text-[var(--game-muted)]">No one has completed today’s Time Attack yet.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr><th className="pb-2 pr-3">Rank</th><th className="pb-2 pr-3">Player</th><th className="pb-2">Clear time</th></tr></thead><tbody>{leaderboard.map((entry, index) => <tr key={`${entry.uid}-${index}`} className="border-t border-[var(--game-border)] text-[var(--game-text)]"><td className="py-2 pr-3 font-semibold">#{index + 1}</td><td className="py-2 pr-3"><div className="flex items-center gap-2">{entry.avatarId ? <Avatar avatarId={entry.avatarId} alt={`${entry.nickname}'s avatar: ${getAvatarById(entry.avatarId).label}`} /> : <span role="img" aria-label="No avatar selected" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--game-border)] bg-[var(--game-track)] text-lg font-bold text-[var(--game-muted)]">?</span>}<span>{entry.nickname}{entry.uid === userId ? ' · YOU' : ''}</span></div></td><td className="py-2 font-semibold">{Math.floor(entry.clearTimeSeconds / 60)}:{String(entry.clearTimeSeconds % 60).padStart(2, '0')}</td></tr>)}</tbody></table></div>}
                 <p className="text-xs text-[var(--game-muted)]">Entries are submitted by the game client and are not tamper-proof.</p>
               </div>}
             </motion.div>}</AnimatePresence>
@@ -548,7 +555,6 @@ const getLockedBy = (
 
 interface AcademyScreenProps {
   activeTier: Tier | null;
-  progressScope?: string;
 
   setActiveTier: (
     tier: Tier | null
@@ -579,8 +585,7 @@ export const AcademyScreen = ({
   userScores,
   handleQuizComplete,
   onStartMission,
-  completedMissions,
-  progressScope = 'local'
+  completedMissions
 }: AcademyScreenProps) => {
   if (
     activeTier &&
@@ -630,7 +635,6 @@ export const AcademyScreen = ({
         tierName={
           activeTier
         }
-        progressScope={progressScope}
         preTestQuestions={
           tierData.preTest
         }
@@ -725,7 +729,7 @@ export const AcademyScreen = ({
 
         </div>
 
-        <p className="text-green-700 text-sm">
+        <p className="text-green-300 text-sm">
           Complete each certification tier through assessment and practical
           terminal missions.
         </p>
@@ -777,11 +781,7 @@ export const AcademyScreen = ({
                 key={
                   tier.id
                 }
-                className={`border ${tier.border} bg-black/60 p-6 ${
-                  locked
-                    ? 'opacity-60'
-                    : ''
-                }`}
+                className={`border ${tier.border} bg-black/60 p-6`}
               >
 
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
@@ -807,7 +807,7 @@ export const AcademyScreen = ({
                         CERTIFICATION
                       </h2>
 
-                      <p className="text-green-600 text-sm mt-1 max-w-2xl">
+                      <p className="text-green-300 text-sm mt-1 max-w-2xl">
                         {
                           tier.description
                         }
@@ -829,7 +829,7 @@ export const AcademyScreen = ({
 
                       <div className="flex flex-wrap gap-4 mt-4 text-xs">
 
-                        <span className="text-green-700">
+                        <span className="text-green-300">
                           MISSIONS:{' '}
                           <span className="text-white">
                             {
@@ -842,7 +842,7 @@ export const AcademyScreen = ({
                           </span>
                         </span>
 
-                        <span className="text-green-700">
+                        <span className="text-green-300">
                           PRE-TEST:{' '}
                           <span className="text-white">
                             {score &&
@@ -853,7 +853,7 @@ export const AcademyScreen = ({
                           </span>
                         </span>
 
-                        <span className="text-green-700">
+                        <span className="text-green-300">
                           POST-TEST:{' '}
                           <span className="text-white">
                             {score?.finalScore !== undefined
@@ -862,7 +862,7 @@ export const AcademyScreen = ({
                           </span>
                         </span>
 
-                        <span className="text-green-700">
+                        <span className="text-green-300">
                           STATUS:{' '}
                           <span
                             className={
@@ -888,7 +888,7 @@ export const AcademyScreen = ({
                   </div>
 
                   {locked ? (
-                    <div className="border border-green-900 px-6 py-3 text-xs font-black uppercase text-green-800 whitespace-nowrap flex items-center gap-2 cursor-not-allowed">
+                    <div className="border border-green-900 px-6 py-3 text-xs font-black uppercase text-green-300 whitespace-nowrap flex items-center gap-2 cursor-not-allowed">
                       <Lock
                         size={14}
                       />
@@ -944,7 +944,7 @@ export const MissionsScreen = ({
   const completedCount = missions.filter(mission => completedMissions.includes(mission.id)).length;
 
   return (
-    <div className="mx-auto min-h-full w-full max-w-[1480px] space-y-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+    <div className="game-screen mx-auto min-h-full w-full max-w-[1480px] space-y-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
 
       <section className="border border-green-500/20 bg-[#08100c] p-6">
 
@@ -2143,7 +2143,7 @@ export const ProfileScreen = ({
   };
 
   return (
-    <div className="mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 font-sans sm:px-6 lg:px-8 lg:py-7">
+    <div className="game-screen mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
 
       <section className="border border-green-500/20 bg-[#08100c] p-6">
 

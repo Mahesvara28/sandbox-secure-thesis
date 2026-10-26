@@ -86,13 +86,13 @@ Sandbox Secure includes optional XP, rank, badges, streaks, and mission report f
 
 ### Gamification in the study
 
-The game includes XP, ranks, badges, streaks, a rotating daily challenge and optional time leaderboard, and mission report cards. These features can affect motivation and therefore how pre/post-test gains should be interpreted. The pre-test and post-test screens contain no XP, rank, badge, streak, or leaderboard UI. XP and streak values are client-side and can be edited by a participant; do not use them as assessment evidence.
+The game includes XP, ranks, badges, streaks, separate one-attempt daily Time Attack and Accuracy Trial challenges, an optional Time Attack leaderboard, and mission report cards. These features can affect motivation and therefore how pre/post-test gains should be interpreted. The pre-test and post-test screens contain no XP, rank, badge, streak, or leaderboard UI. XP and streak values are client-side and can be edited by a participant; do not use them as assessment evidence.
 
 ### Dashboard and learning gain
 
 The dashboard prioritizes one Continue action. Rank/XP progress, streak, and mission count share a compact status strip. Progress, Badges, and the optional daily leaderboard appear as one-at-a-time tabs; the full achievement wall and assessment results are also available from Profile. Learning gain is labeled as first-attempt percentage-point change. Any best post-test score is labeled separately. Both views use `preTestFirstScore` / `preTestFirstTotal` and `firstFinalScore` / `firstFinalTotal` when present, falling back to existing saved score fields for older accounts. Saved scores and certification pass logic are not changed.
 
-The daily challenge is hidden before the learner has completed the current tier's missions and before any post-test has been taken. It becomes available after all current-tier missions are complete or a post-test has been taken. Daily challenge attempts remain identifiable through `dailyChallengeDate` and `dailyChallengeType` in mission telemetry.
+Both daily challenge cards are hidden before the learner has completed the current tier's missions and before any post-test has been taken. They become available after all current-tier missions are complete or a post-test has been taken. Each has its own once-per-day attempt; Time Attack scores appear in its independent leaderboard. Attempts remain identifiable through `dailyChallengeDate` and `dailyChallengeType` in mission telemetry.
 
 ### Research data export
 
@@ -116,7 +116,7 @@ The script produces `mission-aggregates.csv` and `assessment-aggregates.csv` for
 No Firestore rules file is checked into this repository; confirm and publish rules in Firebase Console or add reviewed rules to the deployment project before participant sessions. The examples below show the intended access pattern; review them against the Firebase project before publishing.
 
 - `users/{uid}` and its `missionAttempts` and `assessmentAttempts` documents: allow reads and writes only when the signed-in user's UID equals `{uid}`. Missing progression fields and missing attempt subcollections are valid legacy accounts. If/when rules validate the optional `avatarId` field, require a short string from the app's preset allowlist.
-- `dailyTimeAttackEntries`: allow reads only to signed-in users. For create/update, require the document ID to begin with the authenticated UID and a date suffix, the stored `uid` to equal the caller, string values for nickname/date/mission ID/title/completion time, a valid date string, and numeric `clearTimeSeconds` between 5 and 3600. Deny deletes. New IDs are UID-first; pre-existing date-first entries remain readable. Client-submitted times are not tamper-proof, even with these rules.
+- `dailyTimeAttackEntries`: allow reads only to signed-in users. For create/update, require the document ID to begin with the authenticated UID and a date suffix, the stored `uid` to equal the caller, string values for nickname/date/mission ID/title/completion time, a valid date string, and numeric `clearTimeSeconds` between 5 and 3600. `avatarId` is optional and, when present, must be one of `avatar-1` through `avatar-5`. Deny deletes. New IDs are UID-first; pre-existing date-first entries remain readable. Client-submitted times are not tamper-proof, even with these rules. The leaderboard shares the saved username and preset avatar ID with signed-in participants; it does not share email addresses.
 - Firebase Storage is not used by this build, so Storage rules are not needed for the game.
 - XP and streak are client-held values and can be edited. They are motivational only and must not be treated as study outcome or assessment evidence. Owner-only access prevents cross-user reads; it does not make a participant's own client-submitted values tamper-proof.
 
@@ -144,8 +144,10 @@ service cloud.firestore {
         ])
         && request.resource.data.keys().hasOnly([
           'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
-          'clearTimeSeconds', 'completedAt'
+          'clearTimeSeconds', 'completedAt', 'avatarId'
         ])
+        && (!('avatarId' in request.resource.data)
+          || request.resource.data.avatarId in ['avatar-1', 'avatar-2', 'avatar-3', 'avatar-4', 'avatar-5'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.nickname is string
         && request.resource.data.challengeDate is string

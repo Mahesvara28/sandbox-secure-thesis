@@ -385,6 +385,18 @@ export interface MissionAttemptRecord {
   wrongDecisionCount: number;
 }
 
+const normalizeLeaderboardNickname = (value: unknown) => {
+  if (typeof value !== 'string') return 'Operator';
+  const nickname = value.split('').filter(character => {
+    const code = character.charCodeAt(0);
+    return code > 31 && code !== 127;
+  }).join('').trim().slice(0, 24).trim();
+  return nickname || 'Operator';
+};
+
+const isPresetAvatarId = (value: unknown): value is AvatarId =>
+  typeof value === 'string' && AVATARS.some(avatar => avatar.id === value);
+
 // Store attempts in a subcollection so this additive telemetry never overwrites
 // existing score or completedMissions fields on users/{uid}.
 export const saveMissionAttempt = async (userId: string, attempt: MissionAttemptRecord) => {
@@ -393,15 +405,25 @@ export const saveMissionAttempt = async (userId: string, attempt: MissionAttempt
   if (attempt.outcome !== 'completed' || attempt.dailyChallengeType !== 'timeAttack' || !attempt.dailyChallengeDate) return;
 
   try {
-    await setDoc(doc(db, 'dailyTimeAttackEntries', `${userId}_${attempt.dailyChallengeDate}`), {
+    const profileSnapshot = await getDoc(doc(db, 'users', userId));
+    const profile = profileSnapshot.data();
+    const leaderboardRef = doc(db, 'dailyTimeAttackEntries', `${userId}_${attempt.dailyChallengeDate}`);
+    await setDoc(leaderboardRef, {
       uid: userId,
-      nickname: 'Operator',
+      nickname: normalizeLeaderboardNickname(profile?.username),
       challengeDate: attempt.dailyChallengeDate,
       missionId: attempt.missionId,
       missionTitle: attempt.missionTitle,
       clearTimeSeconds: attempt.totalTimeSeconds,
       completedAt: attempt.completedAt
     });
+    if (isPresetAvatarId(profile?.avatarId)) {
+      try {
+        await setDoc(leaderboardRef, { avatarId: profile.avatarId }, { merge: true });
+      } catch (error) {
+        console.warn('Leaderboard name was saved, but the avatar requires the optional avatarId Firestore rule.', error);
+      }
+    }
   } catch (error) {
     // Keep the training attempt even when leaderboard permissions are not configured yet.
     console.warn('Time-attack attempt saved, but leaderboard entry could not be updated:', error);
@@ -411,6 +433,7 @@ export const saveMissionAttempt = async (userId: string, attempt: MissionAttempt
 export interface LeaderboardEntry {
   uid: string;
   nickname: string;
+  avatarId?: AvatarId;
   challengeDate: string;
   missionId: string;
   missionTitle: string;
@@ -424,8 +447,43 @@ export const getDailyTimeAttackEntries = async (challengeDate: string): Promise<
     where('challengeDate', '==', challengeDate)
   );
   const snapshot = await getDocs(dailyEntriesQuery);
-  return snapshot.docs
-    .map(item => ({ uid: item.id, ...item.data() } as LeaderboardEntry))
+  const entries = snapshot.docs
+    .map(item => {
+      const data = item.data();
+      return {
+        uid: item.id,
+        ...data,
+        nickname: normalizeLeaderboardNickname(data.nickname),
+        avatarId: isPresetAvatarId(data.avatarId) ? data.avatarId : undefined
+      } as LeaderboardEntry;
+    });
+
+  // Refresh the signed-in player's existing entry so today's already-saved score
+  // can show their saved username without reading another user's private profile.
+  const currentUid = auth.currentUser?.uid;
+  const ownEntry = currentUid ? snapshot.docs.find(item => item.id === `${currentUid}_${challengeDate}`) : undefined;
+  if (currentUid && ownEntry) {
+    try {
+      const profileSnapshot = await getDoc(doc(db, 'users', currentUid));
+      const profile = profileSnapshot.data();
+      const nickname = normalizeLeaderboardNickname(profile?.username);
+      await setDoc(ownEntry.ref, { nickname }, { merge: true });
+      const ownResult = entries.find(entry => entry.uid === ownEntry.id);
+      if (ownResult) ownResult.nickname = nickname;
+      if (isPresetAvatarId(profile?.avatarId)) {
+        try {
+          await setDoc(ownEntry.ref, { avatarId: profile.avatarId }, { merge: true });
+          if (ownResult) ownResult.avatarId = profile.avatarId;
+        } catch (error) {
+          console.warn('Leaderboard avatar could not be refreshed. Check the optional avatarId Firestore rule.', error);
+        }
+      }
+    } catch (error) {
+      console.warn('Could not refresh your saved leaderboard username:', error);
+    }
+  }
+
+  return entries
     .sort((left, right) => left.clearTimeSeconds - right.clearTimeSeconds || left.completedAt.localeCompare(right.completedAt))
     .slice(0, 10);
 };

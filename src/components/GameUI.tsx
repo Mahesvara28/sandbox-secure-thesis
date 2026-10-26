@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'framer-motion';
 import { useEffect } from 'react';
-import { Award, FileCheck2, MessageSquareText, ShieldCheck, Sparkles, Target, Lock } from 'lucide-react';
+import { Award, CheckCircle2, FileCheck2, MessageSquareText, ShieldCheck, Sparkles, Target, Lock } from 'lucide-react';
 import type { AchievementDefinition } from '../data/achievements';
 
 const badgeIcons = { file: FileCheck2, message: MessageSquareText, shield: ShieldCheck, sparkles: Sparkles, award: Award, target: Target };
@@ -28,8 +28,21 @@ const CountUpNumber = ({ value }: { value: number }) => {
 };
 
 export const SectionHeader = ({ eyebrow, title, detail }: { eyebrow?: string; title: string; detail?: string }) => (
-  <header className="mb-4"><p className="game-eyebrow">{eyebrow}</p><h2 className="mt-1 text-xl font-bold text-[var(--game-text)] sm:text-2xl">{title}</h2>{detail && <p className="mt-1 text-sm text-[var(--game-muted)]">{detail}</p>}</header>
+  <header className="mb-4"><p className="game-eyebrow">{eyebrow}</p><h2 className="game-section-heading mt-1 text-xl text-[var(--game-text)] sm:text-2xl">{title}</h2>{detail && <p className="mt-1 text-sm text-[var(--game-muted)]">{detail}</p>}</header>
 );
+
+export const ImageCard = ({ src, mode = 'banner', locked = false, completed = false }: { src?: string; mode?: 'banner' | 'side' | 'thumbnail'; locked?: boolean; completed?: boolean }) => {
+  if (!src) return null;
+  const sizeClass = mode === 'banner' ? 'h-28 w-full' : mode === 'thumbnail' ? 'h-20 w-20' : 'h-20 w-full md:h-full md:w-[33%]';
+
+  return (
+    <div aria-hidden="true" className={`relative shrink-0 overflow-hidden bg-[var(--game-track)] ${sizeClass} ${locked ? 'grayscale opacity-45' : ''}`}>
+      <img src={src} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} width={mode === 'thumbnail' ? 80 : 640} height={mode === 'banner' ? 112 : mode === 'thumbnail' ? 80 : 480} className="h-full w-full object-cover" />
+      <span className={`pointer-events-none absolute inset-0 ${mode === 'side' ? 'bg-[linear-gradient(to_right,var(--game-surface),transparent_45%)]' : 'bg-[linear-gradient(to_bottom,transparent_45%,var(--game-surface))]'}`} />
+      {completed && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center border border-[var(--game-green)] bg-[var(--game-surface)] text-[var(--game-green)]"><CheckCircle2 size={18} aria-hidden="true" /></span>}
+    </div>
+  );
+};
 
 export const StatTile = ({ label, value, detail, color = 'green' }: { label: string; value: string | number; detail?: string; color?: 'green' | 'cyan' | 'amber' }) => (
   <div className={`stat-tile stat-tile-${color}`}><p className="game-eyebrow">{label}</p><p className="mt-2 text-2xl font-bold tabular-nums text-[var(--game-text)] sm:text-3xl">{typeof value === 'number' ? <CountUpNumber value={value} /> : value}</p>{detail && <p className="mt-1 text-xs text-[var(--game-muted)]">{detail}</p>}</div>

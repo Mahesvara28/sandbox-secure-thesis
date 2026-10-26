@@ -59,7 +59,6 @@ interface TierDashboardProps {
       finalTotal?: number;
     }
   >;
-  progressScope?: string;
 }
 
 type Stage =
@@ -95,8 +94,7 @@ export const TierDashboard = ({
   onComplete,
   onStartMission,
   completedMissions,
-  userScores,
-  progressScope = 'local'
+  userScores
 }: TierDashboardProps) => {
 
   const [assessmentQuestions] = useState(() => ({
@@ -348,7 +346,6 @@ export const TierDashboard = ({
     return (
       <QuizModule
         title={`${tierName} Pre-Assessment`}
-        progressScope={progressScope}
         questions={
           activePreTestQuestions
         }
@@ -640,7 +637,6 @@ export const TierDashboard = ({
     return (
       <QuizModule
         title={`${tierName} Post-Assessment`}
-        progressScope={progressScope}
         questions={
           activePostTestQuestions
         }

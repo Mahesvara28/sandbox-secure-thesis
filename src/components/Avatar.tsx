@@ -3,9 +3,10 @@ import { getAvatarById, type AvatarId } from '../data/avatars';
 interface AvatarProps {
   avatarId?: AvatarId | string;
   size?: 'small' | 'large';
+  alt?: string;
 }
 
-export const Avatar = ({ avatarId, size = 'small' }: AvatarProps) => {
+export const Avatar = ({ avatarId, size = 'small', alt }: AvatarProps) => {
   const avatar = getAvatarById(avatarId);
   const dimension = size === 'large' ? 112 : 40;
   const sizeClass = size === 'large' ? 'h-28 w-28' : 'h-10 w-10';
@@ -14,7 +15,7 @@ export const Avatar = ({ avatarId, size = 'small' }: AvatarProps) => {
     <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[var(--game-border)] bg-[var(--game-track)] ${sizeClass}`}>
       <img
         src={avatar.src}
-        alt={`Your avatar: ${avatar.label}`}
+        alt={alt ?? `Your avatar: ${avatar.label}`}
         width={dimension}
         height={dimension}
         draggable={false}

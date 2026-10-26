@@ -92,20 +92,28 @@ const getLocalDateKey = () => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 
-const getDailyTrialDetails = () => {
+const getDailyTrialDetails = (type: 'timeAttack' | 'accuracy') => {
   const date = new Date();
   const day = date.getDate();
-  const mission = TUTORIAL_MISSIONS[(day - 1) % TUTORIAL_MISSIONS.length];
+  const missionIndex = (day - 1 + (type === 'accuracy' ? 1 : 0)) % TUTORIAL_MISSIONS.length;
+  const mission = TUTORIAL_MISSIONS[missionIndex];
   return {
     dateKey: getLocalDateKey(),
-    type: day % 2 === 0 ? 'timeAttack' as const : 'accuracy' as const,
+    type,
+    missionIndex,
     missionTitle: mission.title.replace(/^(Tutorial|Practice):?\s*/i, '')
   };
 };
 
-const hasUsedDailyTrial = (uid: string) => {
+const hasUsedDailyTrial = (uid: string, type: 'timeAttack' | 'accuracy') => {
   try {
-    return localStorage.getItem(`sandbox-secure-daily-trial-${uid}-${getLocalDateKey()}`) === 'used';
+    const dateKey = getLocalDateKey();
+    const typedKey = `sandbox-secure-daily-trial-${uid}-${type}-${dateKey}`;
+    if (localStorage.getItem(typedKey) === 'used') return true;
+    // Honor the single daily-trial marker created by older builds for its original challenge type.
+    const legacyKey = `sandbox-secure-daily-trial-${uid}-${dateKey}`;
+    const legacyType = new Date().getDate() % 2 === 0 ? 'timeAttack' : 'accuracy';
+    return type === legacyType && localStorage.getItem(legacyKey) === 'used';
   } catch {
     return false;
   }
@@ -1064,8 +1072,8 @@ function App() {
     }
   };
 
-  const startDailyTrial = () => {
-    if (progressLoadFailedRef.current || !user || hasUsedDailyTrial(user.uid)) return;
+  const startDailyTrial = (type: 'timeAttack' | 'accuracy') => {
+    if (progressLoadFailedRef.current || !user || hasUsedDailyTrial(user.uid, type)) return;
     const eligibleTier = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).find(tier => {
       const score = userScores[tier];
       return score?.preTestScore === undefined || !score?.finalTotal || (score.finalScore ?? 0) / score.finalTotal < 0.7;
@@ -1074,12 +1082,12 @@ function App() {
     const allMissionsComplete = tierMissions.length > 0 && tierMissions.every(mission => completedMissions.includes(mission.id));
     const anyPostTestTaken = Object.values(userScores).some(score => score.finalScore !== undefined);
     if (!allMissionsComplete && !anyPostTestTaken) return;
-    const daily = getDailyTrialDetails();
-    const isTimeAttack = daily.type === 'timeAttack';
-    const practiceMission = TUTORIAL_MISSIONS[(new Date().getDate() - 1) % TUTORIAL_MISSIONS.length];
+    const daily = getDailyTrialDetails(type);
+    const isTimeAttack = type === 'timeAttack';
+    const practiceMission = TUTORIAL_MISSIONS[daily.missionIndex];
     const dailyMission: Mission = {
       ...practiceMission,
-      id: `daily-${daily.dateKey}`,
+      id: `daily-${type}-${daily.dateKey}`,
       title: `Daily ${isTimeAttack ? 'Time Attack' : 'Accuracy Trial'}: ${daily.missionTitle}`,
       intro: isTimeAttack
         ? 'HANDLER: Daily time attack. Work through the familiar training case carefully before the timer ends. Speed helps only when your steps are correct.'
@@ -1089,7 +1097,7 @@ function App() {
       difficulty: 'standard'
     };
     try {
-      localStorage.setItem(`sandbox-secure-daily-trial-${user.uid}-${daily.dateKey}`, 'used');
+      localStorage.setItem(`sandbox-secure-daily-trial-${user.uid}-${type}-${daily.dateKey}`, 'used');
     } catch {
       // The attempt can still be played if browser storage is unavailable.
     }
@@ -1893,10 +1901,11 @@ function App() {
               setScreen('academy');
             }}
             onStartDailyTrial={startDailyTrial}
-            dailyTrialPlayed={user ? hasUsedDailyTrial(user.uid) : false}
-            dailyTrialDate={getDailyTrialDetails().dateKey}
-            dailyTrialType={getDailyTrialDetails().type}
-            dailyTrialMissionTitle={getDailyTrialDetails().missionTitle}
+            dailyTimeAttackPlayed={user ? hasUsedDailyTrial(user.uid, 'timeAttack') : false}
+            dailyAccuracyPlayed={user ? hasUsedDailyTrial(user.uid, 'accuracy') : false}
+            dailyTrialDate={getLocalDateKey()}
+            dailyTimeAttackMissionTitle={getDailyTrialDetails('timeAttack').missionTitle}
+            dailyAccuracyMissionTitle={getDailyTrialDetails('accuracy').missionTitle}
             progression={playerProgression}
             completedMissions={completedMissions}
             isLoadingProgress={isLoadingAuth}
@@ -1908,7 +1917,6 @@ function App() {
         {(screen === 'academy' || activeTier !== null) && (
           <div className={screen === 'academy' ? 'block h-full' : 'hidden'}>
           <AcademyScreen
-            progressScope={user?.uid ?? 'guest'}
             activeTier={
               activeTier
             }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { auth } from '../Firebase';
 import {
   CheckCircle,
   XCircle,
@@ -15,7 +16,7 @@ export interface Question {
   explanation?: string;
 }
 
-interface QuizModuleProps {
+export interface QuizModuleProps {
   title: string;
   questions: Question[];
   onComplete: (
@@ -28,7 +29,6 @@ interface QuizModuleProps {
   onContinueAfterComplete?: () => void;
   reviewAnswers?: (number | null)[];
   continueLabel?: string;
-  progressScope?: string;
 }
 
 export const QuizModule = ({
@@ -39,9 +39,9 @@ export const QuizModule = ({
   showReviewAfterComplete = false,
   onContinueAfterComplete,
   reviewAnswers,
-  continueLabel = 'Continue',
-  progressScope = 'local'
+  continueLabel = 'Continue'
 }: QuizModuleProps) => {
+  const progressScope = auth.currentUser?.uid ?? 'guest';
   const progressStorageKey = `sandbox-secure-assessment-checkpoint-${progressScope}-${title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
   const readAssessmentCheckpoint = () => {
     if (reviewAnswers) return null;
