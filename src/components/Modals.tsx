@@ -89,7 +89,7 @@ export const HintModal = ({ show, onClose, hints, onLevelShown }: { show: boolea
   );
 };
 
-export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort }: { show: boolean; mission: Mission | null; onStart: () => void; onStartUntimed?: () => void; onAbort: () => void }) => {
+export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort, isStarting = false, error = '' }: { show: boolean; mission: Mission | null; onStart: () => void; onStartUntimed?: () => void; onAbort: () => void; isStarting?: boolean; error?: string }) => {
   if (!show || !mission) return null;
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 p-3 sm:p-4">
@@ -101,6 +101,7 @@ export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort 
           <p className="text-xs text-green-600 mt-1">{mission.tier} TIER</p>
         </div>
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:space-y-6 sm:p-6">
+          {error && <p role="alert" className="border border-red-500 bg-red-950/30 px-3 py-2 text-sm font-semibold text-red-200">Could not begin this mission: {error}</p>}
           <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Scenario</h3><p className="text-green-400 text-sm italic border-l-2 border-green-700 pl-3">"{mission.scenario}"</p></div>
           <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Learning Goal</h3><p className="text-white text-sm">{mission.learningGoal}</p><p className="text-green-600 text-xs mt-2">{mission.briefing.concept}</p></div>
           {mission.primer && <section className="border border-cyan-800 bg-cyan-950/20 p-4" aria-label="Before you begin concept primer">
@@ -114,9 +115,9 @@ export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort 
           <div className="border border-yellow-700 bg-yellow-950/20 p-3"><h3 className="text-xs font-bold text-yellow-600 uppercase mb-1">Objective</h3><p className="text-yellow-400 text-sm">{mission.briefing.objective}</p></div>
         </div>
         <div className="shrink-0 border-t border-green-900 bg-black p-3 sm:p-4 flex flex-col gap-3 sm:flex-row">
-          <button onClick={onAbort} className="flex-1 border border-red-900 text-red-500 py-3 text-xs font-bold uppercase hover:bg-red-900/20 transition-colors">Abort Mission</button>
-          {mission.timerLimit > 0 && onStartUntimed && <button onClick={onStartUntimed} className="flex-1 border border-cyan-700 text-cyan-300 py-3 text-xs font-bold uppercase hover:bg-cyan-950/30 transition-colors">Practice untimed</button>}
-          <button onClick={onStart} className="flex-1 border-2 border-green-500 bg-green-500 text-black py-3 text-xs font-black uppercase hover:bg-green-400 transition-colors">{mission.timerLimit > 0 ? 'Start challenge →' : 'Begin Mission →'}</button>
+          <button type="button" disabled={isStarting} onClick={onAbort} className="flex-1 border border-red-900 text-red-500 py-3 text-xs font-bold uppercase hover:bg-red-900/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50">Abort Mission</button>
+          {mission.timerLimit > 0 && onStartUntimed && <button type="button" disabled={isStarting} onClick={onStartUntimed} className="flex-1 border border-cyan-700 text-cyan-300 py-3 text-xs font-bold uppercase hover:bg-cyan-950/30 transition-colors disabled:cursor-not-allowed disabled:opacity-50">Practice untimed</button>}
+          <button type="button" disabled={isStarting} onClick={onStart} className="flex-1 border-2 border-green-500 bg-green-500 text-black py-3 text-xs font-black uppercase hover:bg-green-400 transition-colors disabled:cursor-wait disabled:opacity-70">{isStarting ? 'Starting…' : mission.timerLimit > 0 ? 'Start challenge →' : 'Begin Mission →'}</button>
         </div>
       </div>
       </div>
@@ -154,7 +155,7 @@ export const CheatSheetModal = ({ show, onClose }: { show: boolean; onClose: () 
 };
 
 // --- Victory Modal (ADDED) ---
-export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidence = '', report }: { show: boolean; onClose: () => void; mission: Mission | null; caseNotes?: string[]; confidence?: string; report?: { evidence: number; accuracy: number; verification: number; independence: number; xpEarned: number; rankBefore: string; rankAfter: string; newBadges: string[]; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; elapsedSeconds: number; timed: boolean } | null }) => {
+export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidence = '', report }: { show: boolean; onClose: () => void; mission: Mission | null; caseNotes?: string[]; confidence?: string; report?: { evidence: number; accuracy: number; verification: number; independence: number; xpEarned: number; rankBefore: string; rankAfter: string; newBadges: string[]; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; elapsedSeconds: number; timed: boolean; softTimeTarget?: number; exceededSoftTarget?: boolean } | null }) => {
   const reduceMotion = useReducedMotion();
   if (!show) return null;
   return (
@@ -171,6 +172,7 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border border-cyan-800 bg-cyan-950/20 p-3"><span className="text-sm font-bold text-cyan-200">+{report.xpEarned} XP</span><span className="text-xs text-cyan-100">{report.rankBefore === report.rankAfter ? report.rankAfter : `Rank up: ${report.rankBefore} → ${report.rankAfter}`}</span><span className="text-xs text-gray-300">Hints used: {report.hintsUsed}</span></div>
           {!report.timed && <p className="text-xs text-gray-400">Time on case: {Math.floor(report.elapsedSeconds / 60)}m {report.elapsedSeconds % 60}s · informational only</p>}
+          {report.softTimeTarget !== undefined && <p className="rounded border border-cyan-800 bg-cyan-950/20 p-3 text-sm font-semibold text-cyan-100">{report.exceededSoftTarget ? 'Finished at your own pace' : 'Within pace target'}</p>}
           {report.newBadges.length > 0 && <p className="border border-yellow-800 bg-yellow-950/20 p-3 text-xs text-yellow-200">New badge{report.newBadges.length > 1 ? 's' : ''}: {report.newBadges.map(id => ACHIEVEMENTS.find(achievement => achievement.id === id)?.name ?? id).join(', ')}</p>}
           <p className="text-xs leading-5 text-gray-400">Skill marks describe recorded actions in this simulation; they are motivational feedback, not assessment scores.</p>
         </motion.div>}

@@ -19,12 +19,25 @@ import {
   getUserProgress,
   saveMissionAttempt,
   saveProgression,
-  saveAvatarChoice
+  saveAvatarChoice,
+  ensureUserProfile,
+  getActiveSession,
+  startMissionSession,
+  saveMissionSessionProgress,
+  completeMissionSession,
+  syncActiveSessionClock,
+  saveUserPreference,
+  markDailyTrialUsed,
+  getBrowserSessionId,
+  takeOverActiveSession,
+  saveLeaderboardProfile,
+  abandonMissionSession,
+  saveUserCertificate
 } from './Firebase';
-import { ACHIEVEMENTS } from './data/achievements';
+import type { UserCertificate } from './Firebase';
 import { getMissionXp, normalizeProgression, rankProgress, type PlayerProgression } from './data/progression';
-import { Toast } from './components/GameUI';
 import { CONTENT_VERSION } from './data/contentVersion';
+import { ASSESSMENT_TIME_LIMIT_SECONDS } from './data/assessmentTiming';
 import { DEFAULT_AVATAR_ID, getAvatarById, type AvatarId } from './data/avatars';
 
 import {
@@ -39,6 +52,8 @@ import {
 
 import OnboardingGuide from './components/OnboardingGuide';
 import MissionToolGuide from './components/MissionToolGuide';
+import { RewardDialog, type RewardDialogItem } from './components/RewardDialog';
+import { CertificateDialog } from './components/CertificateDialog';
 
 import {
   NetworkMapModal,
@@ -105,9 +120,12 @@ const getDailyTrialDetails = (type: 'timeAttack' | 'accuracy') => {
   };
 };
 
-const hasUsedDailyTrial = (uid: string, type: 'timeAttack' | 'accuracy') => {
+const AUTH_LOADING_MIN_VISIBLE_MS = 1100;
+
+const hasUsedDailyTrial = (uid: string, type: 'timeAttack' | 'accuracy', remoteUses: string[] = []) => {
   try {
     const dateKey = getLocalDateKey();
+    if (remoteUses.includes(`${type}:${dateKey}`)) return true;
     const typedKey = `sandbox-secure-daily-trial-${uid}-${type}-${dateKey}`;
     if (localStorage.getItem(typedKey) === 'used') return true;
     // Honor the single daily-trial marker created by older builds for its original challenge type.
@@ -146,6 +164,7 @@ export interface TierScore {
 };
 
 function App() {
+  const [tabSessionId] = useState(getBrowserSessionId);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try {
       return localStorage.getItem('sandbox-secure-theme') === 'light' ? 'light' : 'dark';
@@ -153,6 +172,16 @@ function App() {
       return 'dark';
     }
   });
+  const [textScale, setTextScale] = useState(() => {
+    try { return Math.min(1.25, Math.max(0.9, Number(localStorage.getItem('sandbox-secure-text-scale') ?? 1))); }
+    catch { return 1; }
+  });
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${16 * textScale}px`;
+    try { localStorage.setItem('sandbox-secure-text-scale', String(textScale)); } catch { /* The size control remains available for this session. */ }
+    return () => { document.documentElement.style.fontSize = ''; };
+  }, [textScale]);
 
   useEffect(() => {
     document.body.dataset.theme = theme;
@@ -190,9 +219,6 @@ function App() {
   const [authSuccess, setAuthSuccess] =
     useState(false);
 
-  const [isFakeAdmin, setIsFakeAdmin] =
-    useState(false);
-
   const [user, setUser] =
     useState<FirebaseUser | null>(null);
 
@@ -201,22 +227,30 @@ function App() {
 
   const [isLoadingAuth, setIsLoadingAuth] =
     useState(true);
+  const authLoadingStartedAtRef = useRef(0);
   const [progressLoadFailed, setProgressLoadFailed] = useState(false);
   const progressLoadFailedRef = useRef(false);
   const [progressLoadRetryCount, setProgressLoadRetryCount] = useState(0);
 
   const [completedMissions, setCompletedMissions] =
     useState<string[]>([]);
+  const [userPreferences, setUserPreferences] = useState<Record<string, unknown>>({});
+  const userPreferencesRef = useRef<Record<string, unknown>>({});
+  const [leaderboardOptIn, setLeaderboardOptIn] = useState(false);
+  const [leaderboardAlias, setLeaderboardAlias] = useState('');
   const [avatarId, setAvatarId] = useState<AvatarId>(DEFAULT_AVATAR_ID);
+  const [certificates, setCertificates] = useState<UserCertificate[]>([]);
+  const [certificateToShow, setCertificateToShow] = useState<UserCertificate | null>(null);
 
   const [playerProgression, setPlayerProgression] = useState<PlayerProgression>(() => normalizeProgression(null));
   const playerProgressionRef = useRef<PlayerProgression>(playerProgression);
-  const [earnedToast, setEarnedToast] = useState('');
+  const [rewardQueue, setRewardQueue] = useState<RewardDialogItem[]>([]);
+  const [rewardsReady, setRewardsReady] = useState(false);
   const [missionReport, setMissionReport] = useState<{
     evidence: number; accuracy: number; verification: number; independence: number;
     xpEarned: number; rankBefore: string; rankAfter: string; newBadges: string[];
     evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number;
-    elapsedSeconds: number; timed: boolean;
+    elapsedSeconds: number; timed: boolean; softTimeTarget?: number; exceededSoftTarget?: boolean;
   } | null>(null);
 
   const [activeTier, setActiveTier] =
@@ -224,6 +258,11 @@ function App() {
 
   const [activeMission, setActiveMission] =
     useState<Mission | null>(null);
+  const [activeSession, setActiveSession] = useState<Record<string, unknown> | null>(null);
+  const [sessionConflict, setSessionConflict] = useState<Record<string, unknown> | null>(null);
+  const [clockNowMs, setClockNowMs] = useState(0);
+  const missionSessionIdRef = useRef<string | null>(null);
+  const missionSessionRevisionRef = useRef(0);
 
   const [questStep, setQuestStep] =
     useState(0);
@@ -239,6 +278,13 @@ function App() {
 
   const [timeLeft, setTimeLeft] =
     useState(300);
+  const [missionElapsedSeconds, setMissionElapsedSeconds] = useState(0);
+  const handleAssessmentSessionReady = useCallback((session: Record<string, unknown>) => setActiveSession(session), []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const [showVictory, setShowVictory] =
     useState(false);
@@ -333,12 +379,26 @@ function App() {
       }
     });
     syncProgression(next);
-    if (user && !isFakeAdmin) void saveProgression(user.uid, next).catch(error => console.error('Could not save player progression:', error));
-    return { evidence: evidenceGrade, accuracy: accuracyGrade, verification: verificationGrade, independence: independenceGrade, xpEarned, rankBefore: current.rank, rankAfter: isOptionalDailyChallenge ? current.rank : rankAfter, newBadges: isOptionalDailyChallenge ? [] : newBadges, evidenceFirst, verifiedAll, calibratedReport, hintsUsed, elapsedSeconds: Math.max(0, Math.round((Date.now() - attemptStartedAtRef.current) / 1000)), timed: Boolean(mission.timerLimit) };
+    const earnedRewards: RewardDialogItem[] = [];
+    if (!isOptionalDailyChallenge && current.rank !== rankAfter) earnedRewards.push({ id: `rank-${rankAfter}-${xp}`, kind: 'rank', previousRank: current.rank, rank: rankAfter, xp });
+    if (!isOptionalDailyChallenge) newBadges.forEach(badgeId => earnedRewards.push({ id: `badge-${badgeId}-${Date.now()}`, kind: 'badge', badgeId }));
+    if (earnedRewards.length) {
+      setRewardsReady(false);
+      setRewardQueue(queue => [...queue, ...earnedRewards]);
+    }
+    if (user) void saveProgression(user.uid, next).catch(error => console.error('Could not save player progression:', error));
+    const elapsedSeconds = Math.max(0, Math.round((Date.now() - attemptStartedAtRef.current) / 1000));
+    const softTimeTarget = mission.softTimeTarget;
+    return { evidence: evidenceGrade, accuracy: accuracyGrade, verification: verificationGrade, independence: independenceGrade, xpEarned, rankBefore: current.rank, rankAfter: isOptionalDailyChallenge ? current.rank : rankAfter, newBadges: isOptionalDailyChallenge ? [] : newBadges, evidenceFirst, verifiedAll, calibratedReport, hintsUsed, elapsedSeconds, timed: Boolean(mission.timerLimit), softTimeTarget, exceededSoftTarget: softTimeTarget !== undefined && elapsedSeconds > softTimeTarget };
   };
 
   const [showBriefing, setShowBriefing] =
     useState(false);
+  const [missionStartError, setMissionStartError] = useState('');
+  const [startingMission, setStartingMission] = useState(false);
+  const [showAbandonConfirmation, setShowAbandonConfirmation] = useState(false);
+  const [abandoningMission, setAbandoningMission] = useState(false);
+  const [abandonMissionError, setAbandonMissionError] = useState('');
 
   const [showHint, setShowHint] =
     useState(false);
@@ -390,6 +450,31 @@ function App() {
   }, [checkpointKey, activeMission, questStep, timeLeft, isThreatActive, missionOrigin, containedTarget, disabledService, removedPersistence, caseNotes, caseConfidence, currentPath]);
 
   useEffect(() => {
+    if (!activeMission || !attemptStartedAtRef.current) return;
+    const updateElapsed = () => setMissionElapsedSeconds(Math.max(0, Math.floor((Date.now() - attemptStartedAtRef.current) / 1000)));
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [activeMission, missionRunNumber]);
+
+  useEffect(() => {
+    if (!user || progressLoadFailedRef.current || !activeMission || questStep >= activeMission.steps.length || !missionSessionIdRef.current) return;
+    const sessionId = missionSessionIdRef.current;
+    const revision = ++missionSessionRevisionRef.current;
+    const timer = window.setTimeout(() => {
+      void saveMissionSessionProgress(user.uid, sessionId, tabSessionId, revision, {
+        stepIndex: questStep,
+        hintsUsed: attemptTelemetryRef.current.hintsOpened,
+        wrongCommandCounts: { ...attemptTelemetryRef.current.wrongCommandsByStep },
+        decisions: { caseConfidence, wrongDecisionCount: attemptTelemetryRef.current.wrongDecisionCount },
+        containmentState: { containedTarget, disabledService, removedPersistence },
+        evidenceNotes: [...caseNotes]
+      }).catch(error => console.error('Could not save mission resume state:', error));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [user, activeMission, questStep, caseConfidence, containedTarget, disabledService, removedPersistence, caseNotes, sysNonce, showHint, tabSessionId]);
+
+  useEffect(() => {
     localStorage.setItem('sandbox-secure-music', musicEnabled ? 'on' : 'off');
     localStorage.setItem('sandbox-secure-volume', String(audioVolume));
   }, [musicEnabled, audioVolume]);
@@ -407,7 +492,7 @@ function App() {
     );
   };
 
-  const persistMissionAttempt = useCallback((outcome: 'completed' | 'timed_out', report?: { xpEarned: number; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number }) => {
+  const persistMissionAttempt = useCallback((outcome: 'completed' | 'timed_out', report?: { xpEarned: number; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; softTimeTarget?: number; exceededSoftTarget?: boolean }) => {
     if (progressLoadFailedRef.current || !activeMission || attemptSavedRef.current) return;
     const completedAt = Date.now();
     const startedAt = attemptStartedAtRef.current || completedAt;
@@ -417,7 +502,7 @@ function App() {
       timePerStepSeconds[String(activeStep)] = Math.max(0, Math.round((completedAt - stepStartedAtRef.current) / 1000));
     }
     attemptSavedRef.current = true;
-    if (!user || isFakeAdmin) return;
+    if (!user) return;
     void saveMissionAttempt(user.uid, {
       contentVersion: CONTENT_VERSION,
       missionId: activeMission.id,
@@ -433,10 +518,12 @@ function App() {
       startedAt: new Date(startedAt).toISOString(),
       completedAt: new Date(completedAt).toISOString(),
       totalTimeSeconds: Math.max(0, Math.round((completedAt - startedAt) / 1000)),
+      softTimeTarget: report?.softTimeTarget,
+      exceededSoftTarget: report?.exceededSoftTarget,
       ...attemptTelemetryRef.current,
       timePerStepSeconds
     }).catch(error => console.error('Error saving mission attempt telemetry:', error));
-  }, [activeMission, questStep, user, isFakeAdmin]);
+  }, [activeMission, questStep, user]);
 
   const playSound = (
     type:
@@ -533,20 +620,12 @@ function App() {
       `sandboxSecureOnboardingCompleted-${uid}`;
 
     try {
-      if (
-        localStorage.getItem(
-          key
-        ) === 'true'
-      ) {
+      if (userPreferencesRef.current.onboardingCompleted === true || localStorage.getItem(key) === 'true') {
         return;
       }
 
-      localStorage.setItem(
-        key,
-        'true'
-      );
     } catch {
-  console.error('An error occurred.');
+      // Local storage is optional; cloud preferences are authoritative.
 }
 
     setShowOnboarding(true);
@@ -558,31 +637,32 @@ function App() {
       onAuthStateChanged(
         auth,
         async currentUser => {
-          if (
-            !currentUser &&
-            isFakeAdmin
-          ) {
-            progressLoadFailedRef.current = false;
-            setProgressLoadFailed(false);
-            if (!cancelled) setIsLoadingAuth(false);
-
-            return;
-          }
-
           if (cancelled) return;
           setUser(
             currentUser
           );
 
           if (currentUser) {
+            setBootStage('authenticated');
+            authLoadingStartedAtRef.current = Date.now();
             progressLoadFailedRef.current = true;
             setIsLoadingAuth(true);
             try {
-              const progress =
-                await getUserProgress(
-                  currentUser.uid
-                );
+              await ensureUserProfile(currentUser);
+              const [progress, savedSession] = await Promise.all([
+                getUserProgress(currentUser.uid),
+                getActiveSession(currentUser.uid)
+              ]);
               if (cancelled) return;
+              let sessionClockOffset = Number(savedSession?.clockOffsetMs ?? 0);
+              let refreshedSession = savedSession;
+              if (savedSession?.status === 'in_progress' && savedSession.kind === 'mission') {
+                sessionClockOffset = await syncActiveSessionClock(currentUser.uid);
+                refreshedSession = await getActiveSession(currentUser.uid);
+              }
+              setActiveSession(refreshedSession);
+              const conflictingSession = refreshedSession?.status === 'in_progress' && refreshedSession.clientId && refreshedSession.clientId !== tabSessionId;
+              setSessionConflict(conflictingSession ? refreshedSession : null);
 
               const savedScores =
                 progress.scores;
@@ -664,7 +744,12 @@ function App() {
               setCompletedMissions(
                 progress.completedMissions
               );
+              userPreferencesRef.current = progress.preferences;
+              setUserPreferences(progress.preferences);
+              setLeaderboardOptIn(progress.leaderboardOptIn);
+              setLeaderboardAlias(progress.leaderboardAlias);
               setAvatarId(progress.avatarId);
+              setCertificates(progress.certificates);
               syncProgression(normalizeProgression(progress.progression));
 
               try {
@@ -673,8 +758,38 @@ function App() {
                   missionOrigin?: 'academy' | 'missions'; containedTarget?: string; disabledService?: string;
                   removedPersistence?: string[]; caseNotes?: string[]; caseConfidence?: string; currentPath?: string;
                 } | null;
-                const savedMission = [...MISSIONS, ...BRIDGE_MISSIONS, ...TUTORIAL_MISSIONS].find(mission => mission.id === checkpoint?.missionId);
-                if (savedMission) {
+                const remoteMissionId = !conflictingSession && refreshedSession?.kind === 'mission' && refreshedSession.status === 'in_progress' ? String(refreshedSession.missionId ?? '') : '';
+                const missionId = conflictingSession ? undefined : remoteMissionId || checkpoint?.missionId;
+                const savedMission = [...MISSIONS, ...BRIDGE_MISSIONS, ...TUTORIAL_MISSIONS].find(mission => mission.id === missionId);
+                if (savedMission && remoteMissionId) {
+                  missionSessionIdRef.current = String(refreshedSession?.sessionId ?? '');
+                  missionSessionRevisionRef.current = Number(refreshedSession?.revision ?? 0);
+                  setActiveMission(savedMission);
+                  setQuestStep(Math.min(Math.max(Number(refreshedSession?.stepIndex ?? 0), 0), savedMission.steps.length - 1));
+                  const startTime = refreshedSession?.startedAt as { toMillis?: () => number } | undefined;
+                  const startedAt = typeof startTime?.toMillis === 'function' ? startTime.toMillis() : Date.now();
+                  attemptStartedAtRef.current = startedAt - sessionClockOffset;
+                  setTimeLeft(savedMission.timerLimit > 0 ? Math.max(0, Math.ceil(savedMission.timerLimit - (Date.now() + sessionClockOffset - startedAt) / 1000)) : 0);
+                  setIsThreatActive(Boolean(savedMission.timerLimit));
+                  setMissionOrigin(refreshedSession?.missionOrigin === 'missions' ? 'missions' : 'academy');
+                  const containment = refreshedSession?.containmentState as Record<string, unknown> | undefined;
+                  setContainedTarget(typeof containment?.containedTarget === 'string' ? containment.containedTarget : '');
+                  setDisabledService(typeof containment?.disabledService === 'string' ? containment.disabledService : '');
+                  setRemovedPersistence(Array.isArray(containment?.removedPersistence) ? containment.removedPersistence.filter((value): value is string => typeof value === 'string') : []);
+                  setCaseNotes(Array.isArray(refreshedSession?.evidenceNotes) ? refreshedSession.evidenceNotes.filter((value): value is string => typeof value === 'string') : []);
+                  setCurrentPath('/home/operator');
+                  const wrongCounts = refreshedSession?.wrongCommandCounts as Record<string, number> | undefined;
+                  const decisions = refreshedSession?.decisions as Record<string, unknown> | undefined;
+                  attemptTelemetryRef.current = { ...attemptTelemetryRef.current, hintsOpened: Number(refreshedSession?.hintsUsed ?? 0), wrongCommandsByStep: wrongCounts ?? {}, wrongDecisionCount: Number(decisions?.wrongDecisionCount ?? 0) };
+                  setCaseConfidence(typeof decisions?.caseConfidence === 'string' ? decisions.caseConfidence : '');
+                  dailyTrialRef.current = refreshedSession?.dailyChallengeDate && (refreshedSession.dailyChallengeType === 'timeAttack' || refreshedSession.dailyChallengeType === 'accuracy')
+                    ? { date: String(refreshedSession.dailyChallengeDate), type: refreshedSession.dailyChallengeType }
+                    : null;
+                  setActiveTier(null);
+                  setScreen('terminal');
+                  sendSysMsg(`[SESSION RESTORED]: Mission progress rebuilt at step ${Math.min(Math.max(Number(refreshedSession?.stepIndex ?? 0), 0), savedMission.steps.length - 1) + 1}. Previous terminal output was not stored.`);
+                } else if (savedMission) {
+                  missionSessionIdRef.current = null;
                   setActiveMission(savedMission);
                   setQuestStep(Math.min(Math.max(checkpoint?.questStep ?? 0, 0), savedMission.steps.length - 1));
                   setTimeLeft(Math.max(0, checkpoint?.timeLeft ?? savedMission.timerLimit ?? 300));
@@ -686,6 +801,13 @@ function App() {
                   setCaseNotes(checkpoint?.caseNotes ?? []);
                   setCaseConfidence(checkpoint?.caseConfidence ?? '');
                   setCurrentPath(checkpoint?.currentPath ?? '/home/operator');
+                }
+                if (!conflictingSession && refreshedSession?.kind === 'test' && refreshedSession.status === 'in_progress') {
+                  const tier = String(refreshedSession.tier ?? '') as Tier;
+                  if (['BEGINNER', 'INTERMEDIATE', 'EXPERT'].includes(tier)) {
+                    setActiveTier(tier);
+                    setScreen('academy');
+                  }
                 }
               } catch {
                 // Ignore malformed or unavailable local checkpoints.
@@ -709,12 +831,25 @@ function App() {
             setProgressLoadFailed(false);
             setUserScores({});
             setCompletedMissions([]);
+            userPreferencesRef.current = {};
+            setUserPreferences({});
+            setLeaderboardOptIn(false);
+            setLeaderboardAlias('');
             setAvatarId(DEFAULT_AVATAR_ID);
+            setCertificates([]);
+            setCertificateToShow(null);
             setActiveMission(null);
+            setActiveSession(null);
+            setSessionConflict(null);
+            missionSessionIdRef.current = null;
             syncProgression(normalizeProgression(null));
-            setIsFakeAdmin(false);
           }
 
+          const loadingVisibleFor = Date.now() - authLoadingStartedAtRef.current;
+          const remainingVisibleTime = AUTH_LOADING_MIN_VISIBLE_MS - loadingVisibleFor;
+          if (currentUser && remainingVisibleTime > 0) {
+            await new Promise(resolve => window.setTimeout(resolve, remainingVisibleTime));
+          }
           if (!cancelled) setIsLoadingAuth(false);
         }
       );
@@ -723,7 +858,7 @@ function App() {
       cancelled = true;
       unsub();
     };
-  }, [isFakeAdmin, progressLoadRetryCount]);
+  }, [progressLoadRetryCount, tabSessionId]);
 
   useEffect(() => {
     const bootLines = [
@@ -763,10 +898,6 @@ function App() {
             setBootStage(
               'login'
             );
-
-            setIsLoadingAuth(
-              false
-            );
           }, 800);
         }
       }, 100);
@@ -780,8 +911,7 @@ function App() {
   useEffect(() => {
     if (
       !isThreatActive ||
-      screen !== 'terminal' ||
-      timeLeft <= 0
+      screen !== 'terminal'
     ) {
       return;
     }
@@ -815,35 +945,6 @@ function App() {
   const handleLogin =
     async () => {
       setAuthError('');
-
-      if (
-        regEmail ===
-          'admin@sandbox.secure' &&
-        regPassword ===
-          'admin123'
-      ) {
-        setIsFakeAdmin(
-          true
-        );
-
-        setUser({
-          uid: 'default-admin-001',
-          email:
-            'admin@sandbox.secure',
-          displayName:
-            'System Administrator'
-        } as FirebaseUser);
-
-        setBootStage(
-          'authenticated'
-        );
-
-        maybeShowOnboarding(
-          'default-admin-001'
-        );
-
-        return;
-      }
 
       try {
         const loggedIn =
@@ -1006,13 +1107,14 @@ function App() {
       setRegUsername('');
 
       setUser(null);
+      userPreferencesRef.current = {};
+      setUserPreferences({});
+      setActiveSession(null);
+      setSessionConflict(null);
+      missionSessionIdRef.current = null;
       setUserScores({});
       setCompletedMissions([]);
       setActiveMission(null);
-
-      setIsFakeAdmin(
-        false
-      );
 
       setShowOnboarding(
         false
@@ -1025,6 +1127,7 @@ function App() {
     mission: Mission
   ) => {
     if (progressLoadFailedRef.current) return;
+    setMissionStartError('');
     dailyTrialRef.current = null;
     setMissionOrigin(
       'missions'
@@ -1043,6 +1146,7 @@ function App() {
     missionId: string
   ) => {
     if (progressLoadFailedRef.current) return;
+    setMissionStartError('');
     dailyTrialRef.current = null;
     const allMissions = [
       ...MISSIONS,
@@ -1072,8 +1176,9 @@ function App() {
     }
   };
 
-  const startDailyTrial = (type: 'timeAttack' | 'accuracy') => {
-    if (progressLoadFailedRef.current || !user || hasUsedDailyTrial(user.uid, type)) return;
+  const startDailyTrial = async (type: 'timeAttack' | 'accuracy') => {
+    const remoteUses = Array.isArray(userPreferencesRef.current.dailyTrialUses) ? userPreferencesRef.current.dailyTrialUses.filter((value): value is string => typeof value === 'string') : [];
+    if (progressLoadFailedRef.current || !user || hasUsedDailyTrial(user.uid, type, remoteUses)) return;
     const eligibleTier = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).find(tier => {
       const score = userScores[tier];
       return score?.preTestScore === undefined || !score?.finalTotal || (score.finalScore ?? 0) / score.finalTotal < 0.7;
@@ -1097,21 +1202,66 @@ function App() {
       difficulty: 'standard'
     };
     try {
-      localStorage.setItem(`sandbox-secure-daily-trial-${user.uid}-${type}-${daily.dateKey}`, 'used');
+      const trialKey = `${type}:${daily.dateKey}`;
+      const marked = await markDailyTrialUsed(user.uid, trialKey);
+      if (!marked) return;
+      const nextUses = [...remoteUses, trialKey];
+      userPreferencesRef.current = { ...userPreferencesRef.current, dailyTrialUses: nextUses };
+      setUserPreferences(userPreferencesRef.current);
     } catch {
-      // The attempt can still be played if browser storage is unavailable.
+      return;
     }
+    try { localStorage.setItem(`sandbox-secure-daily-trial-${user.uid}-${type}-${daily.dateKey}`, 'used'); } catch { /* Cloud record is authoritative. */ }
     startMission(dailyMission);
     dailyTrialRef.current = { date: daily.dateKey, type: daily.type };
   };
 
+  const updateLeaderboardOptIn = async (enabled: boolean) => {
+    if (!user || progressLoadFailedRef.current) throw new Error('Saved profile settings are unavailable.');
+    const words = ['Cedar', 'Harbor', 'Silver', 'Moss', 'Amber', 'Quiet', 'River', 'North', 'Copper', 'Blue'];
+    const animals = ['Fox', 'Heron', 'Finch', 'Otter', 'Pine', 'Comet', 'Badger', 'Kite', 'Maple', 'Marten'];
+    const suffix = Math.floor(Math.random() * 900 + 100);
+    const alias = leaderboardAlias || `${words[Math.floor(Math.random() * words.length)]} ${animals[Math.floor(Math.random() * animals.length)]} ${suffix}`;
+    const safeAlias = await saveLeaderboardProfile(user.uid, enabled, alias);
+    setLeaderboardAlias(safeAlias);
+    setLeaderboardOptIn(enabled);
+  };
+
   const confirmStartMission =
-    (untimed = false) => {
+    async (untimed = false) => {
       if (progressLoadFailedRef.current) return;
       if (
         !pendingMission
       ) {
         return;
+      }
+
+      setMissionStartError('');
+      setStartingMission(true);
+
+      let missionStartMs = Date.now();
+      let missionClockOffsetMs = 0;
+      if (user) {
+        try {
+          const proposedId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          const started = await startMissionSession(user.uid, proposedId, tabSessionId, pendingMission.id, pendingMission.tier, missionOrigin, dailyTrialRef.current ?? undefined);
+          missionSessionIdRef.current = started.sessionId;
+          missionStartMs = started.startedAtMs;
+          missionClockOffsetMs = started.serverOffsetMs;
+          missionSessionRevisionRef.current = 0;
+          const currentSession = await getActiveSession(user.uid);
+          setActiveSession(currentSession);
+        } catch (error) {
+          const currentSession = await getActiveSession(user.uid).catch(() => null);
+          if (currentSession?.status === 'in_progress') {
+            setShowBriefing(false);
+            setSessionConflict(currentSession);
+          } else {
+            setMissionStartError(error instanceof Error ? error.message : 'Could not start mission session. Check your connection and try again.');
+          }
+          setStartingMission(false);
+          return;
+        }
       }
 
       setActiveMission(
@@ -1125,7 +1275,7 @@ function App() {
       setCaseNotes([]);
       setCaseConfidence('');
       setQuestStep(0);
-      attemptStartedAtRef.current = Date.now();
+      attemptStartedAtRef.current = missionStartMs - missionClockOffsetMs;
       stepStartedAtRef.current = Date.now();
       attemptSavedRef.current = false;
       evidenceBeforeResponseRef.current = false;
@@ -1142,10 +1292,10 @@ function App() {
       );
       attemptWasTimedRef.current = !untimed && pendingMission.timerLimit > 0;
 
-      setTimeLeft(
-        pendingMission.timerLimit ||
-          300
-      );
+      setTimeLeft(pendingMission.timerLimit > 0
+        ? Math.max(0, Math.ceil(pendingMission.timerLimit - (Date.now() + missionClockOffsetMs - missionStartMs) / 1000))
+        : 300);
+      setMissionElapsedSeconds(0);
 
       setScreen(
         'terminal'
@@ -1154,6 +1304,7 @@ function App() {
       setShowBriefing(
         false
       );
+      setStartingMission(false);
 
       sendSysMsg(
         pendingMission.intro
@@ -1162,8 +1313,7 @@ function App() {
       if (pendingMission.id === 'm1') {
         const guideKey = `sandboxSecureMissionGuideCompleted-${user?.uid ?? 'guest'}`;
         try {
-          if (localStorage.getItem(guideKey) !== 'true') {
-            localStorage.setItem(guideKey, 'true');
+          if (userPreferencesRef.current.missionGuideCompleted !== true && localStorage.getItem(guideKey) !== 'true') {
             setShowMissionToolGuide(true);
           }
         } catch {
@@ -1171,6 +1321,42 @@ function App() {
         }
       }
     };
+
+  const confirmAbandonMission = async () => {
+    if (!activeMission || abandoningMission) return;
+    setAbandoningMission(true);
+    setAbandonMissionError('');
+    try {
+      const sessionId = missionSessionIdRef.current;
+      if (user && sessionId) {
+        const abandoned = await abandonMissionSession(user.uid, sessionId, tabSessionId);
+        if (!abandoned) throw new Error('This mission session changed or is active in another tab. Reload progress before abandoning it.');
+      }
+      if (checkpointKey) {
+        try { localStorage.removeItem(checkpointKey); } catch { /* Browser storage is optional. */ }
+      }
+      missionSessionIdRef.current = null;
+      missionSessionRevisionRef.current = 0;
+      attemptSavedRef.current = true;
+      dailyTrialRef.current = null;
+      setActiveMission(null);
+      setActiveSession(null);
+      setPendingMission(null);
+      setQuestStep(0);
+      setIsThreatActive(false);
+      setTimeLeft(0);
+      setMissionElapsedSeconds(0);
+      setMissionReport(null);
+      setShowVictory(false);
+      setShowMissionFailed(false);
+      setShowAbandonConfirmation(false);
+      setScreen(missionOrigin);
+    } catch (error) {
+      setAbandonMissionError(error instanceof Error ? error.message : 'Could not abandon this mission. Try again.');
+    } finally {
+      setAbandoningMission(false);
+    }
+  };
 
   const handleCommand = (
     cmd: string
@@ -1301,6 +1487,10 @@ function App() {
         const report = awardMissionProgression(activeMission, caseNotes, caseConfidence);
         setMissionReport(report);
         persistMissionAttempt('completed', report ?? undefined);
+        if (user && missionSessionIdRef.current) {
+          void completeMissionSession(user.uid, missionSessionIdRef.current).catch(error => console.error('Could not complete mission session:', error));
+          missionSessionIdRef.current = null;
+        }
         setQuestStep(activeMission.steps.length);
         setIsThreatActive(
           false
@@ -1330,10 +1520,7 @@ function App() {
           }
         );
 
-        if (
-          user &&
-          !isFakeAdmin
-        ) {
+        if (user) {
           const updatedMissions =
             completedMissions.includes(
               missionId
@@ -1429,7 +1616,8 @@ function App() {
       tier: Tier,
       quizScore: number,
       total: number,
-      isPreTest: boolean = false
+      isPreTest: boolean = false,
+      attemptMeta?: { startedAt?: string; timedOut: boolean; answeredCount: number }
     ) => {
       if (progressLoadFailedRef.current) return;
       const safeTotal =
@@ -1491,26 +1679,52 @@ function App() {
         }
       );
 
-      if (
-        user &&
-        !isFakeAdmin
-      ) {
+      if (user) {
         try {
           if (isPreTest) {
             await savePreTestScore(
               user.uid,
               tier,
               safeScore,
-              safeTotal
+              safeTotal,
+              attemptMeta
             );
           } else {
             await saveUserScore(
               user.uid,
               tier,
               safeScore,
-              safeTotal
+              safeTotal,
+              attemptMeta
             );
+
+            const requiredMissionIds = [
+              ...(tier === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []),
+              ...MISSIONS.filter(mission => mission.tier === tier)
+            ].map(mission => mission.id);
+            const certificationComplete = safeTotal > 0
+              && safeScore / safeTotal >= 0.7
+              && requiredMissionIds.length > 0
+              && requiredMissionIds.every(missionId => completedMissions.includes(missionId));
+            if (certificationComplete) {
+              try {
+                const result = await saveUserCertificate(user.uid, {
+                  tier,
+                  recipientName: user.displayName?.trim() || user.email?.split('@')[0] || 'Operator',
+                  score: safeScore,
+                  total: safeTotal
+                });
+                setCertificates(previous => previous.some(item => item.tier === result.certificate.tier)
+                  ? previous
+                  : [...previous, result.certificate]);
+                if (result.created) setCertificateToShow(result.certificate);
+              } catch (error) {
+                console.error('Assessment passed, but the certificate could not be saved:', error);
+              }
+            }
           }
+
+          setActiveSession(await getActiveSession(user.uid));
 
           const progress =
             await getUserProgress(
@@ -1610,11 +1824,12 @@ function App() {
         bootText={
           bootText
         }
+        status={user ? 'LOADING SAVED PROGRESS' : 'SYSTEM BOOT'}
       />
     );
   }
 
-  if (progressLoadFailed && user && !isFakeAdmin) {
+  if (progressLoadFailed && user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--game-bg)] p-5 text-[var(--game-text)]" role="alert">
         <section className="game-card w-full max-w-lg space-y-4 p-6 sm:p-8">
@@ -1824,6 +2039,7 @@ function App() {
           >
             {screen === 'terminal' ? 'SAVE & PAUSE' : <><Play size={12} className="mr-1 inline" />RESUME MISSION</>}
           </button>}
+          {activeMission && !showVictory && !showMissionFailed && <button type="button" onClick={() => { setAbandonMissionError(''); setShowAbandonConfirmation(true); }} className="border border-red-800 px-2 py-1 font-bold text-red-300 hover:border-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">ABANDON</button>}
 
           <div className="text-right">
 
@@ -1871,7 +2087,7 @@ function App() {
 
       </nav>
 
-      <main id="main-content" className={`flex-1 overflow-y-auto ${screen === 'terminal' ? 'bg-[#050807]' : 'app-atmosphere pb-20 font-sans sm:pb-0'}`}>
+      <main id="main-content" className={`flex-1 overflow-y-auto ${screen === 'terminal' ? 'terminal-screen bg-[#050807]' : 'app-atmosphere pb-20 font-sans sm:pb-0'}`}>
 
         {screen ===
           'dashboard' && (
@@ -1888,9 +2104,17 @@ function App() {
                 true
               )
             }
+            resumeActivityLabel={activeSession?.kind === 'test' && activeSession.status === 'in_progress'
+              ? `Resume ${activeSession.testType === 'post' ? 'post-test' : 'pre-test'}${clockNowMs > 0 && activeSession.startedAt && typeof (activeSession.startedAt as { toMillis?: () => number }).toMillis === 'function' ? ` · ${Math.max(0, Math.ceil(ASSESSMENT_TIME_LIMIT_SECONDS - (clockNowMs + Number(activeSession.clockOffsetMs ?? 0) - (activeSession.startedAt as { toMillis: () => number }).toMillis()) / 1000))} sec left` : ''}`
+              : activeMission ? 'Resume mission' : undefined}
             onContinue={() => {
               if (activeMission) {
                 setScreen('terminal');
+                return;
+              }
+              if (activeSession?.kind === 'test' && activeSession.status === 'in_progress') {
+                setActiveTier(String(activeSession.tier) as Tier);
+                setScreen('academy');
                 return;
               }
               const nextTier = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).find(tier => {
@@ -1901,11 +2125,12 @@ function App() {
               setScreen('academy');
             }}
             onStartDailyTrial={startDailyTrial}
-            dailyTimeAttackPlayed={user ? hasUsedDailyTrial(user.uid, 'timeAttack') : false}
-            dailyAccuracyPlayed={user ? hasUsedDailyTrial(user.uid, 'accuracy') : false}
+            dailyTimeAttackPlayed={user ? hasUsedDailyTrial(user.uid, 'timeAttack', Array.isArray(userPreferences.dailyTrialUses) ? userPreferences.dailyTrialUses.filter((value): value is string => typeof value === 'string') : []) : false}
+            dailyAccuracyPlayed={user ? hasUsedDailyTrial(user.uid, 'accuracy', Array.isArray(userPreferences.dailyTrialUses) ? userPreferences.dailyTrialUses.filter((value): value is string => typeof value === 'string') : []) : false}
             dailyTrialDate={getLocalDateKey()}
             dailyTimeAttackMissionTitle={getDailyTrialDetails('timeAttack').missionTitle}
             dailyAccuracyMissionTitle={getDailyTrialDetails('accuracy').missionTitle}
+            leaderboardOptIn={leaderboardOptIn}
             progression={playerProgression}
             completedMissions={completedMissions}
             isLoadingProgress={isLoadingAuth}
@@ -1926,6 +2151,8 @@ function App() {
             userScores={
               userScores
             }
+            activeSession={activeSession}
+            onSessionReady={handleAssessmentSessionReady}
             handleQuizComplete={
               handleQuizComplete
             }
@@ -1967,6 +2194,7 @@ function App() {
               timeLeft={
                 timeLeft
               }
+              elapsedSeconds={missionElapsedSeconds}
               questStep={
                 questStep
               }
@@ -2022,12 +2250,17 @@ function App() {
             completedMissions={completedMissions}
             onProgressionChange={syncProgression}
             avatarId={avatarId}
+            leaderboardOptIn={leaderboardOptIn}
+            leaderboardAlias={leaderboardAlias}
             progressLoadFailed={progressLoadFailed}
+            certificates={certificates}
+            onViewCertificate={setCertificateToShow}
             onSaveAvatarChoice={async nextAvatarId => {
               if (!user || progressLoadFailedRef.current) throw new Error('Saved progress is unavailable.');
               await saveAvatarChoice(user.uid, nextAvatarId);
               setAvatarId(getAvatarById(nextAvatarId).id);
             }}
+            onSaveLeaderboardOptIn={updateLeaderboardOptIn}
           />
         )}
 
@@ -2041,9 +2274,23 @@ function App() {
           </div>
           <div className="mt-5 space-y-5">
             <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-bold text-white">Appearance</p><p className="text-xs text-gray-400">Choose the screen theme.</p></div><button onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')} className="border border-green-700 px-3 py-2 text-xs font-bold text-green-300">{theme === 'dark' ? 'LIGHT MODE' : 'DARK MODE'}</button></div>
+            <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-bold text-white">Text size</p><p className="text-xs text-gray-400">Saved in this browser · {Math.round(textScale * 100)}%</p></div><div className="flex gap-2"><button type="button" aria-label="Decrease text size" disabled={textScale <= 0.9} onClick={() => setTextScale(value => Math.max(0.9, Math.round((value - 0.1) * 10) / 10))} className="min-h-10 min-w-10 rounded border border-[var(--game-border)] px-3 font-bold text-[var(--game-text)] disabled:cursor-not-allowed disabled:opacity-45">A−</button><button type="button" aria-label="Increase text size" disabled={textScale >= 1.25} onClick={() => setTextScale(value => Math.min(1.25, Math.round((value + 0.1) * 10) / 10))} className="min-h-10 min-w-10 rounded border border-[var(--game-border)] px-3 font-bold text-[var(--game-text)] disabled:cursor-not-allowed disabled:opacity-45">A+</button></div></div>
             <label className="flex items-center justify-between gap-4"><span><span className="block text-sm font-bold text-white">Background music</span><span className="text-xs text-gray-400">Play music across game tabs.</span></span><input type="checkbox" checked={musicEnabled} onChange={event => setMusicEnabled(event.target.checked)} className="h-5 w-5 accent-cyan-500" /></label>
             <label className="block"><span className="block text-sm font-bold text-white">Music and effect volume · {Math.round(audioVolume * 100)}%</span><input type="range" min="0" max="1" step="0.01" value={audioVolume} onChange={event => setAudioVolume(Number(event.target.value))} className="mt-3 w-full accent-cyan-500" /></label>
             <label className="flex items-center justify-between gap-4"><span><span className="block text-sm font-bold text-white">Sound effects</span><span className="text-xs text-gray-400">Command errors and mission completion sounds.</span></span><input type="checkbox" checked={!isMuted} onChange={event => setIsMuted(!event.target.checked)} className="h-5 w-5 accent-cyan-500" /></label>
+          </div>
+        </section>
+      </div>}
+
+      {showAbandonConfirmation && activeMission && <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4" role="presentation" onClick={() => { if (!abandoningMission) setShowAbandonConfirmation(false); }}>
+        <section role="alertdialog" aria-modal="true" aria-labelledby="abandon-mission-title" aria-describedby="abandon-mission-description" className="w-full max-w-lg rounded-lg border border-red-700 bg-[var(--game-surface)] p-6 text-[var(--game-text)] shadow-2xl" onClick={event => event.stopPropagation()}>
+          <p className="text-xs font-bold uppercase tracking-widest text-red-300">End mission run</p>
+          <h2 id="abandon-mission-title" className="mt-2 text-xl font-black">Abandon {activeMission.title}?</h2>
+          <p id="abandon-mission-description" className="mt-3 text-sm leading-6 text-[var(--game-muted)]">This ends the mission and discards its saved in-progress state. It will not count as completed and will not award XP. You can start it again later.{activeMission.id.startsWith('daily-') ? ' Today’s daily challenge attempt will remain used, and no leaderboard result will be submitted.' : ''}</p>
+          {abandonMissionError && <p role="alert" className="mt-3 rounded border border-red-600 bg-red-950/30 p-3 text-sm text-red-200">{abandonMissionError}</p>}
+          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" disabled={abandoningMission} onClick={() => setShowAbandonConfirmation(false)} className="min-h-11 rounded-md border border-[var(--game-border)] px-4 py-2 font-semibold disabled:opacity-60">Keep mission</button>
+            <button type="button" disabled={abandoningMission} onClick={() => void confirmAbandonMission()} className="min-h-11 rounded-md bg-red-700 px-4 py-2 font-bold text-white hover:bg-red-600 disabled:cursor-wait disabled:opacity-60">{abandoningMission ? 'Abandoning…' : 'Abandon mission'}</button>
           </div>
         </section>
       </div>}
@@ -2057,6 +2304,8 @@ function App() {
         }
         onStart={() => confirmStartMission(false)}
         onStartUntimed={() => confirmStartMission(true)}
+        isStarting={startingMission}
+        error={missionStartError}
         onAbort={() =>
           setShowBriefing(
             false
@@ -2120,14 +2369,7 @@ function App() {
             false
           );
 
-          if (missionReport) {
-            const badgeNames = missionReport.newBadges.map(id => ACHIEVEMENTS.find(achievement => achievement.id === id)?.name ?? id);
-            const toastParts = [missionReport.xpEarned > 0 ? `+${missionReport.xpEarned} XP` : '', missionReport.rankBefore !== missionReport.rankAfter ? `Promoted to ${missionReport.rankAfter}` : '', ...badgeNames.map(name => `Badge earned: ${name}`)].filter(Boolean);
-            if (toastParts.length) {
-              setEarnedToast(toastParts.join(' · '));
-              window.setTimeout(() => setEarnedToast(''), 4500);
-            }
-          }
+          setRewardsReady(true);
 
           setActiveMission(null);
 
@@ -2165,21 +2407,58 @@ function App() {
         onRetryUntimed={retryMissionUntimed}
       />
 
+      <RewardDialog item={rewardsReady ? rewardQueue[0] ?? null : null} onContinue={() => {
+        setRewardQueue(queue => queue.slice(1));
+        if (rewardQueue.length <= 1) setRewardsReady(false);
+      }} />
+
+      <CertificateDialog certificate={certificateToShow} onClose={() => setCertificateToShow(null)} />
+
       {showOnboarding && (
         <OnboardingGuide
-          onComplete={() =>
-            setShowOnboarding(
-              false
-            )
-          }
+          onComplete={() => {
+            setShowOnboarding(false);
+            if (user && !progressLoadFailedRef.current) {
+              try { localStorage.setItem(`sandboxSecureOnboardingCompleted-${user.uid}`, 'true'); } catch { /* Cloud preference is primary. */ }
+              userPreferencesRef.current = { ...userPreferencesRef.current, onboardingCompleted: true };
+              setUserPreferences(userPreferencesRef.current);
+              void saveUserPreference(user.uid, 'onboardingCompleted', true).catch(error => console.error('Could not save onboarding completion:', error));
+            }
+          }}
         />
       )}
 
       {showMissionToolGuide && (
-        <MissionToolGuide onComplete={() => setShowMissionToolGuide(false)} />
+        <MissionToolGuide onComplete={() => {
+          setShowMissionToolGuide(false);
+          if (user && !progressLoadFailedRef.current) {
+            userPreferencesRef.current = { ...userPreferencesRef.current, missionGuideCompleted: true };
+            setUserPreferences(userPreferencesRef.current);
+            try { localStorage.setItem(`sandboxSecureMissionGuideCompleted-${user.uid}`, 'true'); } catch { /* Cloud preference is primary. */ }
+            void saveUserPreference(user.uid, 'missionGuideCompleted', true).catch(error => console.error('Could not save mission guide completion:', error));
+          }
+        }} />
       )}
 
-      {screen !== 'academy' && screen !== 'terminal' && <Toast message={earnedToast} onDismiss={() => setEarnedToast('')} />}
+      {sessionConflict && user && <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/80 p-4" role="dialog" aria-modal="true" aria-labelledby="session-conflict-title">
+        <section className="w-full max-w-lg rounded-lg border border-amber-500 bg-slate-900 p-6 text-slate-100 shadow-2xl">
+          <h2 id="session-conflict-title" className="text-xl font-bold">Progress is active elsewhere</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-300">This {sessionConflict.kind === 'test' ? `${sessionConflict.tier} ${sessionConflict.testType === 'post' ? 'post-test' : 'pre-test'}` : 'mission'} has another active tab or device. Choose where you want to continue. The other session will stop saving if you continue here.</p>
+          <div className="mt-5 flex flex-wrap justify-end gap-3">
+            <button type="button" onClick={() => setSessionConflict(null)} className="rounded border border-slate-500 px-4 py-2 text-sm font-semibold hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Leave it there</button>
+            <button type="button" onClick={async () => {
+              try {
+                await takeOverActiveSession(user.uid, String(sessionConflict.sessionId), tabSessionId);
+                setSessionConflict(null);
+                setProgressLoadRetryCount(count => count + 1);
+              } catch (error) {
+                console.error('Could not take over active session:', error);
+                setAuthError(error instanceof Error ? error.message : 'Could not resume saved progress.');
+              }
+            }} className="rounded bg-cyan-600 px-4 py-2 text-sm font-bold text-white hover:bg-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200">Continue here</button>
+          </div>
+        </section>
+      </div>}
 
     </div>
   );

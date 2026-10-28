@@ -86,13 +86,13 @@ Sandbox Secure includes optional XP, rank, badges, streaks, and mission report f
 
 ### Gamification in the study
 
-The game includes XP, ranks, badges, streaks, separate one-attempt daily Time Attack and Accuracy Trial challenges, an optional Time Attack leaderboard, and mission report cards. These features can affect motivation and therefore how pre/post-test gains should be interpreted. The pre-test and post-test screens contain no XP, rank, badge, streak, or leaderboard UI. XP and streak values are client-side and can be edited by a participant; do not use them as assessment evidence.
+The game includes XP, ranks, badges, streaks, separate one-attempt daily Time Attack and Accuracy Trial challenges, optional daily leaderboards, and mission report cards. These features can affect motivation and therefore how pre/post-test gains should be interpreted. The pre-test and post-test screens contain no XP, rank, badge, streak, or leaderboard UI. XP and streak values are client-side and can be edited by a participant; do not use them as assessment evidence.
 
 ### Dashboard and learning gain
 
-The dashboard prioritizes one Continue action. Rank/XP progress, streak, and mission count share a compact status strip. Progress, Badges, and the optional daily leaderboard appear as one-at-a-time tabs; the full achievement wall and assessment results are also available from Profile. Learning gain is labeled as first-attempt percentage-point change. Any best post-test score is labeled separately. Both views use `preTestFirstScore` / `preTestFirstTotal` and `firstFinalScore` / `firstFinalTotal` when present, falling back to existing saved score fields for older accounts. Saved scores and certification pass logic are not changed.
+The dashboard prioritizes one Continue action. Rank/XP progress, streak, and mission count share a compact status strip. Progress, Badges, both optional daily leaderboards, and Security Brief appear as one-at-a-time tabs in More; the full achievement wall and assessment results are also available from Profile. Learning gain is labeled as first-attempt percentage-point change. Any best post-test score is labeled separately. Both views use `preTestFirstScore` / `preTestFirstTotal` and `firstFinalScore` / `firstFinalTotal` when present, falling back to existing saved score fields for older accounts. Saved scores and certification pass logic are not changed.
 
-Both daily challenge cards are hidden before the learner has completed the current tier's missions and before any post-test has been taken. They become available after all current-tier missions are complete or a post-test has been taken. Each has its own once-per-day attempt; Time Attack scores appear in its independent leaderboard. Attempts remain identifiable through `dailyChallengeDate` and `dailyChallengeType` in mission telemetry.
+Both daily challenge cards are hidden before the learner has completed the current tier's missions and before any post-test has been taken. They become available after all current-tier missions are complete or a post-test has been taken. Each has its own once-per-day attempt; results appear on separate leaderboards only when the participant has opted in. Accuracy starts at 100 and subtracts 5 points per wrong command, 10 per wrong decision, and 5 per hint level shown, with a floor of 0. Higher scores rank first; ties go to the earlier completion. Time Attack adds 5 seconds per wrong command to the elapsed clear time, so guessing does not improve a ranking. Attempts remain identifiable through `dailyChallengeDate` and `dailyChallengeType` in mission telemetry.
 
 ### Research data export
 
@@ -113,58 +113,11 @@ The script produces `mission-aggregates.csv` and `assessment-aggregates.csv` for
 
 ### Firebase rules to deploy
 
-No Firestore rules file is checked into this repository; confirm and publish rules in Firebase Console or add reviewed rules to the deployment project before participant sessions. The examples below show the intended access pattern; review them against the Firebase project before publishing.
+No Firestore rules file is checked into this repository. The complete candidate rules and Rules Playground cases are provided with the implementation handoff; save the current console rules first, review and publish the candidate rules in Firebase Console, then run the listed tests before participant sessions. The rules preserve both existing owner-only `users` matches and add tighter create-only validation for the daily leaderboard entries. The minimum Time Attack clear time is 5 seconds, a plausible floor for a single short challenge; times remain client-submitted and are presentation-only, not tamper-proof evidence.
 
-- `users/{uid}` and its `missionAttempts` and `assessmentAttempts` documents: allow reads and writes only when the signed-in user's UID equals `{uid}`. Missing progression fields and missing attempt subcollections are valid legacy accounts. If/when rules validate the optional `avatarId` field, require a short string from the app's preset allowlist.
-- `dailyTimeAttackEntries`: allow reads only to signed-in users. For create/update, require the document ID to begin with the authenticated UID and a date suffix, the stored `uid` to equal the caller, string values for nickname/date/mission ID/title/completion time, a valid date string, and numeric `clearTimeSeconds` between 5 and 3600. `avatarId` is optional and, when present, must be one of `avatar-1` through `avatar-5`. Deny deletes. New IDs are UID-first; pre-existing date-first entries remain readable. Client-submitted times are not tamper-proof, even with these rules. The leaderboard shares the saved username and preset avatar ID with signed-in participants; it does not share email addresses.
-- Firebase Storage is not used by this build, so Storage rules are not needed for the game.
-- XP and streak are client-held values and can be edited. They are motivational only and must not be treated as study outcome or assessment evidence. Owner-only access prevents cross-user reads; it does not make a participant's own client-submitted values tamper-proof.
+The daily leaderboard reads are available to signed-in participants. New entries expose a randomly generated alias and optional preset avatar, never email or account display name. The toggle defaults off; without opt-in, the app does not write a leaderboard entry. Existing legacy Time Attack documents may still contain older labels until they age out; the new create-only rules do not permit client migration or edits.
 
-Example Firestore rules:
-
-```text
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-      match /{subcollection}/{documentId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid
-          && subcollection in ['missionAttempts', 'assessmentAttempts'];
-      }
-    }
-
-    match /dailyTimeAttackEntries/{entryId} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null
-        && entryId.matches('^' + request.auth.uid + '_[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && request.resource.data.keys().hasAll([
-          'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
-          'clearTimeSeconds', 'completedAt'
-        ])
-        && request.resource.data.keys().hasOnly([
-          'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
-          'clearTimeSeconds', 'completedAt', 'avatarId'
-        ])
-        && (!('avatarId' in request.resource.data)
-          || request.resource.data.avatarId in ['avatar-1', 'avatar-2', 'avatar-3', 'avatar-4', 'avatar-5'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.nickname is string
-        && request.resource.data.challengeDate is string
-        && request.resource.data.challengeDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-        && request.resource.data.missionId is string
-        && request.resource.data.missionTitle is string
-        && request.resource.data.clearTimeSeconds is int
-        && request.resource.data.clearTimeSeconds >= 5
-        && request.resource.data.clearTimeSeconds <= 3600
-        && request.resource.data.completedAt is string;
-      allow delete: if false;
-    }
-  }
-}
-```
-
-These examples do not make participant-owned XP, streaks, or badges tamper-proof. They are client-editable motivational data, not assessment evidence. Daily challenge times are also client-submitted and are for presentation only.
+The candidate rules include a separately commented admin-phase block. Nothing in the current app uses the admin paths. Create an `admins/{uid}` document manually in the Firebase console only when the separate admin phase is approved. Firebase Storage is not used by this build, so Storage rules are not needed for the game. XP and streak values are client-held and can be edited; they are motivational only and must not be treated as study outcome or assessment evidence.
 
 New mission and assessment attempt records include an optional `contentVersion` field (`2026-10-launch-1`); older records without it remain valid.
 

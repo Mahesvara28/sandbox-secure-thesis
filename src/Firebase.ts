@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
+  type User,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
@@ -16,12 +17,18 @@ import {
   addDoc,
   collection,
   getDocs,
+  getDocsFromServer,
   query,
-  where
+  where,
+  serverTimestamp,
+  runTransaction,
+  Timestamp,
+  updateDoc
 } from "firebase/firestore";
 import { normalizeProgression, type PlayerProgression } from './data/progression';
 import { CONTENT_VERSION } from './data/contentVersion';
 import { AVATARS, DEFAULT_AVATAR_ID, getAvatarById, type AvatarId } from './data/avatars';
+import { ASSESSMENT_TIME_LIMIT_SECONDS } from './data/assessmentTiming';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
@@ -41,6 +48,26 @@ export const db = getFirestore(app);
 export const googleProvider =
   new GoogleAuthProvider();
 
+// Auth accounts and Firestore profiles are separate records. Repair a missing
+// profile on the next authenticated session, while keeping existing profiles
+// intact.
+export const ensureUserProfile = async (user: User, preferredName?: string) => {
+  const userRef = doc(db, 'users', user.uid);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(userRef);
+    if (snapshot.exists()) return;
+    const emailName = user.email?.split('@')[0]?.trim();
+    const username = preferredName?.trim() || user.displayName?.trim() || emailName || 'Operator';
+    transaction.set(userRef, {
+      username,
+      email: user.email ?? '',
+      createdAt: new Date().toISOString(),
+      scores: {},
+      completedMissions: []
+    });
+  });
+};
+
 export const signInWithGoogle = async () => {
   const result =
     await signInWithPopup(
@@ -48,27 +75,7 @@ export const signInWithGoogle = async () => {
       googleProvider
     );
 
-  const userRef = doc(
-    db,
-    "users",
-    result.user.uid
-  );
-
-  const userSnap =
-    await getDoc(userRef);
-
-  if (!userSnap.exists()) {
-    await setDoc(userRef, {
-      username:
-        result.user.displayName,
-      email:
-        result.user.email,
-      createdAt:
-        new Date().toISOString(),
-      scores: {},
-      completedMissions: []
-    });
-  }
+  await ensureUserProfile(result.user);
 
   return result.user;
 };
@@ -92,21 +99,10 @@ export const registerWithEmail = async (
     }
   );
 
-  await setDoc(
-    doc(
-      db,
-      "users",
-      result.user.uid
-    ),
-    {
-      username,
-      email,
-      createdAt:
-        new Date().toISOString(),
-      scores: {},
-      completedMissions: []
-    }
-  );
+  await ensureUserProfile(result.user, username);
+  // The auth listener may have created the profile during account creation;
+  // persist the chosen registration name in either ordering.
+  await setDoc(doc(db, 'users', result.user.uid), { username, email: result.user.email ?? email }, { merge: true });
 
   return result.user;
 };
@@ -129,6 +125,228 @@ export const logOut = async () => {
   await signOut(auth);
 };
 
+export interface AssessmentSession {
+  sessionId: string;
+  clientId?: string;
+  testKey: string;
+  tier: string;
+  testType: 'pre' | 'post';
+  questionOrder: string[];
+  answers: Record<string, string | null>;
+  currentIndex: number;
+  revision?: number;
+  startedAt: Timestamp;
+  clockSyncAt?: Timestamp;
+  clockOffsetMs?: number;
+  status: 'in_progress' | 'completed';
+  timedOut?: boolean;
+}
+
+const activeSessionRef = (userId: string) => doc(db, 'users', userId, 'sessions', 'active');
+
+let memorySessionId = '';
+export const getBrowserSessionId = () => {
+  const key = 'sandbox-secure-tab-session-id';
+  try {
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    if (!memorySessionId) memorySessionId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return memorySessionId;
+  }
+};
+
+export const takeOverActiveSession = async (userId: string, sessionId: string, clientId: string) => {
+  const ref = activeSessionRef(userId);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (snapshot.data()?.sessionId !== sessionId || snapshot.data()?.status !== 'in_progress') throw new Error('The active session changed. Reload progress before resuming.');
+    transaction.update(ref, { clientId, updatedAt: serverTimestamp() });
+  });
+};
+
+export const getActiveSession = async (userId: string) => {
+  const snapshot = await getDoc(activeSessionRef(userId));
+  return snapshot.exists() ? snapshot.data() as Record<string, unknown> : null;
+};
+
+const activeClockSyncs = new Map<string, Promise<number>>();
+
+const syncActiveSessionClockOnce = async (userId: string) => {
+  const ref = activeSessionRef(userId);
+  const before = Date.now();
+  await updateDoc(ref, { clockSyncAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const after = Date.now();
+  const snapshot = await getDoc(ref);
+  const clockSyncAt = snapshot.data()?.clockSyncAt as Timestamp | undefined;
+  if (!clockSyncAt) throw new Error('Could not measure the Firestore server clock.');
+  const offset = clockSyncAt.toMillis() - Math.round((before + after) / 2);
+  await updateDoc(ref, { clockOffsetMs: offset });
+  return offset;
+};
+
+export const syncActiveSessionClock = (userId: string) => {
+  const pending = activeClockSyncs.get(userId);
+  if (pending) return pending;
+  const request = syncActiveSessionClockOnce(userId);
+  activeClockSyncs.set(userId, request);
+  void request.then(
+    () => { if (activeClockSyncs.get(userId) === request) activeClockSyncs.delete(userId); },
+    () => { if (activeClockSyncs.get(userId) === request) activeClockSyncs.delete(userId); }
+  );
+  return request;
+};
+
+export const startMissionSession = async (userId: string, sessionId: string, clientId: string, missionId: string, tier: string, missionOrigin: string, dailyChallenge?: { date?: string; type?: 'timeAttack' | 'accuracy' }) => {
+  const ref = activeSessionRef(userId);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const saved = snapshot.data();
+    if (saved?.status === 'in_progress') {
+      if (saved.clientId !== clientId) throw new Error('SESSION_OWNER_CONFLICT');
+      if (saved.kind === 'mission' && saved.missionId === missionId) return saved.sessionId as string;
+      throw new Error('Another activity is already in progress. Resume it before starting a new mission.');
+    }
+    transaction.set(ref, {
+      kind: 'mission', sessionId, clientId, missionId, tier, missionOrigin,
+      // Firestore rejects undefined values. Ordinary missions have no daily
+      // challenge metadata, so omit those fields instead of writing undefined.
+      ...(dailyChallenge?.date ? { dailyChallengeDate: dailyChallenge.date } : {}),
+      ...(dailyChallenge?.type ? { dailyChallengeType: dailyChallenge.type } : {}),
+      stepIndex: 0, hintsUsed: 0, wrongCommandCounts: {}, decisions: {},
+      containmentState: {}, evidenceNotes: [], revision: 0,
+      status: 'in_progress', startedAt: serverTimestamp(), updatedAt: serverTimestamp()
+    });
+    return sessionId;
+  });
+  const serverOffsetMs = await syncActiveSessionClock(userId);
+  const savedSession = await getActiveSession(userId);
+  if (!savedSession) throw new Error('Could not read the server-anchored mission start time.');
+  const startTimestamp = savedSession.startedAt as Timestamp | undefined;
+  if (!startTimestamp) throw new Error('Could not read the server-anchored mission start time.');
+  return { sessionId: String(savedSession.sessionId), startedAtMs: startTimestamp.toMillis(), serverOffsetMs };
+};
+
+export const saveMissionSessionProgress = async (
+  userId: string,
+  sessionId: string,
+  clientId: string,
+  revision: number,
+  progress: { stepIndex: number; hintsUsed: number; wrongCommandCounts: Record<string, number>; decisions: Record<string, unknown>; containmentState: Record<string, unknown>; evidenceNotes: string[] }
+) => {
+  const ref = activeSessionRef(userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const saved = snapshot.data();
+    if (saved?.sessionId !== sessionId || saved?.clientId !== clientId || saved?.kind !== 'mission' || saved?.status !== 'in_progress' || Number(saved.revision ?? -1) >= revision) return false;
+    transaction.update(ref, { ...progress, revision, updatedAt: serverTimestamp() });
+    return true;
+  });
+};
+
+export const completeMissionSession = async (userId: string, sessionId: string) => {
+  const ref = activeSessionRef(userId);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (snapshot.data()?.sessionId !== sessionId || snapshot.data()?.kind !== 'mission') return;
+    transaction.update(ref, { status: 'completed', updatedAt: serverTimestamp() });
+  });
+};
+
+export const abandonMissionSession = async (userId: string, sessionId: string, clientId: string) => {
+  const ref = activeSessionRef(userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const saved = snapshot.data();
+    if (saved?.sessionId !== sessionId || saved?.clientId !== clientId || saved?.kind !== 'mission' || saved?.status !== 'in_progress') return false;
+    transaction.update(ref, { status: 'abandoned', abandonedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    return true;
+  });
+};
+
+const assessmentSessionStarts = new Map<string, Promise<{ session: AssessmentSession; serverOffsetMs: number }>>();
+
+const startOrResumeAssessmentSessionOnce = async (
+  userId: string,
+  sessionId: string,
+  clientId: string,
+  testKey: string,
+  tier: string,
+  testType: 'pre' | 'post',
+  questionOrder: string[]
+): Promise<{ session: AssessmentSession; serverOffsetMs: number }> => {
+  const ref = activeSessionRef(userId);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const saved = snapshot.data() as Partial<AssessmentSession> | undefined;
+    if (saved?.status === 'in_progress' && saved.clientId !== clientId) throw new Error('SESSION_OWNER_CONFLICT');
+    if (saved?.status === 'in_progress' && saved.testKey === testKey && saved.startedAt) return;
+    if (saved?.status === 'in_progress') throw new Error('Another activity is already in progress. Resume or finish it before starting this test.');
+    transaction.set(ref, {
+      sessionId, clientId, kind: 'test', testKey, tier, testType, questionOrder,
+      answers: {}, currentIndex: 0, revision: 0, startedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(), status: 'in_progress'
+    });
+  });
+  const serverOffsetMs = await syncActiveSessionClock(userId);
+  const snapshot = await getDoc(ref);
+  const session = snapshot.data() as AssessmentSession;
+  if (!session?.startedAt || session.testKey !== testKey) throw new Error('The saved assessment session could not be loaded.');
+  return { session, serverOffsetMs };
+};
+
+export const startOrResumeAssessmentSession = (
+  userId: string,
+  sessionId: string,
+  clientId: string,
+  testKey: string,
+  tier: string,
+  testType: 'pre' | 'post',
+  questionOrder: string[]
+): Promise<{ session: AssessmentSession; serverOffsetMs: number }> => {
+  const key = JSON.stringify([userId, clientId, testKey]);
+  const pending = assessmentSessionStarts.get(key);
+  if (pending) return pending;
+  const request = startOrResumeAssessmentSessionOnce(userId, sessionId, clientId, testKey, tier, testType, questionOrder);
+  assessmentSessionStarts.set(key, request);
+  void request.then(
+    () => { if (assessmentSessionStarts.get(key) === request) assessmentSessionStarts.delete(key); },
+    () => { if (assessmentSessionStarts.get(key) === request) assessmentSessionStarts.delete(key); }
+  );
+  return request;
+};
+
+export const saveAssessmentSessionProgress = async (
+  userId: string,
+  sessionId: string,
+  clientId: string,
+  revision: number,
+  answers: Record<string, string | null>,
+  currentIndex: number
+) => {
+  const ref = activeSessionRef(userId);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const saved = snapshot.data();
+    if (saved?.sessionId !== sessionId || saved?.clientId !== clientId || saved?.status !== 'in_progress' || Number(saved.revision ?? -1) >= revision) return;
+    transaction.update(ref, { answers, currentIndex, revision, updatedAt: serverTimestamp() });
+  });
+};
+
+export const finishAssessmentSession = async (userId: string, sessionId: string, clientId: string, timedOut: boolean) => {
+  const ref = activeSessionRef(userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (snapshot.data()?.sessionId !== sessionId || snapshot.data()?.clientId !== clientId || snapshot.data()?.status !== 'in_progress') return false;
+    transaction.update(ref, { status: 'completed', timedOut, completedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    return true;
+  });
+};
+
 export const getUserProgress = async (
   userId: string
 ) => {
@@ -142,7 +360,11 @@ export const getUserProgress = async (
       scores: {},
       completedMissions: [],
       progression: normalizeProgression(null),
-      avatarId: DEFAULT_AVATAR_ID
+      avatarId: DEFAULT_AVATAR_ID,
+      preferences: {},
+      leaderboardOptIn: false,
+      leaderboardAlias: '',
+      certificates: [] as UserCertificate[]
     };
   }
 
@@ -159,8 +381,75 @@ export const getUserProgress = async (
         ? data.completedMissions
         : [],
     progression: normalizeProgression(data.progression),
-    avatarId: getAvatarById(data.avatarId).id
+    avatarId: getAvatarById(data.avatarId).id,
+    preferences: data.preferences && typeof data.preferences === 'object' ? data.preferences as Record<string, unknown> : {},
+    leaderboardOptIn: data.leaderboardOptIn === true,
+    leaderboardAlias: typeof data.leaderboardAlias === 'string' ? data.leaderboardAlias : '',
+    certificates: Array.isArray(data.certificates) ? data.certificates.filter(isUserCertificate) : []
   };
+};
+
+export interface UserCertificate {
+  id: string;
+  tier: string;
+  recipientName: string;
+  score: number;
+  total: number;
+  issuedAt: string;
+}
+
+const isUserCertificate = (value: unknown): value is UserCertificate => {
+  if (!value || typeof value !== 'object') return false;
+  const certificate = value as Partial<UserCertificate>;
+  return typeof certificate.id === 'string'
+    && typeof certificate.tier === 'string'
+    && typeof certificate.recipientName === 'string'
+    && Number.isFinite(certificate.score)
+    && Number.isFinite(certificate.total)
+    && typeof certificate.issuedAt === 'string';
+};
+
+export const saveUserCertificate = async (
+  userId: string,
+  certificate: Omit<UserCertificate, 'id' | 'issuedAt'>
+): Promise<{ certificate: UserCertificate; created: boolean }> => {
+  const userRef = doc(db, 'users', userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(userRef);
+    const saved = snapshot.data()?.certificates;
+    const certificates = Array.isArray(saved) ? saved.filter(isUserCertificate) : [];
+    const existing = certificates.find(item => item.tier === certificate.tier);
+    if (existing) return { certificate: existing, created: false };
+    const created: UserCertificate = {
+      ...certificate,
+      id: `cert-${certificate.tier.toLowerCase()}`,
+      issuedAt: new Date().toISOString()
+    };
+    transaction.set(userRef, { certificates: [...certificates, created] }, { merge: true });
+    return { certificate: created, created: true };
+  });
+};
+
+export const saveUserPreference = async (userId: string, key: string, value: unknown) => {
+  await setDoc(doc(db, 'users', userId), { preferences: { [key]: value } }, { merge: true });
+};
+
+export const saveLeaderboardProfile = async (userId: string, optIn: boolean, alias: string) => {
+  const safeAlias = normalizeLeaderboardNickname(alias);
+  await setDoc(doc(db, 'users', userId), { leaderboardOptIn: optIn, leaderboardAlias: safeAlias }, { merge: true });
+  return safeAlias;
+};
+
+export const markDailyTrialUsed = async (userId: string, key: string) => {
+  const ref = doc(db, 'users', userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const preferences = snapshot.data()?.preferences ?? {};
+    const used = Array.isArray(preferences.dailyTrialUses) ? preferences.dailyTrialUses.filter((item: unknown): item is string => typeof item === 'string') : [];
+    if (used.includes(key)) return false;
+    transaction.set(ref, { preferences: { dailyTrialUses: [...used, key] } }, { merge: true });
+    return true;
+  });
 };
 
 export const saveAvatarChoice = async (userId: string, avatarId: string) => {
@@ -190,7 +479,8 @@ export const saveUserScore = async (
   userId: string,
   tier: string,
   score: number,
-  total: number
+  total: number,
+  attempt: { startedAt?: string; timedOut?: boolean; answeredCount?: number } = {}
 ) => {
   const safeTotal =
     Math.max(0, total);
@@ -236,7 +526,12 @@ export const saveUserScore = async (
       score: safeScore,
       total: safeTotal,
       attemptNumber,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      timeLimitSeconds: ASSESSMENT_TIME_LIMIT_SECONDS,
+      timedOut: Boolean(attempt.timedOut),
+      answeredCount: Math.max(0, Math.min(safeTotal, attempt.answeredCount ?? safeTotal)),
+      ...(attempt.startedAt ? { startedAt: attempt.startedAt } : {}),
+      completedAt: new Date().toISOString()
     });
   } catch (error) {
     console.error('Could not append post-test attempt record:', error);
@@ -267,7 +562,8 @@ export const savePreTestScore = async (
   userId: string,
   tier: string,
   preTestScore: number,
-  preTestTotal: number
+  preTestTotal: number,
+  attempt: { startedAt?: string; timedOut?: boolean; answeredCount?: number } = {}
 ) => {
   const safeTotal =
     Math.max(0, preTestTotal);
@@ -304,7 +600,12 @@ export const savePreTestScore = async (
       score: safeScore,
       total: safeTotal,
       attemptNumber,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      timeLimitSeconds: ASSESSMENT_TIME_LIMIT_SECONDS,
+      timedOut: Boolean(attempt.timedOut),
+      answeredCount: Math.max(0, Math.min(safeTotal, attempt.answeredCount ?? safeTotal)),
+      ...(attempt.startedAt ? { startedAt: attempt.startedAt } : {}),
+      completedAt: new Date().toISOString()
     });
   } catch (error) {
     console.error('Could not append pre-test attempt record:', error);
@@ -373,6 +674,8 @@ export interface MissionAttemptRecord {
   challengeMode?: boolean;
   dailyChallengeDate?: string;
   dailyChallengeType?: 'timeAttack' | 'accuracy';
+  softTimeTarget?: number;
+  exceededSoftTarget?: boolean;
   skillSignals?: { evidenceFirst: boolean; responseActions: number; verifiedActions: number; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number };
   xpAwarded?: number;
   startedAt: string;
@@ -386,48 +689,104 @@ export interface MissionAttemptRecord {
 }
 
 const normalizeLeaderboardNickname = (value: unknown) => {
-  if (typeof value !== 'string') return 'Operator';
+  if (typeof value !== 'string') return 'Participant';
   const nickname = value.split('').filter(character => {
     const code = character.charCodeAt(0);
     return code > 31 && code !== 127;
   }).join('').trim().slice(0, 24).trim();
-  return nickname || 'Operator';
+  return nickname || 'Participant';
 };
+
+// The participant prompt explicitly authorizes this named top-level leaderboard.
+export const scoreDailyAccuracy = (wrongCommands: number, wrongDecisions: number, hintLevelsShown: number) =>
+  Math.max(0, 100 - 5 * wrongCommands - 10 * wrongDecisions - 5 * hintLevelsShown);
+
+export const TIME_ATTACK_WRONG_COMMAND_PENALTY_SECONDS = 5;
 
 const isPresetAvatarId = (value: unknown): value is AvatarId =>
   typeof value === 'string' && AVATARS.some(avatar => avatar.id === value);
 
+const createLeaderboardRecord = async (reference: ReturnType<typeof doc>, record: Record<string, unknown>) => {
+  const existing = await getDoc(reference);
+  if (existing.exists()) return false;
+  try {
+    await setDoc(reference, record);
+    return true;
+  } catch (error) {
+    const afterWrite = await getDoc(reference).catch(() => null);
+    if (afterWrite?.exists()) return false;
+    throw error;
+  }
+};
+
+const submitLeaderboardAttempt = async (userId: string, attempt: MissionAttemptRecord) => {
+  if (attempt.outcome !== 'completed' || !attempt.dailyChallengeType || !attempt.dailyChallengeDate) return;
+  const profileSnapshot = await getDoc(doc(db, 'users', userId));
+  const profile = profileSnapshot.data();
+  if (profile?.leaderboardOptIn !== true || typeof profile.leaderboardAlias !== 'string') return;
+  const alias = normalizeLeaderboardNickname(profile.leaderboardAlias);
+  if (alias !== profile.leaderboardAlias) await saveLeaderboardProfile(userId, true, alias);
+  const avatar = isPresetAvatarId(profile.avatarId) ? { avatarId: profile.avatarId } : {};
+  const wrongCommands = Object.values(attempt.wrongCommandsByStep ?? {}).reduce((total, count) => total + Math.max(0, Number(count) || 0), 0);
+  if (attempt.dailyChallengeType === 'timeAttack') {
+    const leaderboardRef = doc(db, 'dailyTimeAttackEntries', `${userId}_${attempt.dailyChallengeDate}`);
+    const created = await createLeaderboardRecord(leaderboardRef, {
+      uid: userId, nickname: alias, challengeDate: attempt.dailyChallengeDate,
+      missionId: attempt.missionId, missionTitle: attempt.missionTitle,
+      clearTimeSeconds: Math.min(3600, Math.max(5, Number(attempt.totalTimeSeconds) + wrongCommands * TIME_ATTACK_WRONG_COMMAND_PENALTY_SECONDS)),
+      wrongCommandCount: wrongCommands, completedAt: attempt.completedAt, ...avatar
+    });
+    if (!created) console.info('Time Attack leaderboard entry already recorded for this user and date.');
+  } else {
+    const wrongDecisions = Math.max(0, Number(attempt.wrongDecisionCount) || 0);
+    const hintCount = Array.isArray(attempt.hintLevelsShown) ? attempt.hintLevelsShown.length : 0;
+    const accuracyScore = scoreDailyAccuracy(wrongCommands, wrongDecisions, hintCount);
+    const leaderboardRef = doc(db, 'dailyAccuracyEntries', `${userId}_${attempt.dailyChallengeDate}`);
+    const created = await createLeaderboardRecord(leaderboardRef, {
+      uid: userId, nickname: alias, challengeDate: attempt.dailyChallengeDate,
+      missionId: attempt.missionId, missionTitle: attempt.missionTitle,
+      accuracyScore, wrongCommandCount: wrongCommands, wrongDecisionCount: wrongDecisions,
+      hintLevelsShown: hintCount, completedAt: attempt.completedAt, ...avatar
+    });
+    if (!created) console.info('Daily Accuracy leaderboard entry already recorded for this user and date.');
+  }
+};
+
 // Store attempts in a subcollection so this additive telemetry never overwrites
 // existing score or completedMissions fields on users/{uid}.
 export const saveMissionAttempt = async (userId: string, attempt: MissionAttemptRecord) => {
-  await addDoc(collection(db, 'users', userId, 'missionAttempts'), attempt);
-
-  if (attempt.outcome !== 'completed' || attempt.dailyChallengeType !== 'timeAttack' || !attempt.dailyChallengeDate) return;
+  // Optional telemetry fields are undefined when they do not apply. Firestore
+  // rejects undefined values, so omit them before writing the attempt.
+  const attemptRecord = Object.fromEntries(
+    Object.entries(attempt).filter(([, value]) => value !== undefined)
+  );
+  try {
+    await addDoc(collection(db, 'users', userId, 'missionAttempts'), attemptRecord);
+  } catch (error) {
+    // Keep a denied telemetry write from preventing the separate, opted-in
+    // leaderboard write below from being attempted.
+    console.warn('Mission completed, but its private attempt record could not be saved:', error);
+  }
 
   try {
-    const profileSnapshot = await getDoc(doc(db, 'users', userId));
-    const profile = profileSnapshot.data();
-    const leaderboardRef = doc(db, 'dailyTimeAttackEntries', `${userId}_${attempt.dailyChallengeDate}`);
-    await setDoc(leaderboardRef, {
-      uid: userId,
-      nickname: normalizeLeaderboardNickname(profile?.username),
-      challengeDate: attempt.dailyChallengeDate,
-      missionId: attempt.missionId,
-      missionTitle: attempt.missionTitle,
-      clearTimeSeconds: attempt.totalTimeSeconds,
-      completedAt: attempt.completedAt
-    });
-    if (isPresetAvatarId(profile?.avatarId)) {
-      try {
-        await setDoc(leaderboardRef, { avatarId: profile.avatarId }, { merge: true });
-      } catch (error) {
-        console.warn('Leaderboard name was saved, but the avatar requires the optional avatarId Firestore rule.', error);
-      }
-    }
+    await submitLeaderboardAttempt(userId, attempt);
   } catch (error) {
-    // Keep the training attempt even when leaderboard permissions are not configured yet.
-    console.warn('Time-attack attempt saved, but leaderboard entry could not be updated:', error);
+    console.warn('Attempt saved, but its opt-in leaderboard entry could not be created:', error);
   }
+};
+
+// A leaderboard write can be retried from the saved private attempt when the
+// leaderboard panel is opened. The deterministic entry ID makes retries safe.
+export const retryDailyLeaderboardEntry = async (userId: string, date: string, type: 'timeAttack' | 'accuracy') => {
+  const profileSnapshot = await getDoc(doc(db, 'users', userId));
+  if (profileSnapshot.data()?.leaderboardOptIn !== true) return 'opted-out' as const;
+  const attempts = await getMissionAttempts(userId);
+  const attempt = attempts.find(item => item.outcome === 'completed'
+    && item.dailyChallengeDate === date
+    && item.dailyChallengeType === type);
+  if (!attempt) return 'no-saved-attempt' as const;
+  await submitLeaderboardAttempt(userId, attempt);
+  return 'submitted' as const;
 };
 
 export interface LeaderboardEntry {
@@ -441,47 +800,43 @@ export interface LeaderboardEntry {
   completedAt: string;
 }
 
+export interface AccuracyLeaderboardEntry {
+  uid: string;
+  nickname: string;
+  avatarId?: AvatarId;
+  challengeDate: string;
+  missionId: string;
+  missionTitle: string;
+  accuracyScore: number;
+  completedAt: string;
+}
+
+// Reads only the leaderboard collection explicitly named in Task 9.
+export const getDailyAccuracyEntries = async (challengeDate: string): Promise<AccuracyLeaderboardEntry[]> => {
+  const dailyEntriesQuery = query(collection(db, 'dailyAccuracyEntries'), where('challengeDate', '==', challengeDate));
+  const snapshot = await getDocsFromServer(dailyEntriesQuery);
+  return snapshot.docs.map(item => {
+    const data = item.data();
+    return { uid: String(data.uid ?? ''), ...data, nickname: normalizeLeaderboardNickname(data.nickname), avatarId: isPresetAvatarId(data.avatarId) ? data.avatarId : undefined } as AccuracyLeaderboardEntry;
+  }).sort((left, right) => right.accuracyScore - left.accuracyScore || left.completedAt.localeCompare(right.completedAt)).slice(0, 10);
+};
+
 export const getDailyTimeAttackEntries = async (challengeDate: string): Promise<LeaderboardEntry[]> => {
   const dailyEntriesQuery = query(
     collection(db, 'dailyTimeAttackEntries'),
     where('challengeDate', '==', challengeDate)
   );
-  const snapshot = await getDocs(dailyEntriesQuery);
+  const snapshot = await getDocsFromServer(dailyEntriesQuery);
   const entries = snapshot.docs
     .map(item => {
       const data = item.data();
       return {
-        uid: item.id,
+        uid: String(data.uid ?? ''),
         ...data,
         nickname: normalizeLeaderboardNickname(data.nickname),
         avatarId: isPresetAvatarId(data.avatarId) ? data.avatarId : undefined
       } as LeaderboardEntry;
     });
-
-  // Refresh the signed-in player's existing entry so today's already-saved score
-  // can show their saved username without reading another user's private profile.
-  const currentUid = auth.currentUser?.uid;
-  const ownEntry = currentUid ? snapshot.docs.find(item => item.id === `${currentUid}_${challengeDate}`) : undefined;
-  if (currentUid && ownEntry) {
-    try {
-      const profileSnapshot = await getDoc(doc(db, 'users', currentUid));
-      const profile = profileSnapshot.data();
-      const nickname = normalizeLeaderboardNickname(profile?.username);
-      await setDoc(ownEntry.ref, { nickname }, { merge: true });
-      const ownResult = entries.find(entry => entry.uid === ownEntry.id);
-      if (ownResult) ownResult.nickname = nickname;
-      if (isPresetAvatarId(profile?.avatarId)) {
-        try {
-          await setDoc(ownEntry.ref, { avatarId: profile.avatarId }, { merge: true });
-          if (ownResult) ownResult.avatarId = profile.avatarId;
-        } catch (error) {
-          console.warn('Leaderboard avatar could not be refreshed. Check the optional avatarId Firestore rule.', error);
-        }
-      }
-    } catch (error) {
-      console.warn('Could not refresh your saved leaderboard username:', error);
-    }
-  }
 
   return entries
     .sort((left, right) => left.clearTimeSeconds - right.clearTimeSeconds || left.completedAt.localeCompare(right.completedAt))

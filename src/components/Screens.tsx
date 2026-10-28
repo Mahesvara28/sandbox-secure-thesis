@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { User as FirebaseUser } from 'firebase/auth';
+import type { UserCertificate } from '../Firebase';
 import logoImage from '../assets/logo.jpg';
-import { getMissionAttempts, getAssessmentAttempts, getDailyTimeAttackEntries, saveProgression } from '../Firebase';
-import type { LeaderboardEntry, MissionAttemptRecord } from '../Firebase';
+import recruitRankBadge from '../assets/Recruit.jpg';
+import analystRankBadge from '../assets/Analyst.jpg';
+import responderRankBadge from '../assets/Responder.jpg';
+import hunterRankBadge from '../assets/Hunter.jpg';
+import leadRankBadge from '../assets/Lead.jpg';
+import { getMissionAttempts, getAssessmentAttempts, getDailyTimeAttackEntries, getDailyAccuracyEntries, retryDailyLeaderboardEntry, saveProgression } from '../Firebase';
+import type { LeaderboardEntry, AccuracyLeaderboardEntry, MissionAttemptRecord } from '../Firebase';
 import { AVATARS, getAvatarById, type AvatarId } from '../data/avatars';
 import { Avatar } from './Avatar';
 import { ACHIEVEMENTS } from '../data/achievements';
@@ -48,6 +54,33 @@ import {
 
 import { TierDashboard } from './TierDashboard';
 import { CommandFieldGuide } from './CommandFieldGuide';
+import { SecurityBrief } from './SecurityBrief';
+import { SECURITY_BRIEF_ITEMS } from '../data/securityBrief';
+
+const RANK_BADGES: Record<string, string> = {
+  Recruit: recruitRankBadge,
+  Analyst: analystRankBadge,
+  Responder: responderRankBadge,
+  Hunter: hunterRankBadge,
+  Lead: leadRankBadge
+};
+
+const ArtworkPreviewDialog = ({ artwork, onClose }: { artwork: { title: string; src: string; alt: string } | null; onClose: () => void }) => {
+  useEffect(() => {
+    if (!artwork) return;
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [artwork, onClose]);
+  if (!artwork) return null;
+  return <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/85 p-4" role="presentation" onClick={onClose}>
+    <section role="dialog" aria-modal="true" aria-label={artwork.title} className="relative flex max-h-[92vh] w-full max-w-3xl flex-col items-center gap-4 rounded-lg border border-[var(--game-border)] bg-[var(--game-surface)] p-5 shadow-2xl" onClick={event => event.stopPropagation()}>
+      <h2 className="pr-12 text-center text-lg font-bold text-[var(--game-text)]">{artwork.title}</h2>
+      <img src={artwork.src} alt={artwork.alt} className="max-h-[75vh] max-w-full rounded-md object-contain" />
+      <button type="button" autoFocus onClick={onClose} className="min-h-11 rounded-md border border-[var(--game-border)] px-5 py-2 font-semibold text-[var(--game-text)] hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Close</button>
+    </section>
+  </div>;
+};
 
 export type TierScoreLike = {
   score: number;
@@ -81,9 +114,11 @@ const TypewriterText = ({ text }: { text: string }) => {
 };
 
 export const BootScreen = ({
-  bootText = []
+  bootText = [],
+  status = 'SYSTEM BOOT'
 }: {
   bootText?: string[];
+  status?: string;
 }) => {
   return (
     <div className="min-h-screen bg-black text-green-500 font-mono flex items-center justify-center p-6">
@@ -101,7 +136,7 @@ export const BootScreen = ({
 
             <div className="flex items-center gap-2 text-xs text-green-500/60">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              SYSTEM BOOT
+                {status}
             </div>
 
           </div>
@@ -295,6 +330,7 @@ interface DashboardScreenProps {
 
   onShowGuide: () => void;
   onContinue: () => void;
+  resumeActivityLabel?: string;
   onStartDailyTrial: (type: 'timeAttack' | 'accuracy') => void;
   dailyTimeAttackPlayed: boolean;
   dailyAccuracyPlayed: boolean;
@@ -306,6 +342,7 @@ interface DashboardScreenProps {
   onProgressionChange: (progression: PlayerProgression) => void;
   completedMissions: string[];
   progressLoadFailed?: boolean;
+  leaderboardOptIn: boolean;
 }
 
 export const DashboardScreen = ({
@@ -314,6 +351,7 @@ export const DashboardScreen = ({
   setScreen,
   onShowGuide,
   onContinue,
+  resumeActivityLabel,
   onStartDailyTrial,
   dailyTimeAttackPlayed,
   dailyAccuracyPlayed,
@@ -324,12 +362,18 @@ export const DashboardScreen = ({
   isLoadingProgress,
   onProgressionChange,
   completedMissions,
-  progressLoadFailed = false
+  progressLoadFailed = false,
+  leaderboardOptIn
 }: DashboardScreenProps) => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardUnavailable, setLeaderboardUnavailable] = useState(false);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
-  const [activeMoreTab, setActiveMoreTab] = useState<'progress' | 'badges' | 'leaderboard' | null>(null);
+  const [activeMoreTab, setActiveMoreTab] = useState<'progress' | 'badges' | 'leaderboard' | 'accuracyLeaderboard' | 'brief' | null>(null);
+  const [accuracyLeaderboard, setAccuracyLeaderboard] = useState<AccuracyLeaderboardEntry[]>([]);
+  const [accuracyLeaderboardLoading, setAccuracyLeaderboardLoading] = useState(false);
+  const [accuracyLeaderboardUnavailable, setAccuracyLeaderboardUnavailable] = useState(false);
+  const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
+  const [leaderboardSubmitMessage, setLeaderboardSubmitMessage] = useState('');
   const reduceMotion = useReducedMotion();
   const userId = user?.uid;
 
@@ -347,24 +391,64 @@ export const DashboardScreen = ({
   const dailyChallengeAvailable = currentTierAllMissionsComplete || Object.values(userScores).some(score => score.finalScore !== undefined);
   useEffect(() => {
     let cancelled = false;
-    if (!dailyChallengeAvailable || activeMoreTab !== 'leaderboard') return () => { cancelled = true; };
-    void getDailyTimeAttackEntries(dailyTrialDate).then(entries => {
-      if (!cancelled) {
-        setLeaderboard(entries);
-        setLeaderboardUnavailable(false);
+    if (!dailyChallengeAvailable || (activeMoreTab !== 'leaderboard' && activeMoreTab !== 'accuracyLeaderboard')) return () => { cancelled = true; };
+    const type = activeMoreTab === 'accuracyLeaderboard' ? 'accuracy' : 'timeAttack';
+    const load = async () => {
+      try {
+        if (userId && leaderboardOptIn) {
+          const result = await retryDailyLeaderboardEntry(userId, dailyTrialDate, type);
+          if (!cancelled) {
+            setLeaderboardSubmitMessage(result === 'no-saved-attempt'
+              ? 'No saved completed trial was found to submit.'
+              : result === 'submitted' ? '' : 'Opt in from Profile before completing a trial to submit it to the leaderboard.');
+          }
+        } else if (!leaderboardOptIn && !cancelled) {
+          setLeaderboardSubmitMessage('Opt in from Profile before completing a trial to submit it to the leaderboard.');
+        }
+        const entries = type === 'accuracy'
+          ? await getDailyAccuracyEntries(dailyTrialDate)
+          : await getDailyTimeAttackEntries(dailyTrialDate);
+        if (!cancelled) {
+          if (type === 'accuracy') { setAccuracyLeaderboard(entries as AccuracyLeaderboardEntry[]); setAccuracyLeaderboardUnavailable(false); }
+          else { setLeaderboard(entries as LeaderboardEntry[]); setLeaderboardUnavailable(false); }
+        }
+      } catch (error) {
+        console.warn(`Could not refresh the daily ${type} leaderboard:`, error);
+        if (!cancelled) {
+          setLeaderboardSubmitMessage('Could not submit a saved trial. Check the Firestore create rules and your leaderboard opt-in setting.');
+          if (type === 'accuracy') setAccuracyLeaderboardUnavailable(true);
+          else setLeaderboardUnavailable(true);
+        }
+      } finally {
+        if (!cancelled) {
+          if (type === 'accuracy') setAccuracyLeaderboardLoading(false);
+          else setLeaderboardLoading(false);
+        }
       }
-    }).catch(error => {
-      console.warn('Could not load the daily time-attack leaderboard. Check sign-in and Firestore rules for dailyTimeAttackEntries:', error);
-      if (!cancelled) setLeaderboardUnavailable(true);
-    }).finally(() => { if (!cancelled) setLeaderboardLoading(false); });
+    };
+    void load();
     return () => { cancelled = true; };
-  }, [userId, dailyTrialDate, dailyChallengeAvailable, activeMoreTab]);
+  }, [userId, dailyTrialDate, dailyChallengeAvailable, activeMoreTab, leaderboardRefreshKey, leaderboardOptIn]);
 
-  const toggleMoreTab = (tab: 'progress' | 'badges' | 'leaderboard') => {
+  const refreshLeaderboard = (type: 'timeAttack' | 'accuracy') => {
+    if (type === 'timeAttack') setLeaderboardLoading(true);
+    else setAccuracyLeaderboardLoading(true);
+    setLeaderboardRefreshKey(key => key + 1);
+  };
+
+  const toggleMoreTab = (tab: 'progress' | 'badges' | 'leaderboard' | 'accuracyLeaderboard' | 'brief') => {
     const next = activeMoreTab === tab ? null : tab;
     if (next === 'leaderboard' && dailyChallengeAvailable) {
       setLeaderboardLoading(true);
       setLeaderboardUnavailable(false);
+    }
+    if (next === 'accuracyLeaderboard' && dailyChallengeAvailable) {
+      setAccuracyLeaderboardLoading(true);
+      setAccuracyLeaderboardUnavailable(false);
+    }
+    if (next === null) {
+      setLeaderboardLoading(false);
+      setAccuracyLeaderboardLoading(false);
     }
     setActiveMoreTab(next);
   };
@@ -399,7 +483,9 @@ export const DashboardScreen = ({
   const visibleMoreTabs = [
     ...(hasScoreData ? [{ id: 'progress' as const, label: 'Progress' }] : []),
     { id: 'badges' as const, label: 'Badges' },
-    ...(dailyChallengeAvailable ? [{ id: 'leaderboard' as const, label: 'Time Attack leaderboard' }] : [])
+    ...(dailyChallengeAvailable ? [{ id: 'leaderboard' as const, label: 'Time Attack leaderboard' }] : []),
+    ...(dailyChallengeAvailable ? [{ id: 'accuracyLeaderboard' as const, label: 'Accuracy leaderboard' }] : []),
+    ...(!isNewUser && SECURITY_BRIEF_ITEMS.length > 0 ? [{ id: 'brief' as const, label: 'Security Brief' }] : [])
   ];
   const completedTierCount = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).filter(tier => {
     const tierMissions = [...(tier === 'INTERMEDIATE' ? BRIDGE_MISSIONS : []), ...MISSIONS.filter(mission => mission.tier === tier)];
@@ -417,7 +503,9 @@ export const DashboardScreen = ({
     ...ACHIEVEMENTS.filter(achievement => achievement.active && !progression.badges.includes(achievement.id))
   ].slice(0, 3);
   const pathDescription = 'This learning study uses simulated commands and saves your progress and attempts. Path: pre-test → missions → post-test.';
-  const heroTitle = currentTierScore?.preTestScore === undefined
+  const heroTitle = resumeActivityLabel
+    ? resumeActivityLabel
+    : currentTierScore?.preTestScore === undefined
     ? `Start your ${currentTier[0]}${currentTier.slice(1).toLowerCase()} pre-test`
     : nextMission
       ? `Continue: ${nextMission.title}`
@@ -428,14 +516,15 @@ export const DashboardScreen = ({
 
   return (
     <div className="game-screen mx-auto min-h-full w-full max-w-6xl space-y-7 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-      <GameCard className="continue-hero p-5 sm:p-8 lg:p-10">
+      <GameCard className="continue-hero relative p-5 sm:p-8 lg:p-10">
+        {!isNewUser && SECURITY_BRIEF_ITEMS.length > 0 && <div className="absolute right-6 top-6 hidden w-72 xl:block"><SecurityBrief /></div>}
         <p className="game-eyebrow">Next step · {currentTier}</p>
         <h1 className="mt-2 max-w-3xl text-3xl font-bold leading-tight text-[var(--game-text)] sm:text-4xl">{heroTitle}</h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--game-muted)]">{heroDescription}</p>
         {!isNewUser && <p className="mt-3 text-xs leading-5 text-[var(--game-muted)]">Learning study · all commands are simulated · progress and attempt data are saved.</p>}
         {!isNewUser && nextMission && <p className="mt-3 text-sm text-[var(--game-muted)]">{nextMission.difficulty} mission · about {Math.max(3, Math.ceil(nextMission.steps.length * 1.5))} min</p>}
         {!isNewUser && <ProgressBar value={tierProgressPercent} label={`${currentTier} mission progress`} className="mt-5 max-w-2xl" />}
-        <button type="button" onClick={onContinue} className="mt-6 min-h-12 rounded-md bg-[var(--game-green)] px-6 py-3 text-sm font-bold text-black shadow-md transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2">{currentTierScore?.preTestScore === undefined ? 'Start pre-test' : 'Continue training'} <ChevronRight size={16} className="ml-1 inline" /></button>
+        <button type="button" onClick={onContinue} className="mt-6 min-h-12 rounded-md bg-[var(--game-green)] px-6 py-3 text-sm font-bold text-black shadow-md transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2">{resumeActivityLabel ?? (currentTierScore?.preTestScore === undefined ? 'Start pre-test' : 'Continue training')} <ChevronRight size={16} className="ml-1 inline" /></button>
       </GameCard>
 
       {!isNewUser && !isLoadingProgress && <div className="game-card grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-3 sm:gap-4 sm:p-4" aria-label="Training status">
@@ -459,7 +548,7 @@ export const DashboardScreen = ({
             <div className="flex min-w-0 items-center gap-3">
               <span className="shrink-0 text-sm font-semibold text-[var(--game-text)]">More</span>
               <div role="tablist" aria-label="Dashboard details" aria-orientation="horizontal" onKeyDown={handleMoreTabKeyDown} className="flex min-w-0 gap-1 overflow-x-auto scrollbar-hide">
-                {visibleMoreTabs.map(tab => <button key={tab.id} id={`dashboard-tab-${tab.id}`} type="button" role="tab" aria-selected={activeMoreTab === tab.id} aria-controls="dashboard-more-panel" onClick={() => toggleMoreTab(tab.id)} className={`min-h-11 shrink-0 rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] ${activeMoreTab === tab.id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-text)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:bg-[var(--game-track)]'}`}>
+                {visibleMoreTabs.map(tab => <button key={tab.id} id={`dashboard-tab-${tab.id}`} type="button" role="tab" aria-selected={activeMoreTab === tab.id} aria-controls="dashboard-more-panel" onClick={() => toggleMoreTab(tab.id)} className={`min-h-11 shrink-0 rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] ${tab.id === 'brief' ? 'xl:hidden' : ''} ${activeMoreTab === tab.id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-text)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:bg-[var(--game-track)]'}`}>
                   {tab.label}{tab.id === 'badges' ? ` · ${progression.badges.length}/${ACHIEVEMENTS.filter(item => item.active).length}` : ''}
                 </button>)}
               </div>
@@ -480,11 +569,19 @@ export const DashboardScreen = ({
                 <button type="button" onClick={() => setScreen('profile')} className="min-h-11 text-sm font-semibold text-[var(--game-text)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View all badges in Profile</button>
               </div>}
               {activeMoreTab === 'leaderboard' && <div id="dashboard-leaderboard" className="space-y-3">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-bold text-[var(--game-text)]">Today’s Time Attack leaderboard</h2><p className="text-sm text-[var(--game-muted)]">{dailyTrialDate} · {dailyTimeAttackMissionTitle}</p></div><p className="text-xs text-[var(--game-muted)]">Players are shown by their saved username.</p></div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-bold text-[var(--game-text)]">Today’s Time Attack leaderboard</h2><p className="text-sm text-[var(--game-muted)]">{dailyTrialDate} · {dailyTimeAttackMissionTitle}</p></div><div className="flex items-center gap-3"><p className="text-xs text-[var(--game-muted)]">Opt-in players use randomly generated aliases.</p><button type="button" onClick={() => refreshLeaderboard('timeAttack')} disabled={leaderboardLoading} className="min-h-10 rounded-md border border-[var(--game-border)] px-3 text-xs font-semibold text-[var(--game-text)] hover:border-[var(--game-green)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] disabled:opacity-60">{leaderboardLoading ? 'Refreshing…' : 'Refresh'}</button></div></div>
+                {leaderboardSubmitMessage && <p className="mt-2 text-xs text-[var(--game-muted)]" role="status">{leaderboardSubmitMessage}</p>}
                 <p className="text-xs text-[var(--game-muted)]">Speed is a challenge only; certification progress rewards evidence and accuracy.</p>
                 {leaderboardLoading ? <p className="text-sm text-[var(--game-muted)]">Loading entries…</p> : leaderboardUnavailable ? <p className="text-sm text-[var(--game-muted)]">Could not load entries. Check sign-in and the dailyTimeAttackEntries read rule.</p> : leaderboard.length === 0 ? <p className="text-sm text-[var(--game-muted)]">No one has completed today’s Time Attack yet.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr><th className="pb-2 pr-3">Rank</th><th className="pb-2 pr-3">Player</th><th className="pb-2">Clear time</th></tr></thead><tbody>{leaderboard.map((entry, index) => <tr key={`${entry.uid}-${index}`} className="border-t border-[var(--game-border)] text-[var(--game-text)]"><td className="py-2 pr-3 font-semibold">#{index + 1}</td><td className="py-2 pr-3"><div className="flex items-center gap-2">{entry.avatarId ? <Avatar avatarId={entry.avatarId} alt={`${entry.nickname}'s avatar: ${getAvatarById(entry.avatarId).label}`} /> : <span role="img" aria-label="No avatar selected" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--game-border)] bg-[var(--game-track)] text-lg font-bold text-[var(--game-muted)]">?</span>}<span>{entry.nickname}{entry.uid === userId ? ' · YOU' : ''}</span></div></td><td className="py-2 font-semibold">{Math.floor(entry.clearTimeSeconds / 60)}:{String(entry.clearTimeSeconds % 60).padStart(2, '0')}</td></tr>)}</tbody></table></div>}
                 <p className="text-xs text-[var(--game-muted)]">Entries are submitted by the game client and are not tamper-proof.</p>
               </div>}
+              {activeMoreTab === 'accuracyLeaderboard' && <div id="dashboard-accuracy-leaderboard" className="space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-bold text-[var(--game-text)]">Today’s Accuracy leaderboard</h2><p className="text-sm text-[var(--game-muted)]">{dailyTrialDate} · {dailyAccuracyMissionTitle}</p></div><button type="button" onClick={() => refreshLeaderboard('accuracy')} disabled={accuracyLeaderboardLoading} className="min-h-10 self-start rounded-md border border-[var(--game-border)] px-3 text-xs font-semibold text-[var(--game-text)] hover:border-[var(--game-green)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] disabled:opacity-60 sm:self-auto">{accuracyLeaderboardLoading ? 'Refreshing…' : 'Refresh'}</button></div>
+                {leaderboardSubmitMessage && <p className="mt-2 text-xs text-[var(--game-muted)]" role="status">{leaderboardSubmitMessage}</p>}
+                <p className="rounded border border-[var(--game-border)] bg-[var(--game-surface-raised)] p-3 text-xs leading-5 text-[var(--game-muted)]">Score starts at 100; subtract 5 per wrong command, 10 per wrong decision, and 5 per hint level shown (minimum 0). Ties go to the earlier completion.</p>
+                {accuracyLeaderboardLoading ? <p className="text-sm text-[var(--game-muted)]">Loading entries…</p> : accuracyLeaderboardUnavailable ? <p className="text-sm text-[var(--game-muted)]">Could not load entries. Check sign-in and the dailyAccuracyEntries read rule.</p> : accuracyLeaderboard.length === 0 ? <p className="text-sm text-[var(--game-muted)]">No one has completed today’s Accuracy trial yet.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[400px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr><th className="pb-2 pr-3">Rank</th><th className="pb-2 pr-3">Player</th><th className="pb-2 pr-3">Accuracy</th><th className="pb-2">Completed</th></tr></thead><tbody>{accuracyLeaderboard.map((entry, index) => <tr key={`${entry.uid}-${index}`} className="border-t border-[var(--game-border)] text-[var(--game-text)]"><td className="py-2 pr-3 font-semibold">#{index + 1}</td><td className="py-2 pr-3">{entry.nickname}{entry.uid === userId ? ' · YOU' : ''}</td><td className="py-2 pr-3 font-bold">{entry.accuracyScore}</td><td className="py-2"><time dateTime={entry.completedAt}>{new Date(entry.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></td></tr>)}</tbody></table></div>}
+              </div>}
+              {activeMoreTab === 'brief' && !isNewUser && <div className="xl:hidden"><SecurityBrief /></div>}
             </motion.div>}</AnimatePresence>
           </div>
         </GameCard>
@@ -569,14 +666,17 @@ interface AcademyScreenProps {
     tier: Tier,
     score: number,
     total: number,
-    isPreTest?: boolean
+    isPreTest?: boolean,
+    metadata?: { startedAt?: string; timedOut: boolean; answeredCount: number }
   ) => Promise<void>;
+  onSessionReady?: (session: Record<string, unknown>) => void;
 
   onStartMission: (
     missionId: string
   ) => void;
 
   completedMissions: string[];
+  activeSession?: Record<string, unknown> | null;
 }
 
 export const AcademyScreen = ({
@@ -584,8 +684,10 @@ export const AcademyScreen = ({
   setActiveTier,
   userScores,
   handleQuizComplete,
+  onSessionReady,
   onStartMission,
-  completedMissions
+  completedMissions,
+  activeSession
 }: AcademyScreenProps) => {
   if (
     activeTier &&
@@ -647,17 +749,20 @@ export const AcademyScreen = ({
           )
         }
         onComplete={(
-          score,
-          total,
-          isPreTest
-        ) =>
-          handleQuizComplete(
+          score: number,
+          total: number,
+          isPreTest?: boolean,
+          metadata?: { startedAt?: string; timedOut: boolean; answeredCount: number }
+        ) => {
+          void handleQuizComplete(
             activeTier,
             score,
             total,
-            isPreTest
-          )
-        }
+            isPreTest,
+            metadata
+          );
+        }}
+        onSessionReady={onSessionReady}
         onStartMission={
           onStartMission
         }
@@ -667,6 +772,7 @@ export const AcademyScreen = ({
         userScores={
           userScores
         }
+        activeSession={activeSession}
       />
     );
   }
@@ -1130,6 +1236,7 @@ interface TerminalScreenProps {
 
   isThreatActive: boolean;
   timeLeft: number;
+  elapsedSeconds: number;
   questStep: number;
   msg: string;
   sysNonce: number;
@@ -1182,6 +1289,7 @@ export const TerminalScreen = ({
   handleCommand,
   isThreatActive,
   timeLeft,
+  elapsedSeconds,
   questStep,
   msg,
   sysNonce,
@@ -1573,6 +1681,11 @@ export const TerminalScreen = ({
 
             </div>
 
+            {activeMission.softTimeTarget !== undefined && <p className="text-xs leading-5 text-slate-300">
+              Elapsed {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, '0')} · pace target {Math.floor(activeMission.softTimeTarget / 60)} min
+              {elapsedSeconds > activeMission.softTimeTarget && <span className="ml-2 block text-slate-400">Take your time. The pace target has passed, but you can keep going.</span>}
+            </p>}
+
           </div>
 
         </div>
@@ -1951,8 +2064,13 @@ interface ProfileScreenProps {
   completedMissions: string[];
   onProgressionChange: (progression: PlayerProgression) => void;
   avatarId: AvatarId;
+  leaderboardOptIn: boolean;
+  leaderboardAlias: string;
   progressLoadFailed: boolean;
   onSaveAvatarChoice: (avatarId: AvatarId) => Promise<void>;
+  onSaveLeaderboardOptIn: (enabled: boolean) => Promise<void>;
+  certificates: UserCertificate[];
+  onViewCertificate: (certificate: UserCertificate) => void;
 
 }
 
@@ -1963,8 +2081,13 @@ export const ProfileScreen = ({
   completedMissions,
   onProgressionChange,
   avatarId,
+  leaderboardOptIn,
+  leaderboardAlias,
   progressLoadFailed,
-  onSaveAvatarChoice
+  onSaveAvatarChoice,
+  onSaveLeaderboardOptIn,
+  certificates,
+  onViewCertificate
 }: ProfileScreenProps) => {
   const [exportMessage, setExportMessage] = useState('');
   const [archive, setArchive] = useState<MissionAttemptRecord[]>([]);
@@ -1972,6 +2095,9 @@ export const ProfileScreen = ({
   const [localAvatar, setLocalAvatar] = useState<{ uid: string; id: AvatarId } | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
   const [avatarMessage, setAvatarMessage] = useState('');
+  const [savingLeaderboardSetting, setSavingLeaderboardSetting] = useState(false);
+  const [leaderboardSettingMessage, setLeaderboardSettingMessage] = useState('');
+  const [artworkPreview, setArtworkPreview] = useState<{ title: string; src: string; alt: string } | null>(null);
   const avatarOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedAvatarId = localAvatar?.uid === user?.uid ? localAvatar?.id ?? getAvatarById(avatarId).id : getAvatarById(avatarId).id;
 
@@ -2150,7 +2276,7 @@ export const ProfileScreen = ({
         <div className="flex flex-col md:flex-row items-center md:items-start gap-5">
 
           <div className="flex flex-col items-center gap-2">
-            <Avatar avatarId={selectedAvatarId} size="large" />
+            <button type="button" onClick={() => setArtworkPreview({ title: 'Profile picture', src: getAvatarById(selectedAvatarId).src, alt: `${getAvatarById(selectedAvatarId).label} profile picture` })} aria-label="Enlarge profile picture" className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--game-surface)]"><Avatar avatarId={selectedAvatarId} size="large" /></button>
             <button type="button" aria-expanded={avatarPickerOpen} aria-controls="profile-avatar-picker" disabled={!user || progressLoadFailed || savingAvatar} onClick={() => setAvatarPickerOpen(open => !open)} className="min-h-11 rounded-md border border-cyan-800 px-3 py-2 text-xs font-bold text-cyan-200 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-50">{savingAvatar ? 'Saving…' : 'Change avatar'}</button>
           </div>
 
@@ -2196,9 +2322,35 @@ export const ProfileScreen = ({
       </section>
 
       <GameCard className="p-5 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><h2 className="text-base font-bold text-[var(--game-text)]">Leaderboards</h2><p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--game-muted)]">Opt in to share your daily challenge result under a randomly generated alias. Your email and account name are not shown. Opt-in is off by default.</p>{leaderboardOptIn && <p className="mt-2 text-sm font-semibold text-[var(--game-green)]">Leaderboard alias: {leaderboardAlias}</p>}{leaderboardSettingMessage && <p className="mt-2 text-sm text-[var(--game-muted)]" role="status">{leaderboardSettingMessage}</p>}</div>
+          <label className="flex min-h-11 shrink-0 items-center gap-3 rounded-md border border-[var(--game-border)] px-4 py-2 text-sm font-semibold text-[var(--game-text)]">
+            <input type="checkbox" checked={leaderboardOptIn} disabled={!user || progressLoadFailed || savingLeaderboardSetting} onChange={async event => {
+              const enabled = event.target.checked;
+              setSavingLeaderboardSetting(true);
+              setLeaderboardSettingMessage('');
+              try { await onSaveLeaderboardOptIn(enabled); setLeaderboardSettingMessage(enabled ? 'You are opted in.' : 'You are opted out.'); }
+              catch (error) { setLeaderboardSettingMessage(error instanceof Error ? error.message : 'Could not save this setting.'); }
+              finally { setSavingLeaderboardSetting(false); }
+            }} className="h-5 w-5 accent-[var(--game-green)] disabled:cursor-not-allowed" />
+            Show me on leaderboards
+          </label>
+        </div>
+      </GameCard>
+
+      <GameCard className="p-5 sm:p-6">
+        <div className="mb-4 flex items-center gap-4">
+          <button type="button" onClick={() => setArtworkPreview({ title: `${rankProgress(progression.xp).current.name} rank badge`, src: RANK_BADGES[rankProgress(progression.xp).current.name], alt: `${rankProgress(progression.xp).current.name} rank badge` })} aria-label={`Enlarge ${rankProgress(progression.xp).current.name} rank badge`} className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]"><img src={RANK_BADGES[rankProgress(progression.xp).current.name]} alt={`${rankProgress(progression.xp).current.name} rank badge`} className="h-20 w-20 rounded-md border border-[var(--game-border)] object-cover" /></button>
+          <div><p className="text-xs font-bold uppercase tracking-widest text-[var(--game-muted)]">Current rank</p><p className="mt-1 text-lg font-bold text-[var(--game-text)]">{rankProgress(progression.xp).current.name} badge</p><p className="text-sm text-[var(--game-muted)]">Your rank emblem appears here and updates as you level up.</p></div>
+        </div>
         <SectionHeader eyebrow="Clearance profile" title={`${rankProgress(progression.xp).current.name} · ${progression.xp} XP`} detail={`${progression.streak.current} day streak · ${progression.streak.longest} day personal best`} />
         <ProgressBar value={rankProgress(progression.xp).percent} label={rankProgress(progression.xp).next ? `Progress to ${rankProgress(progression.xp).next?.name}` : 'Maximum rank'} />
         <div className="mt-5 grid gap-3 sm:grid-cols-2">{ACHIEVEMENTS.map(achievement => <AchievementBadge key={achievement.id} achievement={achievement} earned={progression.badges.includes(achievement.id)} />)}</div>
+      </GameCard>
+
+      <GameCard className="p-5 sm:p-6">
+        <SectionHeader eyebrow="Credentials" title="Certificates" detail="Completed certification certificates are saved here for viewing and printing." />
+        {certificates.length ? <div className="mt-4 space-y-3">{certificates.map(certificate => <article key={certificate.id} className="flex flex-col gap-3 rounded-md border border-[var(--game-border)] bg-[var(--game-surface)] p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-[var(--game-text)]">{certificate.tier} Security Certification</p><p className="mt-1 text-sm text-[var(--game-muted)]">Awarded {new Date(certificate.issuedAt).toLocaleDateString()} · {certificate.score}/{certificate.total}</p></div><button type="button" onClick={() => onViewCertificate(certificate)} className="min-h-11 rounded-md border border-[var(--game-green)] px-4 py-2 text-sm font-semibold text-[var(--game-green)] hover:bg-[var(--game-green)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View / Print</button></article>)}</div> : <p className="mt-4 text-sm text-[var(--game-muted)]">Pass a certification post-test after completing its missions to earn your first certificate.</p>}
       </GameCard>
 
       {learningGainEntries.length > 0 && <GameCard className="p-5 sm:p-6">
@@ -2353,6 +2505,7 @@ export const ProfileScreen = ({
 
       </section>
 
+      <ArtworkPreviewDialog artwork={artworkPreview} onClose={() => setArtworkPreview(null)} />
     </div>
   );
 };

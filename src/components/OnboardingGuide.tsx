@@ -87,7 +87,7 @@ const OnboardingGuide = ({ onComplete }: OnboardingGuideProps) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 font-mono">
+    <div className="font-floor fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 font-mono">
       <div className="absolute inset-0 pointer-events-none opacity-20">
         <div className="absolute top-0 left-0 w-full h-px bg-green-500 animate-pulse" />
         <div className="absolute bottom-0 left-0 w-full h-px bg-green-500" />

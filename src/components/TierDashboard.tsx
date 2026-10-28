@@ -39,8 +39,10 @@ interface TierDashboardProps {
   onComplete: (
     score: number,
     total: number,
-    isPreTest?: boolean
-  ) => void;
+    isPreTest?: boolean,
+    metadata?: { startedAt?: string; timedOut: boolean; answeredCount: number }
+  ) => void | Promise<void>;
+  onSessionReady?: (session: Record<string, unknown>) => void;
 
   onStartMission: (
     missionId: string
@@ -59,6 +61,7 @@ interface TierDashboardProps {
       finalTotal?: number;
     }
   >;
+  activeSession?: Record<string, unknown> | null;
 }
 
 type Stage =
@@ -92,9 +95,11 @@ export const TierDashboard = ({
   postTestQuestions,
   onExit,
   onComplete,
+  onSessionReady,
   onStartMission,
   completedMissions,
-  userScores
+  userScores,
+  activeSession
 }: TierDashboardProps) => {
 
   const [assessmentQuestions] = useState(() => ({
@@ -117,14 +122,15 @@ export const TierDashboard = ({
 
   const savedTierScore =
     userScores[tierName];
+  const activeTestType = activeSession?.kind === 'test' && activeSession.status === 'in_progress' && activeSession.tier === tierName
+    ? activeSession.testType === 'post' ? 'post' : 'pre'
+    : null;
 
   const [
     stage,
     setStage
   ] = useState<Stage>(
-    savedTierScore
-      ? 'missions'
-      : 'intro'
+    activeTestType === 'pre' ? 'pretest' : activeTestType === 'post' ? 'finaltest' : savedTierScore ? 'missions' : 'intro'
   );
 
   const [
@@ -353,8 +359,10 @@ export const TierDashboard = ({
           false
         }
         onComplete={(
-          score,
-          total
+          score: number,
+          total: number,
+          _answers?: (number | null)[],
+          metadata?: { startedAt?: string; timedOut: boolean; answeredCount: number }
         ) => {
 
           const safeScore =
@@ -370,13 +378,13 @@ export const TierDashboard = ({
           onComplete(
             safeScore,
             total,
-            true
-          );
-
-          setStage(
-            'missions'
+            true,
+            metadata
           );
         }}
+        onSessionReady={onSessionReady}
+        continueLabel="Continue to missions"
+        onContinueAfterComplete={() => setStage('missions')}
         onExit={() =>
           setStage('intro')
         }
@@ -642,9 +650,10 @@ export const TierDashboard = ({
         }
         continueLabel="Choose Review"
         onComplete={(
-          score,
-          total,
-          answers
+          score: number,
+          total: number,
+          answers?: (number | null)[],
+          metadata?: { startedAt?: string; timedOut: boolean; answeredCount: number }
         ) => {
 
           const safeScore =
@@ -660,8 +669,9 @@ export const TierDashboard = ({
           setFinalScore(safeScore);
 
           // Keep every attempt so learners can compare assessment progress.
-          onComplete(safeScore, total);
+          onComplete(safeScore, total, false, metadata);
         }}
+        onSessionReady={onSessionReady}
         onContinueAfterComplete={() => setStage('review-select')}
         onExit={() =>
           setStage('missions')
