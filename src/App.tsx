@@ -9,11 +9,13 @@ import missionMusicTwo from './assets/Main sound2.mp3';
 
 import {
   auth,
+  authReady,
   signInWithGoogle,
   logOut,
   saveUserScore,
   registerWithEmail,
   loginWithEmail,
+  sendPasswordReset,
   saveCompletedMissions,
   savePreTestScore,
   getUserProgress,
@@ -22,6 +24,7 @@ import {
   saveAvatarChoice,
   ensureUserProfile,
   getActiveSession,
+  ensureMissionSessionTimer,
   startMissionSession,
   saveMissionSessionProgress,
   completeMissionSession,
@@ -32,13 +35,17 @@ import {
   takeOverActiveSession,
   saveLeaderboardProfile,
   abandonMissionSession,
-  saveUserCertificate
+  saveUserCertificate,
+  purchaseCosmetic,
+  equipCosmetic,
+  awardFirstMissionCoins
 } from './Firebase';
 import type { UserCertificate } from './Firebase';
 import { getMissionXp, normalizeProgression, rankProgress, type PlayerProgression } from './data/progression';
 import { CONTENT_VERSION } from './data/contentVersion';
 import { ASSESSMENT_TIME_LIMIT_SECONDS } from './data/assessmentTiming';
 import { DEFAULT_AVATAR_ID, getAvatarById, type AvatarId } from './data/avatars';
+import { DEFAULT_COSMETICS, normalizeCosmetics, type PlayerCosmetics } from './data/cosmetics';
 
 import {
   BootScreen,
@@ -83,7 +90,8 @@ import {
   ClipboardCheck,
   LogOut,
   Settings,
-  Play
+  Play,
+  Store
 } from 'lucide-react';
 
 type Screen =
@@ -91,7 +99,8 @@ type Screen =
   | 'academy'
   | 'missions'
   | 'terminal'
-  | 'profile';
+  | 'profile'
+  | 'shop';
 
 type BootStage =
   | 'booting'
@@ -101,6 +110,23 @@ type BootStage =
 type AuthMode =
   | 'login'
   | 'register';
+
+const friendlyAuthError = (error: unknown, fallback: string) => {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+  const messages: Record<string, string> = {
+    'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
+    'auth/cancelled-popup-request': 'Google sign-in was cancelled.',
+    'auth/popup-blocked': 'Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.',
+    'auth/invalid-email': 'Enter a valid email address.',
+    'auth/invalid-credential': 'Email or password is incorrect.',
+    'auth/wrong-password': 'Email or password is incorrect.',
+    'auth/user-not-found': 'No account was found for that email address.',
+    'auth/email-already-in-use': 'This email is already registered.',
+    'auth/weak-password': 'Password must be at least 6 characters.',
+    'auth/network-request-failed': 'Network connection failed. Check your connection and try again.'
+  };
+  return messages[code] ?? fallback;
+};
 
 const getLocalDateKey = () => {
   const now = new Date();
@@ -218,6 +244,7 @@ function App() {
 
   const [authSuccess, setAuthSuccess] =
     useState(false);
+  const [authSuccessMessage, setAuthSuccessMessage] = useState('Account created successfully.');
 
   const [user, setUser] =
     useState<FirebaseUser | null>(null);
@@ -239,6 +266,7 @@ function App() {
   const [leaderboardOptIn, setLeaderboardOptIn] = useState(false);
   const [leaderboardAlias, setLeaderboardAlias] = useState('');
   const [avatarId, setAvatarId] = useState<AvatarId>(DEFAULT_AVATAR_ID);
+  const [cosmetics, setCosmetics] = useState<PlayerCosmetics>(() => normalizeCosmetics(DEFAULT_COSMETICS));
   const [certificates, setCertificates] = useState<UserCertificate[]>([]);
   const [certificateToShow, setCertificateToShow] = useState<UserCertificate | null>(null);
 
@@ -389,7 +417,7 @@ function App() {
     if (user) void saveProgression(user.uid, next).catch(error => console.error('Could not save player progression:', error));
     const elapsedSeconds = Math.max(0, Math.round((Date.now() - attemptStartedAtRef.current) / 1000));
     const softTimeTarget = mission.softTimeTarget;
-    return { evidence: evidenceGrade, accuracy: accuracyGrade, verification: verificationGrade, independence: independenceGrade, xpEarned, rankBefore: current.rank, rankAfter: isOptionalDailyChallenge ? current.rank : rankAfter, newBadges: isOptionalDailyChallenge ? [] : newBadges, evidenceFirst, verifiedAll, calibratedReport, hintsUsed, elapsedSeconds, timed: Boolean(mission.timerLimit), softTimeTarget, exceededSoftTarget: softTimeTarget !== undefined && elapsedSeconds > softTimeTarget };
+    return { evidence: evidenceGrade, accuracy: accuracyGrade, verification: verificationGrade, independence: independenceGrade, xpEarned, rankBefore: current.rank, rankAfter: isOptionalDailyChallenge ? current.rank : rankAfter, newBadges: isOptionalDailyChallenge ? [] : newBadges, evidenceFirst, verifiedAll, calibratedReport, hintsUsed, elapsedSeconds, timed: attemptWasTimedRef.current, softTimeTarget, exceededSoftTarget: softTimeTarget !== undefined && elapsedSeconds > softTimeTarget };
   };
 
   const [showBriefing, setShowBriefing] =
@@ -397,6 +425,7 @@ function App() {
   const [missionStartError, setMissionStartError] = useState('');
   const [startingMission, setStartingMission] = useState(false);
   const [showAbandonConfirmation, setShowAbandonConfirmation] = useState(false);
+  const [nextMissionAfterAbandonId, setNextMissionAfterAbandonId] = useState<string | null>(null);
   const [abandoningMission, setAbandoningMission] = useState(false);
   const [abandonMissionError, setAbandonMissionError] = useState('');
 
@@ -492,7 +521,7 @@ function App() {
     );
   };
 
-  const persistMissionAttempt = useCallback((outcome: 'completed' | 'timed_out', report?: { xpEarned: number; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; softTimeTarget?: number; exceededSoftTarget?: boolean }) => {
+  const persistMissionAttempt = useCallback(async (outcome: 'completed' | 'timed_out' | 'abandoned', report?: { xpEarned: number; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; softTimeTarget?: number; exceededSoftTarget?: boolean }) => {
     if (progressLoadFailedRef.current || !activeMission || attemptSavedRef.current) return;
     const completedAt = Date.now();
     const startedAt = attemptStartedAtRef.current || completedAt;
@@ -503,13 +532,14 @@ function App() {
     }
     attemptSavedRef.current = true;
     if (!user) return;
-    void saveMissionAttempt(user.uid, {
+    await saveMissionAttempt(user.uid, {
       contentVersion: CONTENT_VERSION,
       missionId: activeMission.id,
       missionTitle: activeMission.title,
       tier: activeMission.tier,
       concept: activeMission.briefing.concept,
       outcome,
+      stepsReached: Math.max(0, Math.min(questStep, activeMission.steps.length)),
       challengeMode: attemptWasTimedRef.current,
       dailyChallengeDate: dailyTrialRef.current?.date,
       dailyChallengeType: dailyTrialRef.current?.type,
@@ -583,14 +613,14 @@ function App() {
 
     const audio = backgroundAudioRef.current;
     if (!audio) return;
-    if (isMuted || !musicEnabled) {
+    if (!musicEnabled) {
       audio.pause();
     } else {
       audio.loop = true;
       audio.volume = audioVolume;
       void audio.play().catch(() => {});
     }
-  }, [bootStage, screen, activeMission?.id, showVictory, showMissionFailed, isMuted, musicEnabled, audioVolume]);
+  }, [bootStage, screen, activeMission?.id, showVictory, showMissionFailed, musicEnabled, audioVolume]);
 
   useEffect(() => () => {
     backgroundAudioRef.current?.pause();
@@ -601,7 +631,7 @@ function App() {
 
   useEffect(() => {
     const resumeBackgroundAudio = () => {
-      if (!isMuted && musicEnabled && backgroundAudioRef.current?.paused) {
+      if (musicEnabled && backgroundAudioRef.current?.paused) {
         void backgroundAudioRef.current.play().catch(() => {});
       }
     };
@@ -611,7 +641,7 @@ function App() {
       window.removeEventListener('pointerdown', resumeBackgroundAudio);
       window.removeEventListener('keydown', resumeBackgroundAudio);
     };
-  }, [isMuted, musicEnabled]);
+  }, [musicEnabled]);
 
   const maybeShowOnboarding = (
     uid: string
@@ -633,8 +663,10 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const unsub =
-      onAuthStateChanged(
+    let unsub = () => {};
+    void authReady.then(() => {
+      if (cancelled) return;
+      unsub = onAuthStateChanged(
         auth,
         async currentUser => {
           if (cancelled) return;
@@ -749,6 +781,7 @@ function App() {
               setLeaderboardOptIn(progress.leaderboardOptIn);
               setLeaderboardAlias(progress.leaderboardAlias);
               setAvatarId(progress.avatarId);
+              setCosmetics(normalizeCosmetics(progress.cosmetics));
               setCertificates(progress.certificates);
               syncProgression(normalizeProgression(progress.progression));
 
@@ -767,10 +800,18 @@ function App() {
                   setActiveMission(savedMission);
                   setQuestStep(Math.min(Math.max(Number(refreshedSession?.stepIndex ?? 0), 0), savedMission.steps.length - 1));
                   const startTime = refreshedSession?.startedAt as { toMillis?: () => number } | undefined;
-                  const startedAt = typeof startTime?.toMillis === 'function' ? startTime.toMillis() : Date.now();
-                  attemptStartedAtRef.current = startedAt - sessionClockOffset;
-                  setTimeLeft(savedMission.timerLimit > 0 ? Math.max(0, Math.ceil(savedMission.timerLimit - (Date.now() + sessionClockOffset - startedAt) / 1000)) : 0);
-                  setIsThreatActive(Boolean(savedMission.timerLimit));
+                  let startedAt = typeof startTime?.toMillis === 'function' ? startTime.toMillis() : Date.now();
+                  const savedTimerLimit = Number(refreshedSession?.timerLimitSeconds ?? 0);
+                  const restoredTimerLimit = savedTimerLimit > 0 ? savedTimerLimit : savedMission.timerLimit;
+                  let restoredClockOffset = sessionClockOffset;
+                  if (savedTimerLimit <= 0 && restoredTimerLimit > 0) {
+                    const upgradedTimer = await ensureMissionSessionTimer(currentUser.uid, String(refreshedSession?.sessionId ?? ''), tabSessionId, restoredTimerLimit);
+                    startedAt = upgradedTimer.startedAtMs;
+                    restoredClockOffset = upgradedTimer.serverOffsetMs;
+                  }
+                  attemptStartedAtRef.current = startedAt - restoredClockOffset;
+                  setTimeLeft(restoredTimerLimit > 0 ? Math.max(0, Math.ceil(restoredTimerLimit - (Date.now() + restoredClockOffset - startedAt) / 1000)) : 0);
+                  setIsThreatActive(restoredTimerLimit > 0);
                   setMissionOrigin(refreshedSession?.missionOrigin === 'missions' ? 'missions' : 'academy');
                   const containment = refreshedSession?.containmentState as Record<string, unknown> | undefined;
                   setContainedTarget(typeof containment?.containedTarget === 'string' ? containment.containedTarget : '');
@@ -836,6 +877,7 @@ function App() {
             setLeaderboardOptIn(false);
             setLeaderboardAlias('');
             setAvatarId(DEFAULT_AVATAR_ID);
+            setCosmetics(normalizeCosmetics(DEFAULT_COSMETICS));
             setCertificates([]);
             setCertificateToShow(null);
             setActiveMission(null);
@@ -853,6 +895,13 @@ function App() {
           if (!cancelled) setIsLoadingAuth(false);
         }
       );
+    }).catch(error => {
+      if (!cancelled) {
+        console.error('Could not initialize persistent sign-in:', error);
+        setBootStage('login');
+        setIsLoadingAuth(false);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -895,9 +944,7 @@ function App() {
           );
 
           setTimeout(() => {
-            setBootStage(
-              'login'
-            );
+            setBootStage(current => current === 'authenticated' ? current : 'login');
           }, 800);
         }
       }, 100);
@@ -921,7 +968,7 @@ function App() {
         setTimeLeft(0);
         setIsThreatActive(false);
         setFailedAtStep(questStep);
-        setMsg('[MISSION FAILED]: The optional challenge timer ended. Your practice progress is not a failure.');
+        setMsg('[MISSION FAILED]: The mission time limit ended. Review the objective and try the mission again.');
         setSysNonce(previous => previous + 1);
         persistMissionAttempt('timed_out');
         setShowMissionFailed(true);
@@ -963,11 +1010,7 @@ function App() {
       } catch (
         error: unknown
       ) {
-        setAuthError(
-          error instanceof Error
-            ? error.message
-            : 'Login failed.'
-        );
+        setAuthError(friendlyAuthError(error, 'Sign-in failed. Check your details and try again.'));
       }
     };
 
@@ -1022,6 +1065,7 @@ function App() {
         setAuthSuccess(
           true
         );
+      setAuthSuccessMessage('Account created successfully.');
 
         setTimeout(() => {
           setBootStage(
@@ -1035,32 +1079,7 @@ function App() {
       } catch (
         error: unknown
       ) {
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'Registration failed';
-
-        if (
-          errorMessage.includes(
-            'email-already-in-use'
-          )
-        ) {
-          setAuthError(
-            'This email is already registered.'
-          );
-        } else if (
-          errorMessage.includes(
-            'weak-password'
-          )
-        ) {
-          setAuthError(
-            'Password is too weak.'
-          );
-        } else {
-          setAuthError(
-            errorMessage
-          );
-        }
+        setAuthError(friendlyAuthError(error, 'Registration failed. Check your details and try again.'));
       }
     };
 
@@ -1082,13 +1101,28 @@ function App() {
       } catch (
         error: unknown
       ) {
-        setAuthError(
-          error instanceof Error
-            ? error.message
-            : 'Google login failed.'
-        );
+        setAuthError(friendlyAuthError(error, 'Google sign-in could not be completed. Please try again.'));
       }
     };
+
+  const handlePasswordReset = async () => {
+    setAuthError('');
+    if (!regEmail.trim()) {
+      setAuthError('Enter your email address first, then choose Forgot password.');
+      return;
+    }
+    try {
+      await sendPasswordReset(regEmail);
+      setAuthSuccessMessage('Password reset instructions have been sent to your email address.');
+      setAuthSuccess(true);
+      window.setTimeout(() => setAuthSuccess(false), 6000);
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      setAuthError(code === 'auth/user-not-found'
+        ? 'No account was found for that email address.'
+        : 'Could not send a password reset email. Check the address and try again.');
+    }
+  };
 
   const handleLogout =
     async () => {
@@ -1228,7 +1262,7 @@ function App() {
   };
 
   const confirmStartMission =
-    async (untimed = false) => {
+    async () => {
       if (progressLoadFailedRef.current) return;
       if (
         !pendingMission
@@ -1244,7 +1278,7 @@ function App() {
       if (user) {
         try {
           const proposedId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-          const started = await startMissionSession(user.uid, proposedId, tabSessionId, pendingMission.id, pendingMission.tier, missionOrigin, dailyTrialRef.current ?? undefined);
+          const started = await startMissionSession(user.uid, proposedId, tabSessionId, pendingMission.id, pendingMission.tier, missionOrigin, pendingMission.timerLimit, dailyTrialRef.current ?? undefined);
           missionSessionIdRef.current = started.sessionId;
           missionStartMs = started.startedAtMs;
           missionClockOffsetMs = started.serverOffsetMs;
@@ -1287,10 +1321,8 @@ function App() {
       attemptTelemetryRef.current = { hintsOpened: 0, hintLevelsShown: [], timePerStepSeconds: {}, wrongCommandsByStep: {}, wrongDecisionCount: 0 };
       setMissionRunNumber(previous => previous + 1);
 
-      setIsThreatActive(
-        !untimed && pendingMission.timerLimit > 0
-      );
-      attemptWasTimedRef.current = !untimed && pendingMission.timerLimit > 0;
+      setIsThreatActive(pendingMission.timerLimit > 0);
+      attemptWasTimedRef.current = pendingMission.timerLimit > 0;
 
       setTimeLeft(pendingMission.timerLimit > 0
         ? Math.max(0, Math.ceil(pendingMission.timerLimit - (Date.now() + missionClockOffsetMs - missionStartMs) / 1000))
@@ -1327,6 +1359,7 @@ function App() {
     setAbandoningMission(true);
     setAbandonMissionError('');
     try {
+      await persistMissionAttempt('abandoned');
       const sessionId = missionSessionIdRef.current;
       if (user && sessionId) {
         const abandoned = await abandonMissionSession(user.uid, sessionId, tabSessionId);
@@ -1351,11 +1384,21 @@ function App() {
       setShowMissionFailed(false);
       setShowAbandonConfirmation(false);
       setScreen(missionOrigin);
+      const nextMissionId = nextMissionAfterAbandonId;
+      setNextMissionAfterAbandonId(null);
+      if (nextMissionId) startMissionById(nextMissionId);
     } catch (error) {
       setAbandonMissionError(error instanceof Error ? error.message : 'Could not abandon this mission. Try again.');
     } finally {
       setAbandoningMission(false);
     }
+  };
+
+  const getTraceBackPenaltyMessage = () => {
+    if (!activeMission?.id.startsWith('daily-timeAttack-') || !isThreatActive) return '';
+    setTimeLeft(previous => Math.max(0, previous - 5));
+    playSound('error');
+    return ' [TRACE-BACK: 5 seconds lost. Intruder progress increased.]';
   };
 
   const handleCommand = (
@@ -1399,11 +1442,30 @@ function App() {
       .replace(/\s+/g, ' ');
     const normalizedInput = normalizeCommand(input);
     const commandName = normalizedInput.split(' ')[0];
+    const commandTokens = (value: string) => value.match(/(?:"[^"]*"|'[^']*'|[^\s]+)/g)?.map(token => token.replace(/^['"]|['"]$/g, '')) ?? [];
+    const grepTarget = (value: string) => {
+      const tokens = commandTokens(value);
+      if (tokens[0]?.toLowerCase() !== 'grep') return null;
+      const positional: string[] = [];
+      for (let index = 1; index < tokens.length; index += 1) {
+        if (['--ip', '--after', '--before'].includes(tokens[index])) index += 1;
+        else if (tokens[index] === '-i' || tokens[index] === '-n' || tokens[index] === '-in' || tokens[index] === '-ni') continue;
+        else positional.push(tokens[index]);
+      }
+      return positional.length >= 2 ? [positional[0], positional[positional.length - 1]] : null;
+    };
+    const isEquivalentGrep = (expected: string, actual: string) => {
+      const expectedTarget = grepTarget(expected);
+      const actualTarget = grepTarget(actual);
+      return Boolean(expectedTarget && actualTarget && expectedTarget[0] === actualTarget[0] && expectedTarget[1] === actualTarget[1]);
+    };
     if (responseActionsRef.current > verifiedActionsRef.current && ['status', 'ps', 'ss', 'netstat', 'crontab', 'cat'].includes(commandName)) {
       verifiedActionsRef.current += 1;
     }
     const acceptedCommands = (currentStep.requiredCommands ? (currentStep.alternates ?? []) : [currentStep.cmd, ...(currentStep.alternates ?? [])])
       .map(normalizeCommand);
+    const isEquivalentGrepCommand = [currentStep.cmd, ...(currentStep.requiredCommands ?? []), ...(currentStep.alternates ?? [])]
+      .some(expected => isEquivalentGrep(expected, input));
     if (/^ls(?:\s|$)/i.test(currentStep.cmd)) {
       acceptedCommands.push('ls', 'ls -la', 'ls -l', currentStep.cmd);
     }
@@ -1417,6 +1479,7 @@ function App() {
     const requiredCommand = currentStep.requiredCommands?.find(command => {
       const normalizedRequired = normalizeCommand(command);
       return normalizedRequired === normalizedInput
+        || isEquivalentGrep(command, input)
         || (normalizedRequired === 'netstat -tuln' && normalizedInput === 'ss -tuln')
         || (normalizedRequired === 'ss -tuln' && normalizedInput === 'netstat -tuln');
     });
@@ -1438,7 +1501,7 @@ function App() {
     }
 
     if (
-      acceptedCommands.includes(normalizedInput) || isEquivalentDirectoryList || isCorrectDecision || isRequiredCheckComplete
+      acceptedCommands.includes(normalizedInput) || isEquivalentGrepCommand || isEquivalentDirectoryList || isCorrectDecision || isRequiredCheckComplete
     ) {
       const stepKey = String(questStep);
       attemptTelemetryRef.current.timePerStepSeconds[stepKey] = (attemptTelemetryRef.current.timePerStepSeconds[stepKey] ?? 0) + Math.max(0, Math.round((Date.now() - stepStartedAtRef.current) / 1000));
@@ -1451,7 +1514,7 @@ function App() {
         )
       ) {
         sendSysMsg(
-          '[ERROR]: Wrong target IP.'
+          `[ERROR]: Wrong target IP.${getTraceBackPenaltyMessage()}`
         );
 
         return;
@@ -1485,6 +1548,13 @@ function App() {
         if (checkpointKey) localStorage.removeItem(checkpointKey);
         playSound('levelComplete');
         const report = awardMissionProgression(activeMission, caseNotes, caseConfidence);
+        if (user && !activeMission.id.startsWith('daily-')) {
+          void awardFirstMissionCoins(user.uid, activeMission.id, activeMission.tier)
+            .then(result => {
+              setCosmetics(result.cosmetics);
+            })
+            .catch(error => console.error('Could not award cosmetic shop coins:', error));
+        }
         setMissionReport(report);
         persistMissionAttempt('completed', report ?? undefined);
         if (user && missionSessionIdRef.current) {
@@ -1566,7 +1636,7 @@ function App() {
         attemptTelemetryRef.current.wrongDecisionCount += 1;
         const stepKey = String(questStep);
         attemptTelemetryRef.current.wrongCommandsByStep[stepKey] = (attemptTelemetryRef.current.wrongCommandsByStep[stepKey] ?? 0) + 1;
-        sendSysMsg(`[DECISION NOT SUPPORTED]: ${explanation}`);
+        sendSysMsg(`[DECISION NOT SUPPORTED]: ${explanation}${getTraceBackPenaltyMessage()}`);
         return;
       }
       const readOnlyCommands = new Set(['ls', 'pwd', 'cat', 'ps', 'netstat', 'ss', 'status', 'whoami', 'grep', 'find', 'stat', 'journalctl', 'crontab', 'nmap', 'ping', 'inspect']);
@@ -1579,36 +1649,32 @@ function App() {
       attemptTelemetryRef.current.wrongCommandsByStep[stepKey] = (attemptTelemetryRef.current.wrongCommandsByStep[stepKey] ?? 0) + 1;
       const expectedCommand = currentStep.cmd.split(/\s+/)[0];
       const correction = enteredCommand.toLowerCase() === expectedCommand.toLowerCase()
-        ? `The command is right, but its arguments do not match this step. Expected format: ${currentStep.cmd}`
-        : `This objective needs the ${expectedCommand} tool. The current objective is: ${currentStep.desc} Use Hint or the Command Field Guide if you need help.`;
-      sendSysMsg(`[NOT THE CURRENT OBJECTIVE]: ${correction}`);
+        ? `That tool fits the objective. Check its format in the Command Field Guide and choose the target from the evidence you inspected.`
+        : `This objective calls for the ${expectedCommand} tool. The current objective is: ${currentStep.desc} Use Hint or the Command Field Guide if you need help.`;
+      sendSysMsg(`[NOT THE CURRENT OBJECTIVE]: ${correction}${getTraceBackPenaltyMessage()}`);
     }
   };
 
-  const retryMissionUntimed = () => {
-    setShowMissionFailed(false);
-    setQuestStep(0);
-    setCurrentPath('/home/operator');
-    setContainedTarget('');
-    setDisabledService('');
-    setRemovedPersistence([]);
-    setCaseNotes([]);
-    setCaseConfidence('');
-    attemptStartedAtRef.current = Date.now();
-    stepStartedAtRef.current = Date.now();
-    attemptSavedRef.current = false;
-    evidenceBeforeResponseRef.current = false;
-    responseActionsRef.current = 0;
-    verifiedActionsRef.current = 0;
-    calibratedReportRef.current = false;
-    setMissionReport(null);
-    verifiedCommandsByStepRef.current = {};
-    attemptTelemetryRef.current = { hintsOpened: 0, hintLevelsShown: [], timePerStepSeconds: {}, wrongCommandsByStep: {}, wrongDecisionCount: 0 };
+  const returnToBaseAfterMissionFailure = async () => {
+    const sessionId = missionSessionIdRef.current;
+    if (user && sessionId) {
+      try {
+        await abandonMissionSession(user.uid, sessionId, tabSessionId);
+        setActiveSession(await getActiveSession(user.uid));
+      } catch (error) {
+        console.warn('Could not close timed-out mission session:', error);
+      }
+    }
+    missionSessionIdRef.current = null;
+    if (user) {
+      try { localStorage.removeItem(`sandbox-secure-mission-checkpoint-${user.uid}`); } catch { /* The mission still exits if local storage is unavailable. */ }
+    }
+    setActiveMission(null);
     setTimeLeft(0);
     setIsThreatActive(false);
-    setMissionRunNumber(previous => previous + 1);
-    setScreen('terminal');
-    if (activeMission) sendSysMsg(`${activeMission.intro}\n[TRAINING MODE]: Untimed retry. Use the objective, hints, and glossary to work through the case.`);
+    setQuestStep(0);
+    setShowMissionFailed(false);
+    setScreen(missionOrigin);
   };
 
   const handleQuizComplete =
@@ -1884,6 +1950,7 @@ function App() {
         authSuccess={
           authSuccess
         }
+        authSuccessMessage={authSuccessMessage}
         theme={theme}
         onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
         handleLogin={
@@ -1895,6 +1962,7 @@ function App() {
         handleGoogleLogin={
           handleGoogleLogin
         }
+        handlePasswordReset={handlePasswordReset}
       />
     );
   }
@@ -2027,6 +2095,19 @@ function App() {
               <span className="hidden md:inline">Profile</span>
             </button>
 
+            <button
+              onClick={() => setScreen('shop')}
+              role="tab"
+              aria-selected={screen === 'shop'}
+              className={`relative px-3 lg:px-4 py-2 border transition-colors ${screen === 'shop' ? 'border-green-500 bg-green-500/5 text-green-300' : 'border-transparent text-green-800 hover:border-green-900 hover:text-green-300'}`}
+              aria-current={screen === 'shop' ? 'page' : undefined}
+              aria-label="Cosmetic shop"
+            >
+              {screen === 'shop' && <motion.span layoutId="main-nav-indicator" className="absolute inset-x-2 bottom-0 h-0.5 bg-green-400" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />}
+              <Store size={14} className="inline mr-2" />
+              <span className="hidden md:inline">Shop</span>
+            </button>
+
           </div>
         </div>
 
@@ -2087,7 +2168,7 @@ function App() {
 
       </nav>
 
-      <main id="main-content" className={`flex-1 overflow-y-auto ${screen === 'terminal' ? 'terminal-screen bg-[#050807]' : 'app-atmosphere pb-20 font-sans sm:pb-0'}`}>
+      <main id="main-content" className={`min-h-0 flex-1 ${screen === 'terminal' ? 'terminal-screen overflow-y-auto bg-[#050807] xl:overflow-hidden' : 'overflow-y-auto app-atmosphere pb-20 font-sans sm:pb-0'}`}>
 
         {screen ===
           'dashboard' && (
@@ -2106,7 +2187,15 @@ function App() {
             }
             resumeActivityLabel={activeSession?.kind === 'test' && activeSession.status === 'in_progress'
               ? `Resume ${activeSession.testType === 'post' ? 'post-test' : 'pre-test'}${clockNowMs > 0 && activeSession.startedAt && typeof (activeSession.startedAt as { toMillis?: () => number }).toMillis === 'function' ? ` · ${Math.max(0, Math.ceil(ASSESSMENT_TIME_LIMIT_SECONDS - (clockNowMs + Number(activeSession.clockOffsetMs ?? 0) - (activeSession.startedAt as { toMillis: () => number }).toMillis()) / 1000))} sec left` : ''}`
-              : activeMission ? 'Resume mission' : undefined}
+              : activeMission ? completedMissions.includes(activeMission.id) ? 'Resume replay' : 'Resume mission' : undefined}
+            onContinueNextMission={activeMission && completedMissions.includes(activeMission.id) ? () => {
+              const tierMissions = [...BRIDGE_MISSIONS.filter(mission => mission.tier === activeMission.tier), ...MISSIONS.filter(mission => mission.tier === activeMission.tier)];
+              const nextMission = tierMissions.find(mission => !completedMissions.includes(mission.id));
+              if (!nextMission) return;
+              setNextMissionAfterAbandonId(nextMission.id);
+              setAbandonMissionError('');
+              setShowAbandonConfirmation(true);
+            } : undefined}
             onContinue={() => {
               if (activeMission) {
                 setScreen('terminal');
@@ -2162,6 +2251,7 @@ function App() {
             completedMissions={
               completedMissions
             }
+            progression={playerProgression}
           />
           </div>
         )}
@@ -2232,6 +2322,7 @@ function App() {
                 if (signal === 'calibrated-report') calibratedReportRef.current = true;
               }}
               onShowMissionGuide={() => setShowMissionToolGuide(true)}
+              terminalPaletteId={cosmetics.equippedPaletteId}
               playSound={
                 playSound
               }
@@ -2239,9 +2330,9 @@ function App() {
           </div>
         )}
 
-        {screen ===
-          'profile' && (
+        {(screen === 'profile' || screen === 'shop') && (
           <ProfileScreen
+            view={screen === 'shop' ? 'shop' : 'profile'}
             user={user}
             userScores={
               userScores
@@ -2250,6 +2341,17 @@ function App() {
             completedMissions={completedMissions}
             onProgressionChange={syncProgression}
             avatarId={avatarId}
+            cosmetics={cosmetics}
+            onPurchaseCosmetic={async (kind, itemId) => {
+              if (!user || progressLoadFailedRef.current) throw new Error('Saved profile is unavailable.');
+              const next = await purchaseCosmetic(user.uid, kind, itemId);
+              setCosmetics(next);
+            }}
+            onEquipCosmetic={async (kind, itemId) => {
+              if (!user || progressLoadFailedRef.current) throw new Error('Saved profile is unavailable.');
+              const next = await equipCosmetic(user.uid, kind, itemId);
+              setCosmetics(next);
+            }}
             leaderboardOptIn={leaderboardOptIn}
             leaderboardAlias={leaderboardAlias}
             progressLoadFailed={progressLoadFailed}
@@ -2286,10 +2388,10 @@ function App() {
         <section role="alertdialog" aria-modal="true" aria-labelledby="abandon-mission-title" aria-describedby="abandon-mission-description" className="w-full max-w-lg rounded-lg border border-red-700 bg-[var(--game-surface)] p-6 text-[var(--game-text)] shadow-2xl" onClick={event => event.stopPropagation()}>
           <p className="text-xs font-bold uppercase tracking-widest text-red-300">End mission run</p>
           <h2 id="abandon-mission-title" className="mt-2 text-xl font-black">Abandon {activeMission.title}?</h2>
-          <p id="abandon-mission-description" className="mt-3 text-sm leading-6 text-[var(--game-muted)]">This ends the mission and discards its saved in-progress state. It will not count as completed and will not award XP. You can start it again later.{activeMission.id.startsWith('daily-') ? ' Today’s daily challenge attempt will remain used, and no leaderboard result will be submitted.' : ''}</p>
+          <p id="abandon-mission-description" className="mt-3 text-sm leading-6 text-[var(--game-muted)]">This ends the mission and discards its saved in-progress state. It will not count as completed and will not award XP. {nextMissionAfterAbandonId ? 'The next unlocked mission briefing will open after you confirm.' : 'You can start it again later.'}{activeMission.id.startsWith('daily-') ? ' Today’s daily challenge attempt will remain used, and no leaderboard result will be submitted.' : ''}</p>
           {abandonMissionError && <p role="alert" className="mt-3 rounded border border-red-600 bg-red-950/30 p-3 text-sm text-red-200">{abandonMissionError}</p>}
           <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button type="button" disabled={abandoningMission} onClick={() => setShowAbandonConfirmation(false)} className="min-h-11 rounded-md border border-[var(--game-border)] px-4 py-2 font-semibold disabled:opacity-60">Keep mission</button>
+            <button type="button" disabled={abandoningMission} onClick={() => { setShowAbandonConfirmation(false); setNextMissionAfterAbandonId(null); }} className="min-h-11 rounded-md border border-[var(--game-border)] px-4 py-2 font-semibold disabled:opacity-60">Keep mission</button>
             <button type="button" disabled={abandoningMission} onClick={() => void confirmAbandonMission()} className="min-h-11 rounded-md bg-red-700 px-4 py-2 font-bold text-white hover:bg-red-600 disabled:cursor-wait disabled:opacity-60">{abandoningMission ? 'Abandoning…' : 'Abandon mission'}</button>
           </div>
         </section>
@@ -2302,8 +2404,7 @@ function App() {
         mission={
           pendingMission
         }
-        onStart={() => confirmStartMission(false)}
-        onStartUntimed={() => confirmStartMission(true)}
+        onStart={() => confirmStartMission()}
         isStarting={startingMission}
         error={missionStartError}
         onAbort={() =>
@@ -2378,6 +2479,7 @@ function App() {
           );
         }}
         mission={activeMission}
+        isReplay={Boolean(activeMission && completedMissions.includes(activeMission.id))}
         caseNotes={caseNotes}
         confidence={caseConfidence}
         report={missionReport}
@@ -2387,15 +2489,7 @@ function App() {
         show={
           showMissionFailed
         }
-        onClose={() => {
-          setShowMissionFailed(
-            false
-          );
-
-          setScreen(
-            missionOrigin
-          );
-        }}
+        onClose={() => void returnToBaseAfterMissionFailure()}
         missionTitle={
           activeMission?.title ||
           'Unknown'
@@ -2404,7 +2498,6 @@ function App() {
         totalSteps={activeMission?.steps.length ?? 0}
         stepDescription={activeMission?.steps[failedAtStep]?.desc ?? 'Review the mission objective.'}
         concept={activeMission?.briefing.concept ?? 'Mission investigation'}
-        onRetryUntimed={retryMissionUntimed}
       />
 
       <RewardDialog item={rewardsReady ? rewardQueue[0] ?? null : null} onContinue={() => {
@@ -2445,7 +2538,7 @@ function App() {
           <h2 id="session-conflict-title" className="text-xl font-bold">Progress is active elsewhere</h2>
           <p className="mt-3 text-sm leading-6 text-slate-300">This {sessionConflict.kind === 'test' ? `${sessionConflict.tier} ${sessionConflict.testType === 'post' ? 'post-test' : 'pre-test'}` : 'mission'} has another active tab or device. Choose where you want to continue. The other session will stop saving if you continue here.</p>
           <div className="mt-5 flex flex-wrap justify-end gap-3">
-            <button type="button" onClick={() => setSessionConflict(null)} className="rounded border border-slate-500 px-4 py-2 text-sm font-semibold hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Leave it there</button>
+            <button type="button" onClick={() => { setActiveTier(String(sessionConflict.tier ?? activeTier) as Tier); setSessionConflict(null); setScreen('academy'); }} className="rounded border border-slate-500 px-4 py-2 text-sm font-semibold hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Back to Academy</button>
             <button type="button" onClick={async () => {
               try {
                 await takeOverActiveSession(user.uid, String(sessionConflict.sessionId), tabSessionId);

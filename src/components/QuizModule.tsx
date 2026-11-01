@@ -627,24 +627,24 @@ export const QuizModule = ({
     100;
 
   return (
-    <div className="assessment-quiz min-h-full bg-black text-green-500 p-8">
+    <div className="assessment-quiz min-h-full bg-black text-green-500 p-3 sm:p-8">
 
       <div className="max-w-4xl mx-auto">
 
-        <div className="flex items-center justify-between mb-6 gap-4">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
 
           <div>
             <p className="text-green-900 text-xs uppercase">
               Assessment
             </p>
 
-            <h1 className="text-2xl font-black text-white">
+            <h1 className="break-words text-xl font-black text-white sm:text-2xl">
               {title}
             </h1>
           </div>
 
-          <div className="text-right">
-            <p className="font-mono text-lg font-bold text-amber-200" aria-label={`Time remaining: ${Math.floor(remainingSeconds / 60)} minutes ${remainingSeconds % 60} seconds`}>
+          <div className="text-left sm:text-right">
+            <p className="font-mono text-base font-bold text-amber-200 sm:text-lg" aria-label={`Time remaining: ${Math.floor(remainingSeconds / 60)} minutes ${remainingSeconds % 60} seconds`}>
               {Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, '0')} remaining
             </p>
             <p className="text-slate-300 text-sm">Question {currentIndex + 1}/{activeQuestions.length}</p>
@@ -666,14 +666,14 @@ export const QuizModule = ({
 
         </div>
 
-        <motion.div key={String(currentQuestion.id)} initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.2 }} className="assessment-quiz-card border border-green-900 p-8 bg-black">
+        <motion.div key={String(currentQuestion.id)} initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.2 }} className="assessment-quiz-card min-w-0 border border-green-900 bg-black p-4 sm:p-8">
 
           <p className="text-green-900 text-xs uppercase mb-3">
             Question{' '}
             {currentIndex + 1}
           </p>
 
-          <h2 className="text-xl font-bold text-white mb-8">
+          <h2 className="mb-6 break-words text-lg font-bold text-white sm:mb-8 sm:text-xl">
             {
               currentQuestion.question
             }
@@ -701,7 +701,13 @@ export const QuizModule = ({
                         index
                       )
                     }
-                    className={`w-full text-left border p-4 transition ${
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' && selectedOption !== null) {
+                        event.preventDefault();
+                        handleNext();
+                      }
+                    }}
+                    className={`w-full min-w-0 break-words text-left border p-3 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 sm:p-4 ${
                       isSelected
                         ? 'border-green-500 bg-green-500/10 text-green-400'
                         : 'border-green-950 text-green-700 hover:border-green-700 hover:text-green-400'
@@ -753,7 +759,7 @@ export const QuizModule = ({
                 null
                   ? 'bg-green-950 text-green-900 cursor-not-allowed'
                   : 'bg-green-500 text-black hover:bg-green-400'
-              }`}
+              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400`}
             >
               {currentIndex ===
               activeQuestions.length - 1

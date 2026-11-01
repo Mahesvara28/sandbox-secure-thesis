@@ -45,6 +45,58 @@ body[data-theme='light'] {
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
+.daily-challenge-card::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(100deg,
+    color-mix(in srgb, var(--game-surface) 99%, transparent) 0%,
+    color-mix(in srgb, var(--game-surface) 95%, transparent) 42%,
+    color-mix(in srgb, var(--game-surface) 72%, transparent) 69%,
+    color-mix(in srgb, var(--game-surface) 28%, transparent) 100%);
+}
+
+.academy-tier-card::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    rgb(0 0 0 / 96%) 0%,
+    rgb(0 0 0 / 93%) 38%,
+    rgb(0 0 0 / 68%) 55%,
+    rgb(0 0 0 / 28%) 70%,
+    rgb(0 0 0 / 4%) 100%);
+}
+
+body[data-theme='light'] .academy-tier-card::after {
+  background: linear-gradient(90deg,
+    rgb(10 19 24 / 96%) 0%,
+    rgb(10 19 24 / 93%) 38%,
+    rgb(10 19 24 / 68%) 55%,
+    rgb(10 19 24 / 32%) 70%,
+    rgb(10 19 24 / 10%) 100%);
+}
+
+.academy-tier-card > img {
+  filter: brightness(1.28) saturate(1.12);
+}
+
+.academy-tier-card > img.grayscale {
+  filter: grayscale(1) brightness(0.92);
+}
+
+body[data-theme='light'] .daily-challenge-card::after {
+  background: linear-gradient(100deg,
+    color-mix(in srgb, var(--game-surface) 99%, transparent) 0%,
+    color-mix(in srgb, var(--game-surface) 96%, transparent) 42%,
+    color-mix(in srgb, var(--game-surface) 80%, transparent) 69%,
+    color-mix(in srgb, var(--game-surface) 42%, transparent) 100%);
+}
+
 /* Keep the page background unchanged and give tests a calm, readable palette. */
 body[data-theme] .assessment-quiz {
   color: var(--game-text);
@@ -117,7 +169,30 @@ body[data-theme] .assessment-quiz [class~="text-white"] {
 }
 
 .continue-hero {
-  background: linear-gradient(135deg, var(--game-surface-raised), var(--game-surface));
+  background-color: var(--game-surface-raised);
+}
+
+.continue-hero::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--game-surface-raised) 98%, transparent) 0%,
+    color-mix(in srgb, var(--game-surface-raised) 95%, transparent) 40%,
+    color-mix(in srgb, var(--game-surface-raised) 82%, transparent) 58%,
+    color-mix(in srgb, var(--game-surface-raised) 38%, transparent) 78%,
+    color-mix(in srgb, var(--game-surface-raised) 14%, transparent) 100%);
+}
+
+@media (max-width: 639px) {
+  .continue-hero::after {
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--game-surface-raised) 98%, transparent) 0%,
+      color-mix(in srgb, var(--game-surface-raised) 94%, transparent) 70%,
+      color-mix(in srgb, var(--game-surface-raised) 75%, transparent) 100%);
+  }
 }
 
 .stat-tile {
@@ -132,6 +207,24 @@ body[data-theme] .assessment-quiz [class~="text-white"] {
 .stat-tile-cyan { border-top: 1px solid var(--game-cyan); }
 .stat-tile-amber { border-top: 1px solid var(--game-amber); }
 .game-eyebrow { color: var(--game-muted); font: 600 0.75rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
+
+/* Keep login form helper text and the primary action readable in light mode. */
+body[data-theme='light'] .auth-screen {
+  --game-muted: #334b58;
+  --game-border: #657985;
+  --game-cyan: #075f70;
+}
+
+body[data-theme='light'] .auth-screen input::placeholder {
+  color: #536775 !important;
+  opacity: 1;
+}
+
+body[data-theme='light'] .auth-screen .auth-primary-button {
+  border-color: #176451;
+  background-color: #65d69a !important;
+  color: #10241b !important;
+}
 
 .badge-card {
   display: flex;
@@ -203,6 +296,13 @@ body[data-theme='dark'] [class*="text-green-500"],
 body[data-theme='dark'] [class*="text-[#4ade80]"] { color: var(--game-green); }
 body[data-theme='dark'] [class*="text-cyan-"] { color: var(--game-cyan); }
 body[data-theme='dark'] [class*="text-yellow-"] { color: var(--game-amber); }
+/* Theme text utilities should not override the foreground chosen for a filled hover state. */
+body[data-theme='dark'] [class*="hover:bg-green-"][class*="hover:text-black"]:hover,
+body[data-theme='dark'] [class*="hover:bg-cyan-"][class*="hover:text-black"]:hover,
+body[data-theme='dark'] [class*="hover:bg-red-"][class*="hover:text-black"]:hover {
+  color: #07110b !important;
+}
+body[data-theme='dark'] [class*="hover:bg-[var(--game-cyan)]"][class*="hover:text-black"]:hover { background-color: #08677a !important; color: #ffffff !important; }
 body[data-theme='light'] [class*="text-green-600"],
 body[data-theme='light'] [class*="text-green-700"] { color: var(--game-muted) !important; }
 body[data-theme='light'] [class*="bg-black"] { background-color: var(--game-surface) !important; }
@@ -261,7 +361,8 @@ body[data-theme='light'] [class*="bg-black"] {
 }
 
 body[data-theme='light'] [class*="bg-[#08100c]"],
-body[data-theme='light'] [class*="bg-[#06100d]"] { background-color: #ffffff !important; }
+body[data-theme='light'] [class*="bg-[#06100d]"],
+body[data-theme='light'] [class*="bg-[#06100b]"] { background-color: #ffffff !important; }
 body[data-theme='light'] [class*="bg-[#071014]"] { background-color: #edf5f6 !important; }
 body[data-theme='light'] [class*="bg-[#050a08]"] { background-color: #ffffff !important; }
 body[data-theme='light'] [class*="bg-green-500/"] { background-color: #e4f1e7 !important; }
@@ -296,6 +397,10 @@ body[data-theme='light'] [class*="hover:bg-green-"][class*="hover:text-black"]:h
   background-color: #166534 !important;
   color: #ffffff !important;
 }
+body[data-theme='light'] [class*="hover:bg-cyan-"][class*="hover:text-black"]:hover { background-color: #155e75 !important; color: #ffffff !important; }
+body[data-theme='light'] [class*="hover:bg-red-"][class*="hover:text-black"]:hover { background-color: #991b1b !important; color: #ffffff !important; }
+body[data-theme='light'] [class*="hover:bg-[var(--game-cyan)]"][class*="hover:text-black"]:hover { background-color: #08677a !important; color: #ffffff !important; }
+body[data-theme='light'] [class*="hover:bg-[var(--game-green)]"][class*="hover:text-black"]:hover { background-color: #176451 !important; color: #ffffff !important; }
 
 body[data-theme='light'] [class*="border-green-"] { border-color: #9bb2a0 !important; }
 body[data-theme='light'] [class*="border-cyan-"] { border-color: #8bbbc1 !important; }
@@ -389,4 +494,96 @@ body[data-theme='light'] .fixed.inset-0[class*="bg-black"] {
   article {
     break-inside: avoid;
   }
+}
+
+/* Player-specific cosmetic previews and terminal palette overrides. */
+@media screen {
+.mission-art-card::after,
+.shop-art-banner::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+}
+.mission-art-card::after {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--game-surface) 98%, transparent) 0%,
+    color-mix(in srgb, var(--game-surface) 94%, transparent) 40%,
+    color-mix(in srgb, var(--game-surface) 75%, transparent) 65%,
+    color-mix(in srgb, var(--game-surface) 25%, transparent) 100%);
+}
+.shop-art-banner::after {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--game-surface) 98%, transparent) 0%,
+    color-mix(in srgb, var(--game-surface) 93%, transparent) 42%,
+    color-mix(in srgb, var(--game-surface) 58%, transparent) 68%,
+    color-mix(in srgb, var(--game-surface) 12%, transparent) 100%);
+}
+.avatar-cosmetic-frame[data-avatar-frame='frame-standard'] {
+  border-color: var(--game-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--game-surface) 88%, transparent);
+}
+.avatar-cosmetic-frame[data-avatar-frame='frame-circuit'] {
+  border: 3px double #67e8f9;
+  box-shadow: 0 0 0 2px var(--game-surface), 0 0 0 4px #0e7490, inset 0 0 0 2px rgb(6 182 212 / 24%), 0 0 15px rgb(6 182 212 / 56%);
+}
+.avatar-cosmetic-frame[data-avatar-frame='frame-aurora'] {
+  border-color: #c4b5fd;
+  box-shadow: 0 0 0 2px var(--game-surface), 0 0 0 4px #22d3ee, 0 0 0 6px #8b5cf6, 0 0 18px rgb(139 92 246 / 55%);
+}
+.avatar-cosmetic-frame[data-avatar-frame='frame-guardian'] {
+  border-color: #86efac;
+  box-shadow: 0 0 0 2px var(--game-surface), 0 0 0 4px #16a34a, inset 0 0 0 2px rgb(34 197 94 / 38%), 0 0 16px rgb(34 197 94 / 45%);
+}
+
+[data-palette-preview='palette-classic'] { color: #4ade80; background: linear-gradient(145deg,#07110b,#163322); box-shadow: inset 0 0 0 1px rgb(74 222 128 / 38%); }
+[data-palette-preview='palette-ice'] { color: #67e8f9; background: linear-gradient(145deg,#071018,#103c4a); box-shadow: inset 0 0 0 1px rgb(103 232 249 / 42%); }
+[data-palette-preview='palette-amber'] { color: #fbbf24; background: linear-gradient(145deg,#171006,#4a3008); box-shadow: inset 0 0 0 1px rgb(251 191 36 / 42%); }
+[data-palette-preview='palette-violet'] { color: #c4b5fd; background: linear-gradient(145deg,#110b1a,#3c2863); box-shadow: inset 0 0 0 1px rgb(196 181 253 / 42%); }
+
+.terminal-palette[data-terminal-palette='palette-ice'] { --terminal-ink: #67e8f9; --terminal-ink-soft: #a5f3fc; --terminal-line: #0e7490; --terminal-panel: #061018; --terminal-glow: rgb(6 182 212 / 18%); }
+.terminal-palette[data-terminal-palette='palette-amber'] { --terminal-ink: #fbbf24; --terminal-ink-soft: #fde68a; --terminal-line: #a16207; --terminal-panel: #171006; --terminal-glow: rgb(245 158 11 / 15%); }
+.terminal-palette[data-terminal-palette='palette-violet'] { --terminal-ink: #c4b5fd; --terminal-ink-soft: #ddd6fe; --terminal-line: #7c3aed; --terminal-panel: #110b1a; --terminal-glow: rgb(139 92 246 / 17%); }
+.terminal-palette[data-terminal-palette='palette-classic'], .terminal-palette:not([data-terminal-palette]) { --terminal-ink: #4ade80; --terminal-ink-soft: #bbf7d0; --terminal-line: #15803d; --terminal-panel: #07110b; --terminal-glow: rgb(34 197 94 / 15%); }
+.terminal-palette .terminal-window { border-color: var(--terminal-line) !important; box-shadow: 0 0 24px var(--terminal-glow); }
+.terminal-palette .terminal-input-dock { border-color: var(--terminal-line) !important; background: color-mix(in srgb, var(--terminal-panel) 88%, var(--terminal-line)) !important; }
+.terminal-palette .terminal-input-dock input { caret-color: var(--terminal-ink); }
+.terminal-palette .terminal-input-dock input::selection { background: color-mix(in srgb, var(--terminal-line) 60%, transparent); color: white; }
+.terminal-palette .terminal-input-dock button { border-color: var(--terminal-line) !important; color: var(--terminal-ink) !important; }
+.terminal-palette .terminal-output { scrollbar-color: var(--terminal-line) var(--terminal-panel); }
+.terminal-palette[data-terminal-palette] [class*='text-green-'] { color: var(--terminal-ink) !important; }
+.terminal-palette[data-terminal-palette] [class*='border-green-'] { border-color: color-mix(in srgb, var(--terminal-line) 65%, transparent) !important; }
+.terminal-palette[data-terminal-palette] [class*='bg-black'] { background-color: var(--terminal-panel) !important; }
+.terminal-palette[data-terminal-palette='palette-ice'] [class*='text-cyan-'] { color: var(--terminal-ink-soft) !important; }
+.terminal-palette[data-terminal-palette='palette-amber'] [class*='text-yellow-'] { color: var(--terminal-ink-soft) !important; }
+.terminal-palette[data-terminal-palette='palette-violet'] [class*='text-purple-'] { color: var(--terminal-ink-soft) !important; }
+
+/* In light mode, use a calm tinted terminal surface with ink colors that keep
+   the selected cosmetic hue while remaining readable against the background. */
+body[data-theme='light'] .terminal-palette[data-terminal-palette],
+body[data-theme='light'] .terminal-palette:not([data-terminal-palette]) {
+  --terminal-line: #8ba397;
+  --terminal-panel: #edf4ef;
+}
+body[data-theme='light'] .terminal-palette[data-terminal-palette='palette-classic'],
+body[data-theme='light'] .terminal-palette:not([data-terminal-palette]) { --terminal-ink: #14532d; --terminal-ink-soft: #166534; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette='palette-ice'] { --terminal-ink: #155e75; --terminal-ink-soft: #0e7490; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette='palette-amber'] { --terminal-ink: #713f12; --terminal-ink-soft: #854d0e; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette='palette-violet'] { --terminal-ink: #5b21b6; --terminal-ink-soft: #6b21a8; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette] [class*='text-green-'] { color: var(--terminal-ink) !important; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette] [class*='text-cyan-'] { color: #155e75 !important; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette] [class*='text-blue-'] { color: #1e40af !important; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette] [class*='text-yellow-'] { color: #713f12 !important; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette] [class*='text-purple-'] { color: #5b21b6 !important; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette] [class*='border-green-'] { border-color: var(--terminal-line) !important; }
+body[data-theme='light'] .terminal-palette[data-terminal-palette] [class*='bg-black'] { background-color: var(--terminal-panel) !important; }
+body[data-theme='light'] .terminal-palette .terminal-output,
+body[data-theme='light'] .terminal-palette .terminal-input-dock { background-color: #edf4ef; color: var(--terminal-ink); }
+body[data-theme='light'] .terminal-palette .terminal-output [class*='text-green-900'] { color: #52675a !important; }
+body[data-theme='light'] .terminal-palette input::placeholder { color: #52675a !important; opacity: 1; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .avatar-cosmetic-frame:not([data-avatar-frame='frame-standard']) { transition: box-shadow 180ms ease, border-color 180ms ease; }
+}
 }

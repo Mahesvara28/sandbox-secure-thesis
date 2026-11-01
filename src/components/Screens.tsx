@@ -2,12 +2,26 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { UserCertificate } from '../Firebase';
-import logoImage from '../assets/logo.jpg';
-import recruitRankBadge from '../assets/Recruit.jpg';
-import analystRankBadge from '../assets/Analyst.jpg';
-import responderRankBadge from '../assets/Responder.jpg';
-import hunterRankBadge from '../assets/Hunter.jpg';
-import leadRankBadge from '../assets/Lead.jpg';
+import logoImage from '../assets/logo.webp';
+import recruitRankBadge from '../assets/Recruit.webp';
+import analystRankBadge from '../assets/Analyst.webp';
+import responderRankBadge from '../assets/Responder.webp';
+import hunterRankBadge from '../assets/Hunter.webp';
+import leadRankBadge from '../assets/Lead.webp';
+import dailyAccuracyImage from '../assets/accuracy.webp';
+import dailyTimeAttackImage from '../assets/time.webp';
+import beginnerTierImage from '../assets/beginner.webp';
+import intermediateTierImage from '../assets/intermediate.webp';
+import expertTierImage from '../assets/expert.webp';
+import tutorialMissionImage from '../assets/tutorial.webp';
+import mission2Image from '../assets/mission2.webp';
+import mission3Image from '../assets/mission3.webp';
+import mission4Image from '../assets/mission4.webp';
+import mission5Image from '../assets/mission5.webp';
+import mission6Image from '../assets/mission6.webp';
+import mission7Image from '../assets/mission7.webp';
+import cosmeticShopImage from '../assets/shop.webp';
+import dashboardHeroImage from '../assets/bg2.webp';
 import { getMissionAttempts, getAssessmentAttempts, getDailyTimeAttackEntries, getDailyAccuracyEntries, retryDailyLeaderboardEntry, saveProgression } from '../Firebase';
 import type { LeaderboardEntry, AccuracyLeaderboardEntry, MissionAttemptRecord } from '../Firebase';
 import { AVATARS, getAvatarById, type AvatarId } from '../data/avatars';
@@ -15,6 +29,7 @@ import { Avatar } from './Avatar';
 import { ACHIEVEMENTS } from '../data/achievements';
 import { applyCertificationRewards, rankProgress, type PlayerProgression, getTierLearningGain } from '../data/progression';
 import { AchievementBadge, GameCard, ProgressBar, SectionHeader } from './GameUI';
+import { COSMETIC_CATALOG, type CosmeticKind, type PlayerCosmetics } from '../data/cosmetics';
 
 import {
   Terminal,
@@ -65,6 +80,22 @@ const RANK_BADGES: Record<string, string> = {
   Lead: leadRankBadge
 };
 
+const TIER_CARD_IMAGES: Record<string, string> = {
+  BEGINNER: beginnerTierImage,
+  INTERMEDIATE: intermediateTierImage,
+  EXPERT: expertTierImage
+};
+
+const PRACTICE_MISSION_IMAGES: Record<string, string> = {
+  t1: tutorialMissionImage,
+  t2: mission2Image,
+  t3: mission3Image,
+  t4: mission4Image,
+  t5: mission5Image,
+  t6: mission6Image,
+  t7: mission7Image
+};
+
 const ArtworkPreviewDialog = ({ artwork, onClose }: { artwork: { title: string; src: string; alt: string } | null; onClose: () => void }) => {
   useEffect(() => {
     if (!artwork) return;
@@ -73,11 +104,11 @@ const ArtworkPreviewDialog = ({ artwork, onClose }: { artwork: { title: string; 
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [artwork, onClose]);
   if (!artwork) return null;
-  return <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/85 p-4" role="presentation" onClick={onClose}>
-    <section role="dialog" aria-modal="true" aria-label={artwork.title} className="relative flex max-h-[92vh] w-full max-w-3xl flex-col items-center gap-4 rounded-lg border border-[var(--game-border)] bg-[var(--game-surface)] p-5 shadow-2xl" onClick={event => event.stopPropagation()}>
-      <h2 className="pr-12 text-center text-lg font-bold text-[var(--game-text)]">{artwork.title}</h2>
-      <img src={artwork.src} alt={artwork.alt} className="max-h-[75vh] max-w-full rounded-md object-contain" />
-      <button type="button" autoFocus onClick={onClose} className="min-h-11 rounded-md border border-[var(--game-border)] px-5 py-2 font-semibold text-[var(--game-text)] hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Close</button>
+  return <div className="fixed inset-0 z-[170] flex items-center justify-center overflow-y-auto bg-black/85 p-3 sm:p-5" role="presentation" onClick={onClose}>
+    <section role="dialog" aria-modal="true" aria-label={artwork.title} className="flex h-[calc(100dvh-1.5rem)] max-h-[900px] w-full max-w-4xl flex-col items-center gap-3 overflow-hidden rounded-lg border border-[var(--game-border)] bg-[var(--game-surface)] p-3 shadow-2xl sm:h-[calc(100dvh-2.5rem)] sm:gap-4 sm:p-5" onClick={event => event.stopPropagation()}>
+      <h2 className="w-full shrink-0 text-center text-lg font-bold text-[var(--game-text)]">{artwork.title}</h2>
+      <img src={artwork.src} alt={artwork.alt} className="min-h-0 min-w-0 w-full flex-1 rounded-md object-contain" />
+      <button type="button" autoFocus onClick={onClose} className="min-h-11 shrink-0 rounded-md border border-[var(--game-border)] px-5 py-2 font-semibold text-[var(--game-text)] hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Close</button>
     </section>
   </div>;
 };
@@ -198,6 +229,7 @@ interface AuthScreenProps {
 
   authError: string;
   authSuccess: boolean;
+  authSuccessMessage: string;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
 
@@ -222,6 +254,7 @@ interface AuthScreenProps {
   handleLogin: () => Promise<void>;
   handleRegister: () => Promise<void>;
   handleGoogleLogin: () => Promise<void>;
+  handlePasswordReset: () => Promise<void>;
 }
 
 export const AuthScreen = ({
@@ -229,6 +262,7 @@ export const AuthScreen = ({
   setAuthMode,
   authError,
   authSuccess,
+  authSuccessMessage,
   theme,
   onToggleTheme,
   regUsername,
@@ -239,7 +273,8 @@ export const AuthScreen = ({
   setRegPassword,
   handleLogin,
   handleRegister,
-  handleGoogleLogin
+  handleGoogleLogin,
+  handlePasswordReset
 }: AuthScreenProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const [logoLoaded, setLogoLoaded] = useState(true);
@@ -248,7 +283,7 @@ export const AuthScreen = ({
   const inactiveTabClass = 'min-h-11 flex-1 rounded-md px-3 text-sm font-medium text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]';
 
   return (
-    <div className="app-atmosphere flex min-h-screen items-center justify-center bg-[var(--game-page)] p-3 text-[var(--game-text)] sm:p-6">
+    <div className="auth-screen app-atmosphere flex min-h-screen items-center justify-center bg-[var(--game-page)] p-3 font-sans text-[var(--game-text)] sm:p-6">
       <main className="game-card grid w-full max-w-5xl overflow-hidden rounded-2xl shadow-[var(--game-shadow)] md:min-h-[620px] md:grid-cols-[1.05fr_0.95fr]">
         <section className="flex flex-col justify-center border-b border-[var(--game-border)] bg-[var(--game-surface-raised)] p-5 sm:p-8 md:border-b-0 md:border-r md:p-10" aria-labelledby="auth-brand-title">
           <div className="mx-auto w-full max-w-xl">
@@ -291,19 +326,20 @@ export const AuthScreen = ({
             {authMode === 'login' ? <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
               <div><label htmlFor="login-email" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Email address</label><input id="login-email" name="email" autoComplete="email" required type="email" value={regEmail} onChange={event => setRegEmail(event.target.value)} className={fieldClass} placeholder="operator@example.com" /></div>
               <div><label htmlFor="login-password" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Password</label><div className="relative"><input id="login-password" name="password" autoComplete="current-password" required value={regPassword} onChange={event => setRegPassword(event.target.value)} type={showPassword ? 'text' : 'password'} className={`${fieldClass} pr-12`} placeholder="Enter your password" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-1 right-1 inline-flex w-10 items-center justify-center rounded-md text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
-              <button type="submit" className="min-h-12 w-full rounded-lg bg-[var(--game-green)] px-4 py-3 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Sign in</button>
+              <button type="submit" className="auth-primary-button min-h-12 w-full rounded-lg bg-[var(--game-green)] px-4 py-3 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Sign in</button>
+              <button type="button" onClick={() => void handlePasswordReset()} className="min-h-10 text-left text-sm font-semibold text-[var(--game-cyan)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Forgot password?</button>
               <div className="flex items-center gap-3 py-1" aria-hidden="true"><span className="h-px flex-1 bg-[var(--game-border)]" /><span className="text-xs text-[var(--game-muted)]">or</span><span className="h-px flex-1 bg-[var(--game-border)]" /></div>
               <button type="button" onClick={() => void handleGoogleLogin()} className="min-h-12 w-full rounded-lg border border-[var(--game-border)] px-4 py-3 text-sm font-semibold text-[var(--game-text)] transition hover:border-[var(--game-cyan)] hover:bg-[var(--game-track)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Continue with Google</button>
             </form> : <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleRegister(); }}>
               <div><label htmlFor="register-name" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Operator name</label><input id="register-name" name="name" autoComplete="nickname" required value={regUsername} onChange={event => setRegUsername(event.target.value)} className={fieldClass} placeholder="Choose a display name" /></div>
               <div><label htmlFor="register-email" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Email address</label><input id="register-email" name="email" autoComplete="email" required type="email" value={regEmail} onChange={event => setRegEmail(event.target.value)} className={fieldClass} placeholder="operator@example.com" /></div>
               <div><label htmlFor="register-password" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Password</label><div className="relative"><input id="register-password" name="new-password" autoComplete="new-password" required minLength={6} value={regPassword} onChange={event => setRegPassword(event.target.value)} type={showPassword ? 'text' : 'password'} className={`${fieldClass} pr-12`} placeholder="At least 6 characters" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-1 right-1 inline-flex w-10 items-center justify-center rounded-md text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
-              <button type="submit" className="min-h-12 w-full rounded-lg bg-[var(--game-green)] px-4 py-3 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Create account</button>
+              <button type="submit" className="auth-primary-button min-h-12 w-full rounded-lg bg-[var(--game-green)] px-4 py-3 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Create account</button>
             </form>}
           </div>
 
           {authError && <div className="mt-5 rounded-lg border border-[var(--game-red)]/40 bg-[var(--game-red)]/10 p-3 text-sm text-[var(--game-red)]" role="alert">{authError}</div>}
-          {authSuccess && <div className="mt-5 rounded-lg border border-[var(--game-green)]/40 bg-[var(--game-green)]/10 p-3 text-sm text-[var(--game-text)]" role="status">Account created successfully.</div>}
+          {authSuccess && <div className="mt-5 rounded-lg border border-[var(--game-green)]/40 bg-[var(--game-green)]/10 p-3 text-sm text-[var(--game-text)]" role="status">{authSuccessMessage}</div>}
           <p className="mt-6 border-t border-[var(--game-border)] pt-4 text-center text-xs leading-5 text-[var(--game-muted)]">Authorized training environment · Commands are simulated for learning.</p>
         </section>
       </main>
@@ -331,6 +367,7 @@ interface DashboardScreenProps {
   onShowGuide: () => void;
   onContinue: () => void;
   resumeActivityLabel?: string;
+  onContinueNextMission?: () => void;
   onStartDailyTrial: (type: 'timeAttack' | 'accuracy') => void;
   dailyTimeAttackPlayed: boolean;
   dailyAccuracyPlayed: boolean;
@@ -352,6 +389,7 @@ export const DashboardScreen = ({
   onShowGuide,
   onContinue,
   resumeActivityLabel,
+  onContinueNextMission,
   onStartDailyTrial,
   dailyTimeAttackPlayed,
   dailyAccuracyPlayed,
@@ -516,15 +554,18 @@ export const DashboardScreen = ({
 
   return (
     <div className="game-screen mx-auto min-h-full w-full max-w-6xl space-y-7 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-      <GameCard className="continue-hero relative p-5 sm:p-8 lg:p-10">
-        {!isNewUser && SECURITY_BRIEF_ITEMS.length > 0 && <div className="absolute right-6 top-6 hidden w-72 xl:block"><SecurityBrief /></div>}
+      <GameCard className="continue-hero relative isolate overflow-hidden p-5 sm:p-8 lg:p-10">
+        <img src={dashboardHeroImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right opacity-100" />
+        {!isNewUser && SECURITY_BRIEF_ITEMS.length > 0 && <div className="absolute right-6 top-6 z-10 hidden w-72 xl:block"><SecurityBrief /></div>}
+        <div className="relative z-10">
         <p className="game-eyebrow">Next step · {currentTier}</p>
         <h1 className="mt-2 max-w-3xl text-3xl font-bold leading-tight text-[var(--game-text)] sm:text-4xl">{heroTitle}</h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--game-muted)]">{heroDescription}</p>
         {!isNewUser && <p className="mt-3 text-xs leading-5 text-[var(--game-muted)]">Learning study · all commands are simulated · progress and attempt data are saved.</p>}
         {!isNewUser && nextMission && <p className="mt-3 text-sm text-[var(--game-muted)]">{nextMission.difficulty} mission · about {Math.max(3, Math.ceil(nextMission.steps.length * 1.5))} min</p>}
         {!isNewUser && <ProgressBar value={tierProgressPercent} label={`${currentTier} mission progress`} className="mt-5 max-w-2xl" />}
-        <button type="button" onClick={onContinue} className="mt-6 min-h-12 rounded-md bg-[var(--game-green)] px-6 py-3 text-sm font-bold text-black shadow-md transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2">{resumeActivityLabel ?? (currentTierScore?.preTestScore === undefined ? 'Start pre-test' : 'Continue training')} <ChevronRight size={16} className="ml-1 inline" /></button>
+        <div className="mt-6 flex flex-wrap gap-3"><button type="button" onClick={onContinue} className="min-h-12 rounded-md bg-[var(--game-green)] px-6 py-3 text-sm font-bold text-black shadow-md transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2">{resumeActivityLabel ?? (currentTierScore?.preTestScore === undefined ? 'Start pre-test' : 'Continue training')} <ChevronRight size={16} className="ml-1 inline" /></button>{resumeActivityLabel === 'Resume replay' && onContinueNextMission && nextMission && <button type="button" onClick={onContinueNextMission} className="min-h-12 rounded-md border border-[var(--game-cyan)] px-5 py-3 text-sm font-bold text-[var(--game-cyan)] hover:bg-[var(--game-cyan)] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Continue to next mission</button>}</div>
+        </div>
       </GameCard>
 
       {!isNewUser && !isLoadingProgress && <div className="game-card grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-3 sm:gap-4 sm:p-4" aria-label="Training status">
@@ -535,11 +576,13 @@ export const DashboardScreen = ({
 
       {!isNewUser && <>
         {dailyChallengeAvailable && <section className="grid gap-4 lg:grid-cols-2" aria-label="Daily challenges">
-          <GameCard className="border-[var(--game-cyan)] p-4 sm:p-5" aria-label="Daily Time Attack">
-            <div className="flex h-full flex-col justify-between gap-4"><div><p className="game-eyebrow">Daily Time Attack · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyTimeAttackMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Clear today’s timed case for a place on the Time Attack leaderboard.</p></div><button type="button" disabled={dailyTimeAttackPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('timeAttack')} className="min-h-11 w-full rounded-md border border-[var(--game-cyan)] px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyTimeAttackPlayed ? 'Attempt used today' : 'Start Time Attack'}</button></div>
+          <GameCard className="daily-challenge-card relative isolate min-h-64 overflow-hidden border-[var(--game-cyan)] p-4 sm:p-5" aria-label="Daily Time Attack">
+            <img src={dailyTimeAttackImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-90" />
+            <div className="relative z-10 flex h-full min-h-56 flex-col justify-between gap-4"><div className="max-w-[78%]"><p className="game-eyebrow">Daily Time Attack · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyTimeAttackMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Clear today’s timed case for a place on the Time Attack leaderboard.</p></div><button type="button" disabled={dailyTimeAttackPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('timeAttack')} className="min-h-11 w-full border border-[var(--game-cyan)] bg-[var(--game-surface)]/90 px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyTimeAttackPlayed ? 'Attempt used today' : 'Start Time Attack'}</button></div>
           </GameCard>
-          <GameCard className="border-[var(--game-green)] p-4 sm:p-5" aria-label="Daily Accuracy Trial">
-            <div className="flex h-full flex-col justify-between gap-4"><div><p className="game-eyebrow">Daily Accuracy Trial · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyAccuracyMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Work carefully through today’s untimed case. Accuracy is tracked independently from your Time Attack.</p></div><button type="button" disabled={dailyAccuracyPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('accuracy')} className="min-h-11 w-full rounded-md border border-[var(--game-green)] px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-green)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyAccuracyPlayed ? 'Attempt used today' : 'Start Accuracy Trial'}</button></div>
+          <GameCard className="daily-challenge-card relative isolate min-h-64 overflow-hidden border-[var(--game-green)] p-4 sm:p-5" aria-label="Daily Accuracy Trial">
+            <img src={dailyAccuracyImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-90" />
+            <div className="relative z-10 flex h-full min-h-56 flex-col justify-between gap-4"><div className="max-w-[78%]"><p className="game-eyebrow">Daily Accuracy Trial · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyAccuracyMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Work carefully through today’s untimed case. Accuracy is tracked independently from your Time Attack.</p></div><button type="button" disabled={dailyAccuracyPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('accuracy')} className="min-h-11 w-full border border-[var(--game-green)] bg-[var(--game-surface)]/90 px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-green)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyAccuracyPlayed ? 'Attempt used today' : 'Start Accuracy Trial'}</button></div>
           </GameCard>
         </section>}
 
@@ -676,6 +719,7 @@ interface AcademyScreenProps {
   ) => void;
 
   completedMissions: string[];
+  progression: PlayerProgression;
   activeSession?: Record<string, unknown> | null;
 }
 
@@ -687,6 +731,7 @@ export const AcademyScreen = ({
   onSessionReady,
   onStartMission,
   completedMissions,
+  progression,
   activeSession
 }: AcademyScreenProps) => {
   if (
@@ -734,6 +779,7 @@ export const AcademyScreen = ({
 
     return (
       <TierDashboard
+        key={activeTier}
         tierName={
           activeTier
         }
@@ -769,6 +815,7 @@ export const AcademyScreen = ({
         completedMissions={
           completedMissions
         }
+        progression={progression}
         userScores={
           userScores
         }
@@ -887,12 +934,24 @@ export const AcademyScreen = ({
                 key={
                   tier.id
                 }
-                className={`border ${tier.border} bg-black/60 p-6`}
+                className={`academy-tier-card relative isolate min-h-44 overflow-hidden border ${tier.border} bg-black/60 p-6`}
               >
 
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                {TIER_CARD_IMAGES[tier.id] && (
+                  <img
+                    src={TIER_CARD_IMAGES[tier.id]}
+                    alt=""
+                    aria-hidden="true"
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
+                    className={`pointer-events-none absolute inset-0 h-full w-full object-cover object-right ${locked ? 'grayscale opacity-55' : 'opacity-100'}`}
+                  />
+                )}
 
-                  <div className="flex gap-4">
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+
+                  <div className="flex min-w-0 flex-1 gap-4">
 
                     <div
                       className={`w-14 h-14 border ${tier.border} flex items-center justify-center ${tier.color} font-black`}
@@ -902,7 +961,7 @@ export const AcademyScreen = ({
                       }
                     </div>
 
-                    <div>
+                    <div className="min-w-0 md:max-w-[72%]">
 
                       <h2
                         className={`text-2xl font-black ${tier.color}`}
@@ -994,7 +1053,7 @@ export const AcademyScreen = ({
                   </div>
 
                   {locked ? (
-                    <div className="border border-green-900 px-6 py-3 text-xs font-black uppercase text-green-300 whitespace-nowrap flex items-center gap-2 cursor-not-allowed">
+                    <div className="flex cursor-not-allowed items-center gap-2 whitespace-nowrap border border-green-900 bg-[var(--game-surface)]/95 px-6 py-3 text-xs font-black uppercase text-green-300">
                       <Lock
                         size={14}
                       />
@@ -1007,7 +1066,7 @@ export const AcademyScreen = ({
                           tier.id
                         )
                       }
-                      className={`border ${tier.border} px-6 py-3 text-xs font-black uppercase ${tier.color} hover:bg-white hover:text-black transition-colors whitespace-nowrap`}
+                      className={`border ${tier.border} bg-[var(--game-surface)]/95 px-6 py-3 text-xs font-black uppercase ${tier.color} hover:bg-white hover:text-black transition-colors whitespace-nowrap`}
                     >
                       {score
                         ? 'Continue Tier'
@@ -1113,12 +1172,26 @@ export const MissionsScreen = ({
                 key={
                   mission.id
                 }
-                className={`p-5 ${
+                className={`mission-art-card relative isolate overflow-hidden p-5 ${
                   completed
                     ? 'border-[var(--game-green)]'
                     : ''
                 }`}
               >
+
+                {PRACTICE_MISSION_IMAGES[mission.id] && (
+                  <img
+                    src={PRACTICE_MISSION_IMAGES[mission.id]}
+                    alt=""
+                    aria-hidden="true"
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right opacity-75"
+                  />
+                )}
+
+                <div className="relative z-10">
 
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
 
@@ -1175,7 +1248,7 @@ export const MissionsScreen = ({
                           />
 
                           {mission.timerLimit > 0
-                            ? `${Math.floor(mission.timerLimit / 60)} MIN CHALLENGE`
+                            ? `${Math.floor(mission.timerLimit / 60)} MIN TIME LIMIT`
                             : 'UNTIMED PRACTICE'}
                         </span>
 
@@ -1213,6 +1286,8 @@ export const MissionsScreen = ({
                       ? 'Replay'
                       : 'Deploy'}
                   </button>
+
+                </div>
 
                 </div>
 
@@ -1274,6 +1349,7 @@ interface TerminalScreenProps {
   onCaseConfidenceChange: (confidence: string) => void;
   onSkillSignal: (signal: 'evidence' | 'calibrated-report') => void;
   onShowMissionGuide: () => void;
+  terminalPaletteId: string;
 
   playSound: (
     type:
@@ -1307,6 +1383,7 @@ export const TerminalScreen = ({
   onCaseConfidenceChange,
   onSkillSignal,
   onShowMissionGuide,
+  terminalPaletteId,
   playSound
 }: TerminalScreenProps) => {
   const [command, setCommand] =
@@ -1318,6 +1395,22 @@ export const TerminalScreen = ({
       'Type commands to interact with the simulated environment.',
       ''
     ]);
+  const terminalViewportRef = useRef<HTMLDivElement>(null);
+  const shouldFollowTerminalRef = useRef(true);
+
+  useEffect(() => {
+    const viewport = terminalViewportRef.current;
+    if (!viewport) return;
+    const scrollToLatest = () => {
+      if (shouldFollowTerminalRef.current) viewport.scrollTop = viewport.scrollHeight;
+    };
+    scrollToLatest();
+    const observer = new ResizeObserver(scrollToLatest);
+    observer.observe(viewport);
+    const mutationObserver = new MutationObserver(scrollToLatest);
+    mutationObserver.observe(viewport, { childList: true, subtree: true, characterData: true });
+    return () => { observer.disconnect(); mutationObserver.disconnect(); };
+  }, [history, msg]);
 
   const [inspectedEvidence, setInspectedEvidence] = useState<string[]>([]);
   const [evidenceNotes, setEvidenceNotes] = useState<string[]>([]);
@@ -1327,6 +1420,10 @@ export const TerminalScreen = ({
 
   const currentStep = activeMission.steps[Math.min(questStep, activeMission.steps.length - 1)];
   const isCertificationMission = activeMission.id.startsWith('m') || activeMission.id.startsWith('bridge-');
+  const traceBackActive = activeMission.id.startsWith('daily-timeAttack-') && isThreatActive && activeMission.timerLimit > 0;
+  const intrusionProgress = traceBackActive
+    ? Math.min(100, Math.max(0, ((activeMission.timerLimit - timeLeft) / activeMission.timerLimit) * 100))
+    : 0;
 
   const recordEvidenceNote = (note: string) => {
     setEvidenceNotes(previous => previous.includes(note) ? previous : [...previous, note]);
@@ -1553,6 +1650,8 @@ export const TerminalScreen = ({
         'keystroke'
       );
 
+      shouldFollowTerminalRef.current = true;
+
       setHistory(
         prev => [
           ...prev,
@@ -1580,6 +1679,42 @@ export const TerminalScreen = ({
   const handleKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>
   ) => {
+    if (event.key === 'Tab') {
+      const source = event.currentTarget.value;
+      const tokens = splitTerminalArgs(source);
+      const commandName = tokens[0]?.toLowerCase() ?? '';
+      const isCompletingCommand = !/\s/.test(source);
+      const lastSpace = source.lastIndexOf(' ');
+      const argumentPrefix = lastSpace < 0 ? '' : source.slice(lastSpace + 1);
+      const commandNames = ['help', 'pwd', 'ls', 'cd', 'cat', 'whoami', 'grep', 'journalctl', 'ss', 'netstat', 'ps', 'find', 'stat', 'nmap', 'ping', 'status', 'preserve', 'record-evidence', 'assess', 'block', 'disable-service', 'kill', 'crontab', 'remove-persistence', 'report', 'clear'];
+      const files = Object.keys(MOCK_FILES);
+      const directories = Object.keys(MOCK_FILE_SYSTEM);
+      const relativeEntries = MOCK_FILE_SYSTEM[currentPath] ?? [];
+      const pathNames = [...new Set([...files, ...directories, ...relativeEntries, ...files.map(path => path.split('/').pop() ?? path)])];
+      const candidates = isCompletingCommand
+        ? commandNames.filter(name => name.startsWith(source.trim().toLowerCase()))
+        : ['cat', 'cd', 'grep', 'find', 'stat'].includes(commandName)
+          ? pathNames.filter(path => path.startsWith(argumentPrefix))
+          : [];
+      if (candidates.length) {
+        event.preventDefault();
+        if (candidates.length === 1) {
+          const completed = isCompletingCommand
+            ? candidates[0]
+            : `${source.slice(0, lastSpace + 1)}${candidates[0]}`;
+          setCommand(completed);
+        } else {
+          const commonPrefix = candidates.reduce((prefix, value) => {
+            let length = 0;
+            while (length < prefix.length && prefix[length] === value[length]) length++;
+            return prefix.slice(0, length);
+          });
+          if (isCompletingCommand && commonPrefix.length > source.length) setCommand(commonPrefix);
+          else setHistory(previous => [...previous, `[TAB] Matches: ${candidates.slice(0, 8).join(' · ')}${candidates.length > 8 ? ' · …' : ''}`]);
+        }
+        return;
+      }
+    }
     if (
       event.key ===
       'Enter'
@@ -1616,13 +1751,16 @@ export const TerminalScreen = ({
           'record-evidence': 'Write down a source and an observable fact before adding your interpretation.',
           assess: 'Choose confidence based on evidence quality and gaps; avoid claiming certainty about identity.'
         };
-        const authoredHints = Array.isArray(currentStep.hint) ? currentStep.hint : [currentStep.hint];
+        const authoredHints = (Array.isArray(currentStep.hint) ? currentStep.hint : [currentStep.hint])
+          .map(hint => /^\s*(submit|type|run):/i.test(hint)
+            ? 'Use the Command Field Guide for the syntax, then choose the target from the evidence you collected.'
+            : hint);
         const conceptNudge = firstHint[command] ?? 'Start with the evidence the objective asks you to compare, then decide what it supports.';
         const commandFamily = command === 'grep' ? 'grep' : command;
         const hints = activeMission.difficulty === 'guided'
           ? [conceptNudge, ...authoredHints]
           : activeMission.difficulty === 'standard'
-            ? [conceptNudge, `Command family: ${commandFamily}. Check the field guide for its purpose and limits.`, `Suggested format: ${currentStep.cmd}`]
+            ? [conceptNudge, `Command family: ${commandFamily}. Check the field guide for its purpose, syntax, and limits. Select the target and options from the evidence.`]
             : [conceptNudge, `Use the ${commandFamily} command family to examine the evidence.`, `Command: ${commandFamily}. Choose the target and details from the evidence you collected.`];
         setHintText(
           hints
@@ -1637,9 +1775,9 @@ export const TerminalScreen = ({
     };
 
   return (
-    <div className="mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-[1680px] space-y-3 px-3 py-3 sm:px-5 lg:px-8 lg:py-5">
+    <div data-terminal-palette={terminalPaletteId} className="terminal-palette mx-auto flex min-h-[calc(100dvh-5rem)] w-full max-w-[1680px] flex-col gap-3 px-3 py-3 sm:px-5 lg:px-8 lg:py-5 xl:h-full xl:min-h-0 xl:overflow-hidden">
 
-      <div className="border border-green-500/20 bg-[#08100c] p-4">
+      <div className="shrink-0 border border-green-500/20 bg-[#08100c] p-4">
 
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 
@@ -1677,7 +1815,7 @@ export const TerminalScreen = ({
 
               {isThreatActive
                 ? `${Math.floor(timeLeft / 60).toString().padStart(2, '0')}:${(timeLeft % 60).toString().padStart(2, '0')}`
-                : 'UNTIMED PRACTICE'}
+                : activeMission.timerLimit > 0 ? 'TIMER STOPPED' : 'UNTIMED TRIAL'}
 
             </div>
 
@@ -1690,11 +1828,19 @@ export const TerminalScreen = ({
 
         </div>
 
+        {traceBackActive && <div className="mt-4 border-t border-red-900/50 pt-3" aria-label="Trace-Back intrusion progress">
+          <div className="mb-2 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-wider text-red-300"><span>Trace-Back · intruder progress</span><span>{Math.round(intrusionProgress)}%</span></div>
+          <div className="h-2 overflow-hidden border border-red-900/70 bg-red-950/40" role="progressbar" aria-label="Intruder progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(intrusionProgress)}>
+            <div className="h-full bg-red-500 transition-[width] duration-500" style={{ width: `${intrusionProgress}%` }} />
+          </div>
+          <p className="mt-1 text-xs text-red-200/90">Unknown or incorrect commands cost 5 seconds. Investigate before responding.</p>
+        </div>}
+
       </div>
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,390px)] 2xl:gap-5">
+        <div className="grid grid-cols-1 gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_minmax(340px,390px)] xl:overflow-hidden 2xl:gap-5">
 
-        <div className="border border-green-500/20 bg-black overflow-hidden">
+        <div className="terminal-window flex min-h-[55dvh] flex-col overflow-hidden border border-green-500/20 bg-black xl:min-h-0">
 
           <div className="border-b border-green-500/20 bg-[#08100c] px-4 py-3 flex items-center justify-between">
 
@@ -1710,7 +1856,10 @@ export const TerminalScreen = ({
 
           </div>
 
-          <div className="h-[calc(100dvh-260px)] min-h-[320px] max-h-[900px] overflow-y-auto p-4 font-mono text-sm lg:p-5">
+          <div ref={terminalViewportRef} onScroll={event => {
+            const element = event.currentTarget;
+            shouldFollowTerminalRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 40;
+          }} className="terminal-output h-[50dvh] min-h-0 flex-1 overflow-y-auto p-4 font-mono text-sm lg:p-5 xl:h-auto">
 
             {history.map(
               (
@@ -1732,7 +1881,10 @@ export const TerminalScreen = ({
               </div>
             )}
 
-            <div className="mt-3 flex items-center">
+          </div>
+
+          <div className="terminal-input-dock shrink-0 border-t border-green-900/70 p-3 font-mono text-sm lg:px-5">
+            <div className="flex min-w-0 items-center">
 
               <span className="text-green-500 mr-2">
                 operator@secure:
@@ -1753,9 +1905,15 @@ export const TerminalScreen = ({
                 onKeyDown={
                   handleKeyDown
                 }
+                onFocus={() => { shouldFollowTerminalRef.current = true; }}
                 aria-label="Enter a simulated terminal command"
+                title="Press Tab to complete a command or simulated file path."
                 placeholder="type a command…"
                 className="min-w-0 flex-1 bg-transparent outline-none text-green-300 placeholder:text-green-900"
+                autoCapitalize="off"
+                autoCorrect="off"
+                inputMode="text"
+                enterKeyHint="send"
                 autoFocus
               />
 
@@ -1768,12 +1926,11 @@ export const TerminalScreen = ({
               </button>
 
             </div>
-
           </div>
 
         </div>
 
-        <div className="space-y-3 xl:max-h-[calc(100dvh-6.5rem)] xl:overflow-y-auto xl:pr-1">
+        <div className="min-h-0 space-y-3 overflow-y-auto xl:pr-1">
 
           <div className="border border-green-500/20 bg-[#08100c] p-5">
 
@@ -1794,8 +1951,8 @@ export const TerminalScreen = ({
             </div>
             <p className="mt-2 text-[10px] text-green-600">{questStep} of {activeMission.steps.length} objectives complete</p>
             {currentStep?.requiredCommands && <div className="mt-3 border-t border-green-900/60 pt-3">
-              <p className="text-[9px] uppercase tracking-widest text-cyan-500">Run these checks in any order</p>
-              <ul className="mt-2 space-y-1 font-mono text-[10px] text-cyan-200">{currentStep.requiredCommands.map(check => <li key={check}>› {check}</li>)}</ul>
+              <p className="text-[9px] uppercase tracking-widest text-cyan-500">Useful tools · checks can be done in any order</p>
+              <ul className="mt-2 space-y-1 text-[10px] text-cyan-200">{[...new Set(currentStep.requiredCommands.map(check => splitTerminalArgs(check)[0]?.toLowerCase()).filter(Boolean))].map(name => <li key={name}>› <span className="font-mono font-bold">{name}</span> — {commandLessons[name] ?? 'Use this simulated tool to inspect the evidence requested in the objective.'}</li>)}</ul>
             </div>}
 
           </div>
@@ -1861,14 +2018,14 @@ export const TerminalScreen = ({
                 ? currentStep.inspectEvidenceId
                   ? `Select “${activeMission.evidence?.find(item => item.id === currentStep.inspectEvidenceId)?.label ?? 'the highlighted clue'}” on the investigation board.`
                   : activeMission.difficulty === 'guided'
-                  ? currentStep.cmd
+                  ? `Tool: ${splitTerminalArgs(currentStep.cmd)[0]}. Use the hint and field guide to select the right arguments.`
                   : 'Choose a command that supports the objective. Type help for available tools.'
                 : 'MISSION COMPLETE'}
             </div>
 
           </div>
 
-          <div className={`grid ${isCertificationMission ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2`}>
+          <div className={`grid ${isCertificationMission ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
 
             <button
               onClick={
@@ -1908,7 +2065,7 @@ export const TerminalScreen = ({
 
             {isCertificationMission && <button
               onClick={() => setShowCommandGuide(true)}
-              className="border border-cyan-500/70 bg-cyan-950/30 p-3 text-xs font-bold text-cyan-200 transition-colors hover:border-cyan-300 hover:bg-cyan-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+              className="min-w-0 break-words border border-cyan-500/70 bg-cyan-950/30 p-3 text-center text-[10px] font-bold leading-4 text-cyan-200 transition-colors hover:border-cyan-300 hover:bg-cyan-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
               <BookOpen size={16} className="mx-auto mb-1" />
               COMMAND GUIDE · RECOMMENDED
@@ -2054,6 +2211,7 @@ export const TerminalScreen = ({
 };
 
 interface ProfileScreenProps {
+  view: 'profile' | 'shop';
   user: FirebaseUser | null;
 
   userScores: Record<
@@ -2064,6 +2222,9 @@ interface ProfileScreenProps {
   completedMissions: string[];
   onProgressionChange: (progression: PlayerProgression) => void;
   avatarId: AvatarId;
+  cosmetics: PlayerCosmetics;
+  onPurchaseCosmetic: (kind: CosmeticKind, itemId: string) => Promise<void>;
+  onEquipCosmetic: (kind: CosmeticKind, itemId: string) => Promise<void>;
   leaderboardOptIn: boolean;
   leaderboardAlias: string;
   progressLoadFailed: boolean;
@@ -2075,12 +2236,16 @@ interface ProfileScreenProps {
 }
 
 export const ProfileScreen = ({
+  view,
   user,
   userScores,
   progression,
   completedMissions,
   onProgressionChange,
   avatarId,
+  cosmetics,
+  onPurchaseCosmetic,
+  onEquipCosmetic,
   leaderboardOptIn,
   leaderboardAlias,
   progressLoadFailed,
@@ -2091,6 +2256,8 @@ export const ProfileScreen = ({
 }: ProfileScreenProps) => {
   const [exportMessage, setExportMessage] = useState('');
   const [archive, setArchive] = useState<MissionAttemptRecord[]>([]);
+  const [archiveCompletionCounts, setArchiveCompletionCounts] = useState<Record<string, number>>({});
+  const [assessmentAttemptCount, setAssessmentAttemptCount] = useState(0);
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [localAvatar, setLocalAvatar] = useState<{ uid: string; id: AvatarId } | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -2098,8 +2265,32 @@ export const ProfileScreen = ({
   const [savingLeaderboardSetting, setSavingLeaderboardSetting] = useState(false);
   const [leaderboardSettingMessage, setLeaderboardSettingMessage] = useState('');
   const [artworkPreview, setArtworkPreview] = useState<{ title: string; src: string; alt: string } | null>(null);
+  const [cosmeticMessage, setCosmeticMessage] = useState('');
+  const [cosmeticBusyId, setCosmeticBusyId] = useState('');
+  const [activeProfileSection, setActiveProfileSection] = useState<'overview' | 'progress' | 'achievements' | 'certificates' | 'archive' | 'data' | 'leaderboards'>('overview');
   const avatarOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedAvatarId = localAvatar?.uid === user?.uid ? localAvatar?.id ?? getAvatarById(avatarId).id : getAvatarById(avatarId).id;
+  const equippedCosmeticId = (kind: CosmeticKind) => kind === 'frame' ? cosmetics.equippedFrameId : kind === 'palette' ? cosmetics.equippedPaletteId : cosmetics.equippedTitleId;
+  const ownedCosmeticIds = (kind: CosmeticKind) => kind === 'frame' ? cosmetics.ownedFrameIds : kind === 'palette' ? cosmetics.ownedPaletteIds : cosmetics.ownedTitleIds;
+  const handleCosmeticAction = async (kind: CosmeticKind, itemId: string) => {
+    if (!user || progressLoadFailed || cosmeticBusyId) return;
+    const owned = ownedCosmeticIds(kind).includes(itemId);
+    setCosmeticBusyId(itemId);
+    setCosmeticMessage('');
+    try {
+      if (!owned) {
+        await onPurchaseCosmetic(kind, itemId);
+        setCosmeticMessage('Purchase complete. Equip your new cosmetic when you are ready.');
+      } else {
+        await onEquipCosmetic(kind, itemId);
+        setCosmeticMessage('Cosmetic equipped.');
+      }
+    } catch (error) {
+      setCosmeticMessage(error instanceof Error ? error.message : 'Could not update your cosmetics. Try again.');
+    } finally {
+      setCosmeticBusyId('');
+    }
+  };
 
   const chooseAvatar = async (nextAvatarId: AvatarId) => {
     if (!user || progressLoadFailed || savingAvatar || nextAvatarId === selectedAvatarId) return;
@@ -2134,8 +2325,20 @@ export const ProfileScreen = ({
     let cancelled = false;
     if (!user) return;
     void getMissionAttempts(user.uid).then(attempts => {
-      if (!cancelled) setArchive(attempts.filter(attempt => attempt.outcome === 'completed'));
+      if (cancelled) return;
+      const latestByMission = new Map<string, MissionAttemptRecord>();
+      const completionCounts: Record<string, number> = {};
+      for (const attempt of attempts.filter(item => item.outcome === 'completed')) {
+        completionCounts[attempt.missionId] = (completionCounts[attempt.missionId] ?? 0) + 1;
+        const previous = latestByMission.get(attempt.missionId);
+        if (!previous || previous.completedAt < attempt.completedAt) latestByMission.set(attempt.missionId, attempt);
+      }
+      setArchiveCompletionCounts(completionCounts);
+      setArchive([...latestByMission.values()].sort((a, b) => b.completedAt.localeCompare(a.completedAt)));
     }).catch(error => console.warn('Could not load case archive:', error));
+    void getAssessmentAttempts(user.uid).then(attempts => {
+      if (!cancelled) setAssessmentAttemptCount(attempts.length);
+    }).catch(error => console.warn('Could not load assessment attempts:', error));
     return () => { cancelled = true; };
   }, [user]);
 
@@ -2212,7 +2415,7 @@ export const ProfileScreen = ({
       }
       const escapeCsv = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
       const downloadCsv = (filename: string, content: string) => {
-        const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
+        const url = URL.createObjectURL(new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' }));
         const link = document.createElement('a');
         link.href = url;
         link.download = filename;
@@ -2220,8 +2423,8 @@ export const ProfileScreen = ({
         URL.revokeObjectURL(url);
       };
       if (attempts.length) {
-        const headers = ['missionId', 'missionTitle', 'tier', 'concept', 'outcome', 'startedAt', 'completedAt', 'totalTimeSeconds', 'hintsOpened', 'hintLevelsShown', 'timePerStepSeconds', 'wrongCommandsByStep', 'wrongDecisionCount', 'challengeMode', 'dailyChallengeDate', 'dailyChallengeType', 'skillSignals', 'xpAwarded'];
-        const rows = attempts.map(attempt => headers.map(header => escapeCsv(typeof attempt[header as keyof typeof attempt] === 'object' ? JSON.stringify(attempt[header as keyof typeof attempt]) : attempt[header as keyof typeof attempt])).join(','));
+        const fields = [['Mission ID', 'missionId'], ['Mission title', 'missionTitle'], ['Tier', 'tier'], ['Learning concept', 'concept'], ['Outcome', 'outcome'], ['Started at', 'startedAt'], ['Completed at', 'completedAt'], ['Time (seconds)', 'totalTimeSeconds'], ['Hints opened', 'hintsOpened'], ['Hint levels shown', 'hintLevelsShown'], ['Time per step (seconds)', 'timePerStepSeconds'], ['Wrong commands by step', 'wrongCommandsByStep'], ['Wrong decisions', 'wrongDecisionCount'], ['Challenge mode', 'challengeMode'], ['Daily challenge date', 'dailyChallengeDate'], ['Daily challenge type', 'dailyChallengeType'], ['Skill signals', 'skillSignals'], ['XP awarded', 'xpAwarded']] as const;
+        const rows = attempts.map(attempt => fields.map(([, key]) => escapeCsv(typeof attempt[key] === 'object' ? JSON.stringify(attempt[key]) : attempt[key])).join(','));
         const groups = new Map<string, { missionTitle: string; tier: string; concept: string; attempts: number; completed: number; totalSeconds: number; hints: number; wrongCommands: number; wrongDecisions: number }>();
         attempts.forEach(attempt => {
           const summary = groups.get(attempt.missionId) ?? { missionTitle: attempt.missionTitle, tier: attempt.tier, concept: attempt.concept, attempts: 0, completed: 0, totalSeconds: 0, hints: 0, wrongCommands: 0, wrongDecisions: 0 };
@@ -2233,33 +2436,34 @@ export const ProfileScreen = ({
           summary.wrongDecisions += attempt.wrongDecisionCount;
           groups.set(attempt.missionId, summary);
         });
-        const summaryHeaders = ['missionId', 'missionTitle', 'tier', 'concept', 'attemptCount', 'completionRatePercent', 'averageTimeSeconds', 'averageHintsOpened', 'averageWrongCommands', 'averageWrongDecisions'];
+        const summaryHeaders = ['Mission ID', 'Mission title', 'Tier', 'Learning concept', 'Attempt count', 'Completion rate (%)', 'Average time (seconds)', 'Average hints used', 'Average wrong commands', 'Average wrong decisions'];
         const summaryRows = [...groups.entries()].map(([missionId, summary]) => [missionId, summary.missionTitle, summary.tier, summary.concept, summary.attempts, Math.round((summary.completed / summary.attempts) * 100), Math.round(summary.totalSeconds / summary.attempts), Number((summary.hints / summary.attempts).toFixed(2)), Number((summary.wrongCommands / summary.attempts).toFixed(2)), Number((summary.wrongDecisions / summary.attempts).toFixed(2))].map(escapeCsv).join(','));
         downloadCsv('sandbox-secure-mission-summary.csv', [summaryHeaders.join(','), ...summaryRows].join('\r\n'));
-        downloadCsv('sandbox-secure-mission-attempts.csv', [headers.join(','), ...rows].join('\r\n'));
+        downloadCsv('sandbox-secure-mission-attempts.csv', [fields.map(([label]) => label).join(','), ...rows].join('\r\n'));
       }
       if (assessmentAttempts.length) {
-        const headers = ['tier', 'assessment', 'score', 'total', 'attemptNumber', 'timestamp'];
-        const rows = assessmentAttempts.map(attempt => headers.map(header => escapeCsv(attempt[header as keyof typeof attempt])).join(','));
-        const groups = new Map<string, { count: number; scoreSum: number; totalSum: number; firstScore: number | null; bestScore: number }>();
+        const fields = [['Tier', 'tier'], ['Assessment', 'assessment'], ['Score earned', 'score'], ['Total questions', 'total'], ['Attempt number', 'attemptNumber'], ['Completed at', 'timestamp']] as const;
+        const rows = assessmentAttempts.map(attempt => fields.map(([, key]) => escapeCsv(attempt[key])).join(','));
+        const groups = new Map<string, { count: number; scoreSum: number; totalSum: number; firstScore: number | null; bestScore: number; questions: number }>();
         assessmentAttempts.forEach(attempt => {
           const key = `${attempt.tier}-${attempt.assessment}`;
-          const summary = groups.get(key) ?? { count: 0, scoreSum: 0, totalSum: 0, firstScore: null, bestScore: 0 };
+          const summary = groups.get(key) ?? { count: 0, scoreSum: 0, totalSum: 0, firstScore: null, bestScore: 0, questions: 0 };
           summary.count += 1;
           summary.scoreSum += attempt.score;
           summary.totalSum += attempt.total;
+          summary.questions = Math.max(summary.questions, attempt.total);
           if (attempt.attemptNumber === 1) summary.firstScore = attempt.score;
           summary.bestScore = Math.max(summary.bestScore, attempt.score);
           groups.set(key, summary);
         });
-        const summaryHeaders = ['tier', 'assessment', 'attemptCount', 'firstAttemptScore', 'bestScore', 'averagePercent'];
+        const summaryHeaders = ['Tier', 'Assessment type', 'Attempts', 'First attempt score (correct answers)', 'Best score (correct answers)', 'Average score (%)', 'Questions'];
         const summaryRows = [...groups.entries()].map(([key, summary]) => {
           const [tier, assessment] = key.split('-');
           const averagePercent = summary.totalSum ? Math.round((summary.scoreSum / summary.totalSum) * 100) : 0;
-          return [tier, assessment, summary.count, summary.firstScore, summary.bestScore, averagePercent].map(escapeCsv).join(',');
+          return [tier, assessment, summary.count, summary.firstScore, summary.bestScore, averagePercent, summary.questions].map(escapeCsv).join(',');
         });
         downloadCsv('sandbox-secure-assessment-summary.csv', [summaryHeaders.join(','), ...summaryRows].join('\r\n'));
-        downloadCsv('sandbox-secure-assessment-attempts.csv', [headers.join(','), ...rows].join('\r\n'));
+        downloadCsv('sandbox-secure-assessment-attempts.csv', [fields.map(([label]) => label).join(','), ...rows].join('\r\n'));
       }
       setExportMessage(`Exported ${attempts.length} mission and ${assessmentAttempts.length} assessment attempts for this account.`);
     } catch (error) {
@@ -2271,12 +2475,12 @@ export const ProfileScreen = ({
   return (
     <div className="game-screen mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
 
-      <section className="border border-green-500/20 bg-[#08100c] p-6">
+      {view === 'profile' && <section className="border border-green-500/20 bg-[#08100c] p-6">
 
         <div className="flex flex-col md:flex-row items-center md:items-start gap-5">
 
           <div className="flex flex-col items-center gap-2">
-            <button type="button" onClick={() => setArtworkPreview({ title: 'Profile picture', src: getAvatarById(selectedAvatarId).src, alt: `${getAvatarById(selectedAvatarId).label} profile picture` })} aria-label="Enlarge profile picture" className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--game-surface)]"><Avatar avatarId={selectedAvatarId} size="large" /></button>
+            <button type="button" onClick={() => setArtworkPreview({ title: 'Profile picture', src: getAvatarById(selectedAvatarId).src, alt: `${getAvatarById(selectedAvatarId).label} profile picture` })} aria-label="Enlarge profile picture" className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--game-surface)]"><Avatar avatarId={selectedAvatarId} size="large" frameId={cosmetics.equippedFrameId} /></button>
             <button type="button" aria-expanded={avatarPickerOpen} aria-controls="profile-avatar-picker" disabled={!user || progressLoadFailed || savingAvatar} onClick={() => setAvatarPickerOpen(open => !open)} className="min-h-11 rounded-md border border-cyan-800 px-3 py-2 text-xs font-bold text-cyan-200 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-50">{savingAvatar ? 'Saving…' : 'Change avatar'}</button>
           </div>
 
@@ -2299,6 +2503,7 @@ export const ProfileScreen = ({
                 'No email available'
               }
             </p>
+            <p className="mt-2 inline-flex border border-[var(--game-cyan)] px-2 py-1 text-xs font-bold uppercase tracking-wide text-[var(--game-cyan)]">{COSMETIC_CATALOG.title.find(item => item.id === cosmetics.equippedTitleId)?.name ?? 'Operator'}</p>
 
           </div>
 
@@ -2319,9 +2524,61 @@ export const ProfileScreen = ({
           {avatarMessage && <p className="mt-3 text-xs text-[var(--game-text)]" role="status">{avatarMessage}</p>}
         </div>}
 
-      </section>
+      </section>}
 
-      <GameCard className="p-5 sm:p-6">
+      {view === 'profile' && <>
+        <div role="tablist" aria-label="Profile sections" className="flex gap-2 overflow-x-auto border-b border-[var(--game-border)] pb-2">
+          {([
+            ['overview', 'Overview'], ['progress', 'Progress'], ['achievements', 'Rank & achievements'], ['certificates', 'Certificates'], ['archive', 'Case archive'], ['data', 'Learning data'], ['leaderboards', 'Leaderboards']
+          ] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={activeProfileSection === id} onClick={() => setActiveProfileSection(id)} className={`min-h-11 shrink-0 border px-4 py-2 text-sm font-bold ${activeProfileSection === id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-cyan)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:border-[var(--game-cyan)]'}`}>{label}</button>)}
+        </div>
+        {activeProfileSection === 'overview' && <GameCard className="grid gap-4 p-5 sm:grid-cols-3 sm:p-6">
+          <div><p className="game-eyebrow">Current rank</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{rankProgress(progression.xp).current.name}</p></div>
+          <div><p className="game-eyebrow">Completed missions</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{new Set(completedMissions).size}</p></div>
+          <div><p className="game-eyebrow">Assessment attempts</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{assessmentAttemptCount}</p></div>
+        </GameCard>}
+      </>}
+
+      {view === 'shop' && <GameCard className="p-5 sm:p-6">
+        <div className="shop-art-banner relative isolate mb-5 overflow-hidden border border-[var(--game-border)]">
+          <img src={cosmeticShopImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right opacity-90" />
+          <div className="relative z-10 flex min-h-36 items-center p-5 sm:min-h-40 sm:p-7">
+            <SectionHeader eyebrow="Personal customization" title="Cosmetic Shop" detail="Your balance, purchases, and equipped items belong to your account and are not shown on public leaderboards." />
+          </div>
+        </div>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border border-[var(--game-amber)]/50 bg-[var(--game-amber)]/5 p-4">
+          <div><p className="text-xs font-bold uppercase tracking-widest text-[var(--game-amber)]">Your shop coins</p><p className="mt-1 text-2xl font-black tabular-nums text-[var(--game-text)]">{cosmetics.coins}</p></div>
+          <p className="max-w-xl text-sm leading-6 text-[var(--game-muted)]">Eligible missions award coins once per mission: 20 for Beginner, 35 for Intermediate, and 50 for Expert. A replay cannot earn a second reward, and daily trials do not award coins. Assessment scores never affect your balance.</p>
+        </div>
+        {cosmeticMessage && <p className="mb-4 border border-[var(--game-border)] p-3 text-sm text-[var(--game-text)]" role="status">{cosmeticMessage}</p>}
+        <div className="space-y-6">
+          {(['frame', 'palette', 'title'] as const).map(kind => <section key={kind} aria-labelledby={`cosmetic-${kind}-heading`}>
+            <h3 id={`cosmetic-${kind}-heading`} className="mb-3 text-sm font-black uppercase tracking-wide text-[var(--game-text)]">{kind === 'frame' ? 'Avatar frames' : kind === 'palette' ? 'Terminal colors' : 'Operator titles'}</h3>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {COSMETIC_CATALOG[kind].map(item => {
+                const owned = ownedCosmeticIds(kind).includes(item.id);
+                const equipped = equippedCosmeticId(kind) === item.id;
+                const busy = cosmeticBusyId === item.id;
+                return <article key={item.id} className="flex min-w-0 flex-col border border-[var(--game-border)] bg-[var(--game-surface)] p-4">
+                  <div className="mb-3 flex min-h-12 items-center gap-3">
+                    {kind === 'frame' && <span data-avatar-frame={item.id} className="avatar-cosmetic-frame h-10 w-10 shrink-0 rounded-full border-2 border-[var(--game-border)] bg-[var(--game-track)]" aria-hidden="true" />}
+                    {kind === 'palette' && <span data-palette-preview={item.id} className="h-10 w-10 shrink-0 border border-[var(--game-border)]" aria-hidden="true"><span className="block h-2 w-full bg-current" /></span>}
+                    {kind === 'title' && <span className="flex h-10 min-w-10 items-center justify-center border border-[var(--game-cyan)] px-2 text-xs font-black text-[var(--game-cyan)]" aria-hidden="true">ID</span>}
+                    <div className="min-w-0"><p className="break-words text-sm font-bold text-[var(--game-text)]">{item.name}</p><p className="mt-1 text-xs text-[var(--game-muted)]">{owned ? equipped ? 'Equipped' : 'Owned' : `${item.price} coins`}</p></div>
+                  </div>
+                  <p className="mb-4 flex-1 text-sm leading-5 text-[var(--game-muted)]">{item.description}</p>
+                  <button type="button" disabled={!user || progressLoadFailed || Boolean(cosmeticBusyId) || equipped || (!owned && cosmetics.coins < item.price)} onClick={() => void handleCosmeticAction(kind, item.id)} className="min-h-10 w-full border border-[var(--game-cyan)] px-3 py-2 text-xs font-bold uppercase text-[var(--game-cyan)] hover:bg-[var(--game-cyan)] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">
+                    {busy ? 'Saving…' : equipped ? 'Equipped' : owned ? 'Equip' : `Purchase · ${item.price} coins`}
+                  </button>
+                </article>;
+              })}
+            </div>
+          </section>)}
+        </div>
+        {progressLoadFailed && <p className="mt-4 text-sm text-[var(--game-muted)]">The shop is unavailable until your saved profile finishes loading.</p>}
+      </GameCard>}
+
+      {view === 'profile' && activeProfileSection === 'leaderboards' && <GameCard className="p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div><h2 className="text-base font-bold text-[var(--game-text)]">Leaderboards</h2><p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--game-muted)]">Opt in to share your daily challenge result under a randomly generated alias. Your email and account name are not shown. Opt-in is off by default.</p>{leaderboardOptIn && <p className="mt-2 text-sm font-semibold text-[var(--game-green)]">Leaderboard alias: {leaderboardAlias}</p>}{leaderboardSettingMessage && <p className="mt-2 text-sm text-[var(--game-muted)]" role="status">{leaderboardSettingMessage}</p>}</div>
           <label className="flex min-h-11 shrink-0 items-center gap-3 rounded-md border border-[var(--game-border)] px-4 py-2 text-sm font-semibold text-[var(--game-text)]">
@@ -2336,9 +2593,9 @@ export const ProfileScreen = ({
             Show me on leaderboards
           </label>
         </div>
-      </GameCard>
+      </GameCard>}
 
-      <GameCard className="p-5 sm:p-6">
+      {view === 'profile' && activeProfileSection === 'achievements' && <GameCard className="p-5 sm:p-6">
         <div className="mb-4 flex items-center gap-4">
           <button type="button" onClick={() => setArtworkPreview({ title: `${rankProgress(progression.xp).current.name} rank badge`, src: RANK_BADGES[rankProgress(progression.xp).current.name], alt: `${rankProgress(progression.xp).current.name} rank badge` })} aria-label={`Enlarge ${rankProgress(progression.xp).current.name} rank badge`} className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]"><img src={RANK_BADGES[rankProgress(progression.xp).current.name]} alt={`${rankProgress(progression.xp).current.name} rank badge`} className="h-20 w-20 rounded-md border border-[var(--game-border)] object-cover" /></button>
           <div><p className="text-xs font-bold uppercase tracking-widest text-[var(--game-muted)]">Current rank</p><p className="mt-1 text-lg font-bold text-[var(--game-text)]">{rankProgress(progression.xp).current.name} badge</p><p className="text-sm text-[var(--game-muted)]">Your rank emblem appears here and updates as you level up.</p></div>
@@ -2346,24 +2603,27 @@ export const ProfileScreen = ({
         <SectionHeader eyebrow="Clearance profile" title={`${rankProgress(progression.xp).current.name} · ${progression.xp} XP`} detail={`${progression.streak.current} day streak · ${progression.streak.longest} day personal best`} />
         <ProgressBar value={rankProgress(progression.xp).percent} label={rankProgress(progression.xp).next ? `Progress to ${rankProgress(progression.xp).next?.name}` : 'Maximum rank'} />
         <div className="mt-5 grid gap-3 sm:grid-cols-2">{ACHIEVEMENTS.map(achievement => <AchievementBadge key={achievement.id} achievement={achievement} earned={progression.badges.includes(achievement.id)} />)}</div>
-      </GameCard>
+      </GameCard>}
 
-      <GameCard className="p-5 sm:p-6">
+      {view === 'profile' && activeProfileSection === 'certificates' && <GameCard className="p-5 sm:p-6">
         <SectionHeader eyebrow="Credentials" title="Certificates" detail="Completed certification certificates are saved here for viewing and printing." />
         {certificates.length ? <div className="mt-4 space-y-3">{certificates.map(certificate => <article key={certificate.id} className="flex flex-col gap-3 rounded-md border border-[var(--game-border)] bg-[var(--game-surface)] p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-[var(--game-text)]">{certificate.tier} Security Certification</p><p className="mt-1 text-sm text-[var(--game-muted)]">Awarded {new Date(certificate.issuedAt).toLocaleDateString()} · {certificate.score}/{certificate.total}</p></div><button type="button" onClick={() => onViewCertificate(certificate)} className="min-h-11 rounded-md border border-[var(--game-green)] px-4 py-2 text-sm font-semibold text-[var(--game-green)] hover:bg-[var(--game-green)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View / Print</button></article>)}</div> : <p className="mt-4 text-sm text-[var(--game-muted)]">Pass a certification post-test after completing its missions to earn your first certificate.</p>}
-      </GameCard>
+      </GameCard>}
 
-      {learningGainEntries.length > 0 && <GameCard className="p-5 sm:p-6">
+      {view === 'profile' && activeProfileSection === 'progress' && <div className="space-y-5">{learningGainEntries.length > 0 && <GameCard className="p-5 sm:p-6">
         <SectionHeader eyebrow="Assessment progress" title="Learning gain · first attempts" detail="Percentage-point change between the first pre-test and post-test attempts." />
         <div className="mt-4 space-y-2">{learningGainEntries.map(({ tier, gain }) => <div key={tier} className="flex items-center justify-between gap-3 rounded-md border border-[var(--game-border)] p-3 text-sm"><span className="font-semibold text-[var(--game-text)]">{tier}</span><span className="font-bold text-[var(--game-text)]">{gain > 0 ? '+' : ''}{gain} pp</span></div>)}</div>
         <p className="mt-3 text-xs leading-5 text-[var(--game-muted)]">Older records without first-attempt fields use their saved assessment scores. Total score and average below reflect best saved post-test scores.</p>
       </GameCard>}
 
-      <GameCard className="p-5 sm:p-6">
-        <SectionHeader eyebrow="Resolved case files" title="Case Archive" detail="Completed practice and certification cases with their learning takeaway." />
-        {archive.length ? <div className="space-y-2">{archive.map((attempt, index) => <article key={`${attempt.missionId}-${attempt.completedAt}-${index}`} className="flex flex-col gap-2 rounded-md border border-[var(--game-border)] bg-[var(--game-surface)] p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-[var(--game-text)]">{attempt.missionTitle} <span className="ml-2 rounded border border-[var(--game-green)] px-2 py-0.5 text-[10px] text-[var(--game-green)]">RESOLVED</span></p><p className="mt-1 text-xs text-[var(--game-muted)]">{attempt.concept} · {new Date(attempt.completedAt).toLocaleDateString()}</p></div><p className="text-xs text-[var(--game-muted)]">Takeaway: {attempt.concept}</p></article>)}</div> : <div className="empty-state">No resolved cases yet. Complete a mission to start your archive.</div>}
-      </GameCard>
+      </div>}
 
+      {view === 'profile' && activeProfileSection === 'archive' && <GameCard className="p-5 sm:p-6">
+        <SectionHeader eyebrow="Resolved case files" title="Case Archive" detail="One latest completion per case, with its learning takeaway. Replays are included in exported attempt data." />
+        {archive.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] border-collapse text-left text-sm"><thead><tr className="border-b border-[var(--game-border)] text-xs uppercase tracking-wide text-[var(--game-muted)]"><th scope="col" className="px-3 py-3">Mission</th><th scope="col" className="px-3 py-3">What you practiced</th><th scope="col" className="px-3 py-3">Completions</th><th scope="col" className="px-3 py-3">Last completed</th></tr></thead><tbody>{archive.map(attempt => <tr key={attempt.missionId} className="border-b border-[var(--game-border)] last:border-0"><th scope="row" className="px-3 py-3 font-semibold text-[var(--game-text)]">{attempt.missionTitle}</th><td className="px-3 py-3 text-[var(--game-muted)]">{attempt.concept}</td><td className="px-3 py-3 text-[var(--game-text)]">{archiveCompletionCounts[attempt.missionId] ?? 1}</td><td className="px-3 py-3 text-[var(--game-muted)]">{new Date(attempt.completedAt).toLocaleDateString()}</td></tr>)}</tbody></table></div> : <div className="empty-state">No resolved cases yet. Complete a mission to start your archive.</div>}
+      </GameCard>}
+
+      {view === 'profile' && activeProfileSection === 'data' && <div className="space-y-5">
       <section className="flex flex-col gap-3 border border-cyan-900/60 bg-[#071014] p-4 sm:flex-row sm:items-center sm:justify-between">
         <div><p className="text-xs font-bold uppercase tracking-widest text-cyan-300">Learning data</p><p className="mt-1 text-xs text-gray-400">Download mission and assessment summaries plus detailed attempt rows for this account as CSV.</p>{exportMessage && <p className="mt-2 text-xs text-cyan-200" role="status">{exportMessage}</p>}</div>
         <button type="button" onClick={exportLearningData} className="border border-cyan-700 px-4 py-2 text-xs font-bold uppercase text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">Export my learning data</button>
@@ -2427,14 +2687,14 @@ export const ProfileScreen = ({
             />
 
             <span className="text-xs text-green-500/50">
-              ASSESSMENTS
+              ASSESSMENT ATTEMPTS
             </span>
 
           </div>
 
           <div className="text-3xl font-bold text-green-300 mt-3">
             {
-              scoreEntries.length
+              assessmentAttemptCount
             }
           </div>
 
@@ -2504,6 +2764,8 @@ export const ProfileScreen = ({
         </div>
 
       </section>
+
+      </div>}
 
       <ArtworkPreviewDialog artwork={artworkPreview} onClose={() => setArtworkPreview(null)} />
     </div>

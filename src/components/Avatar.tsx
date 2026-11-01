@@ -4,15 +4,16 @@ interface AvatarProps {
   avatarId?: AvatarId | string;
   size?: 'small' | 'large';
   alt?: string;
+  frameId?: string;
 }
 
-export const Avatar = ({ avatarId, size = 'small', alt }: AvatarProps) => {
+export const Avatar = ({ avatarId, size = 'small', alt, frameId }: AvatarProps) => {
   const avatar = getAvatarById(avatarId);
   const dimension = size === 'large' ? 112 : 40;
   const sizeClass = size === 'large' ? 'h-28 w-28' : 'h-10 w-10';
 
   return (
-    <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[var(--game-border)] bg-[var(--game-track)] ${sizeClass}`}>
+    <span data-avatar-frame={frameId} className={`avatar-cosmetic-frame inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[var(--game-border)] bg-[var(--game-track)] ${sizeClass}`}>
       <img
         src={avatar.src}
         alt={alt ?? `Your avatar: ${avatar.label}`}

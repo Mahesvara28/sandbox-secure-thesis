@@ -89,7 +89,7 @@ export const HintModal = ({ show, onClose, hints, onLevelShown }: { show: boolea
   );
 };
 
-export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort, isStarting = false, error = '' }: { show: boolean; mission: Mission | null; onStart: () => void; onStartUntimed?: () => void; onAbort: () => void; isStarting?: boolean; error?: string }) => {
+export const BriefingModal = ({ show, mission, onStart, onAbort, isStarting = false, error = '' }: { show: boolean; mission: Mission | null; onStart: () => void; onAbort: () => void; isStarting?: boolean; error?: string }) => {
   if (!show || !mission) return null;
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 p-3 sm:p-4">
@@ -110,14 +110,13 @@ export const BriefingModal = ({ show, mission, onStart, onStartUntimed, onAbort,
             <p className="mt-2 text-xs leading-5 text-cyan-200"><strong>Think of it this way:</strong> {mission.primer.analogy}</p>
             {mission.primer.example && <pre className="mt-3 whitespace-pre-wrap border-l-2 border-cyan-700 bg-black/50 p-3 font-mono text-xs leading-5 text-green-200">{mission.primer.example}</pre>}
           </section>}
-          <div className="text-xs text-green-600">Difficulty: <span className="text-green-300">{mission.difficulty.toUpperCase()}</span> · {mission.timerLimit > 0 ? `Optional challenge timer: ${Math.floor(mission.timerLimit / 60)} minutes` : 'Untimed practice'}</div>
+          <div className="text-xs text-green-600">Difficulty: <span className="text-green-300">{mission.difficulty.toUpperCase()}</span> · {mission.timerLimit > 0 ? `Mission time limit: ${Math.floor(mission.timerLimit / 60)} minutes` : 'Untimed practice'}</div>
           <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Commands You'll Use</h3><div className="space-y-2">{mission.briefing.commands.map((cmd, i) => (<div key={i} className="bg-green-950/30 border border-green-900 p-2 font-mono text-xs"><span className="text-green-400">{cmd}</span>{isSimulationShortcut(cmd) && <span className="ml-2 font-sans text-[9px] font-bold uppercase tracking-wide text-cyan-300">Training shortcut</span>}</div>))}</div><p className="mt-2 text-[11px] leading-5 text-gray-400"><strong className="text-cyan-300">Simulation note:</strong> Commands marked “Training shortcut” are game actions, not standard shell commands. In real work, analysts record findings and response actions in approved case-management or security tools.</p></div>
           <div className="border border-yellow-700 bg-yellow-950/20 p-3"><h3 className="text-xs font-bold text-yellow-600 uppercase mb-1">Objective</h3><p className="text-yellow-400 text-sm">{mission.briefing.objective}</p></div>
         </div>
         <div className="shrink-0 border-t border-green-900 bg-black p-3 sm:p-4 flex flex-col gap-3 sm:flex-row">
           <button type="button" disabled={isStarting} onClick={onAbort} className="flex-1 border border-red-900 text-red-500 py-3 text-xs font-bold uppercase hover:bg-red-900/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50">Abort Mission</button>
-          {mission.timerLimit > 0 && onStartUntimed && <button type="button" disabled={isStarting} onClick={onStartUntimed} className="flex-1 border border-cyan-700 text-cyan-300 py-3 text-xs font-bold uppercase hover:bg-cyan-950/30 transition-colors disabled:cursor-not-allowed disabled:opacity-50">Practice untimed</button>}
-          <button type="button" disabled={isStarting} onClick={onStart} className="flex-1 border-2 border-green-500 bg-green-500 text-black py-3 text-xs font-black uppercase hover:bg-green-400 transition-colors disabled:cursor-wait disabled:opacity-70">{isStarting ? 'Starting…' : mission.timerLimit > 0 ? 'Start challenge →' : 'Begin Mission →'}</button>
+          <button type="button" disabled={isStarting} onClick={onStart} className="flex-1 border-2 border-green-500 bg-green-500 text-black py-3 text-xs font-black uppercase hover:bg-green-400 transition-colors disabled:cursor-wait disabled:opacity-70">{isStarting ? 'Starting…' : mission.timerLimit > 0 ? 'Start mission →' : 'Begin Mission →'}</button>
         </div>
       </div>
       </div>
@@ -155,7 +154,7 @@ export const CheatSheetModal = ({ show, onClose }: { show: boolean; onClose: () 
 };
 
 // --- Victory Modal (ADDED) ---
-export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidence = '', report }: { show: boolean; onClose: () => void; mission: Mission | null; caseNotes?: string[]; confidence?: string; report?: { evidence: number; accuracy: number; verification: number; independence: number; xpEarned: number; rankBefore: string; rankAfter: string; newBadges: string[]; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; elapsedSeconds: number; timed: boolean; softTimeTarget?: number; exceededSoftTarget?: boolean } | null }) => {
+export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidence = '', report, isReplay = false }: { show: boolean; onClose: () => void; mission: Mission | null; caseNotes?: string[]; confidence?: string; isReplay?: boolean; report?: { evidence: number; accuracy: number; verification: number; independence: number; xpEarned: number; rankBefore: string; rankAfter: string; newBadges: string[]; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; elapsedSeconds: number; timed: boolean; softTimeTarget?: number; exceededSoftTarget?: boolean } | null }) => {
   const reduceMotion = useReducedMotion();
   if (!show) return null;
   return (
@@ -170,7 +169,7 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {([['Evidence', report.evidence], ['Accuracy', report.accuracy], ['Verification', report.verification], ['Independence', report.independence]] as const).map(([label, grade]) => <div key={label} className="border border-green-900 bg-green-950/20 p-3"><p className="text-[10px] uppercase tracking-wider text-green-600">{label}</p><p className="mt-1 text-xl font-bold text-green-200">{'★'.repeat(grade)}{'☆'.repeat(3 - grade)}</p></div>)}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border border-cyan-800 bg-cyan-950/20 p-3"><span className="text-sm font-bold text-cyan-200">+{report.xpEarned} XP</span><span className="text-xs text-cyan-100">{report.rankBefore === report.rankAfter ? report.rankAfter : `Rank up: ${report.rankBefore} → ${report.rankAfter}`}</span><span className="text-xs text-gray-300">Hints used: {report.hintsUsed}</span></div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border border-cyan-800 bg-cyan-950/20 p-3"><span className="text-sm font-bold text-cyan-200">{isReplay ? 'Replay: no XP awarded' : `+${report.xpEarned} XP`}</span><span className="text-xs text-cyan-100">{report.rankBefore === report.rankAfter ? report.rankAfter : `Rank up: ${report.rankBefore} → ${report.rankAfter}`}</span><span className="text-xs text-gray-300">Hints used: {report.hintsUsed}</span></div>
           {!report.timed && <p className="text-xs text-gray-400">Time on case: {Math.floor(report.elapsedSeconds / 60)}m {report.elapsedSeconds % 60}s · informational only</p>}
           {report.softTimeTarget !== undefined && <p className="rounded border border-cyan-800 bg-cyan-950/20 p-3 text-sm font-semibold text-cyan-100">{report.exceededSoftTarget ? 'Finished at your own pace' : 'Within pace target'}</p>}
           {report.newBadges.length > 0 && <p className="border border-yellow-800 bg-yellow-950/20 p-3 text-xs text-yellow-200">New badge{report.newBadges.length > 1 ? 's' : ''}: {report.newBadges.map(id => ACHIEVEMENTS.find(achievement => achievement.id === id)?.name ?? id).join(', ')}</p>}
@@ -191,12 +190,12 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
             {confidence && <p className="mt-3 border-t border-cyan-900/70 pt-2 text-xs text-cyan-200">Recorded confidence: {confidence.toUpperCase()}</p>}
           </div>
         </div>}
-        <button onClick={onClose} className="mt-6 border-2 border-green-500 text-green-500 px-8 py-3 hover:bg-green-500 hover:text-black font-bold uppercase transition-all w-full relative z-20">Return to Base →</button>
+        <button type="button" autoFocus onClick={onClose} className="mt-6 border-2 border-green-500 text-green-500 px-8 py-3 hover:bg-green-500 hover:text-black font-bold uppercase transition-all w-full relative z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Return to Base →</button>
       </div>
     </div>
   );
 };
-export const MissionFailedModal = ({ show, onClose, missionTitle, reachedStep = 0, totalSteps = 0, stepDescription = '', concept = '', onRetryUntimed }: { show: boolean; onClose: () => void; missionTitle: string; reachedStep?: number; totalSteps?: number; stepDescription?: string; concept?: string; onRetryUntimed?: () => void }) => {
+export const MissionFailedModal = ({ show, onClose, missionTitle, reachedStep = 0, totalSteps = 0, stepDescription = '', concept = '', onRetryMission }: { show: boolean; onClose: () => void; missionTitle: string; reachedStep?: number; totalSteps?: number; stepDescription?: string; concept?: string; onRetryMission?: () => void }) => {
   if (!show) return null;
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 animate-in fade-in duration-300">
@@ -204,15 +203,15 @@ export const MissionFailedModal = ({ show, onClose, missionTitle, reachedStep = 
         <h2 className="text-4xl font-black text-red-500 mb-2 tracking-tighter relative z-20">MISSION FAILED</h2>
         <div className="h-1 w-full bg-red-500 mb-6 relative z-20"></div>
         <p className="text-white text-lg mb-1 relative z-20">Operation: <span className="text-red-400 font-bold">{missionTitle}</span></p>
-        <p className="text-red-300 text-xs uppercase tracking-widest mb-5 relative z-20">Challenge timer ended · your practice progress is not a failure</p>
+        <p className="text-red-300 text-xs uppercase tracking-widest mb-5 relative z-20">Mission time limit reached · review your progress and try again</p>
         <div className="mb-6 space-y-2 border border-red-900/70 bg-red-950/10 p-4 text-left relative z-20">
           <p className="text-xs text-gray-300">Reached objective {Math.min(reachedStep, totalSteps)} of {totalSteps}: {stepDescription}</p>
           {concept && <p className="text-xs text-gray-400">Concept: <span className="text-yellow-300">{concept}</span></p>}
           <p className="text-xs leading-5 text-gray-400">Suggestion: review the objective and glossary, then continue one evidence step at a time.</p>
         </div>
         <div className="relative z-20 flex flex-col gap-3 sm:flex-row">
-          {onRetryUntimed && <button onClick={onRetryUntimed} className="flex-1 border-2 border-cyan-600 px-5 py-3 text-xs font-bold uppercase text-cyan-300 hover:bg-cyan-900/30">Retry untimed</button>}
-          <button onClick={onClose} className="flex-1 border-2 border-red-500 px-5 py-3 text-xs font-bold uppercase text-red-400 hover:bg-red-500 hover:text-black">Return to Base</button>
+          {onRetryMission && <button type="button" onClick={onRetryMission} className="flex-1 border-2 border-cyan-600 px-5 py-3 text-xs font-bold uppercase text-cyan-300 hover:bg-cyan-900/30">Retry mission</button>}
+          <button type="button" autoFocus onClick={onClose} className="flex-1 border-2 border-red-500 px-5 py-3 text-xs font-bold uppercase text-red-400 hover:bg-red-500 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Return to Base</button>
         </div>
       </div>
     </div>

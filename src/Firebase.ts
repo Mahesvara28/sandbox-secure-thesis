@@ -7,7 +7,11 @@ import {
   signOut,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  setPersistence
 } from "firebase/auth";
 import {
   getFirestore,
@@ -29,6 +33,7 @@ import { normalizeProgression, type PlayerProgression } from './data/progression
 import { CONTENT_VERSION } from './data/contentVersion';
 import { AVATARS, DEFAULT_AVATAR_ID, getAvatarById, type AvatarId } from './data/avatars';
 import { ASSESSMENT_TIME_LIMIT_SECONDS } from './data/assessmentTiming';
+import { COSMETIC_CATALOG, DEFAULT_COSMETICS, getCosmeticReward, normalizeCosmetics, type CosmeticKind, type PlayerCosmetics } from './data/cosmetics';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
@@ -44,6 +49,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+export const authReady = setPersistence(auth, browserLocalPersistence)
+  .catch(() => setPersistence(auth, browserSessionPersistence));
 export const db = getFirestore(app);
 export const googleProvider =
   new GoogleAuthProvider();
@@ -69,6 +76,7 @@ export const ensureUserProfile = async (user: User, preferredName?: string) => {
 };
 
 export const signInWithGoogle = async () => {
+  await authReady;
   const result =
     await signInWithPopup(
       auth,
@@ -85,6 +93,7 @@ export const registerWithEmail = async (
   password: string,
   username: string
 ) => {
+  await authReady;
   const result =
     await createUserWithEmailAndPassword(
       auth,
@@ -111,6 +120,7 @@ export const loginWithEmail = async (
   email: string,
   password: string
 ) => {
+  await authReady;
   const result =
     await signInWithEmailAndPassword(
       auth,
@@ -119,6 +129,11 @@ export const loginWithEmail = async (
     );
 
   return result.user;
+};
+
+export const sendPasswordReset = async (email: string) => {
+  await authReady;
+  await sendPasswordResetEmail(auth, email.trim());
 };
 
 export const logOut = async () => {
@@ -201,7 +216,7 @@ export const syncActiveSessionClock = (userId: string) => {
   return request;
 };
 
-export const startMissionSession = async (userId: string, sessionId: string, clientId: string, missionId: string, tier: string, missionOrigin: string, dailyChallenge?: { date?: string; type?: 'timeAttack' | 'accuracy' }) => {
+export const startMissionSession = async (userId: string, sessionId: string, clientId: string, missionId: string, tier: string, missionOrigin: string, timerLimitSeconds = 0, dailyChallenge?: { date?: string; type?: 'timeAttack' | 'accuracy' }) => {
   const ref = activeSessionRef(userId);
   await runTransaction(db, async transaction => {
     const snapshot = await transaction.get(ref);
@@ -212,7 +227,7 @@ export const startMissionSession = async (userId: string, sessionId: string, cli
       throw new Error('Another activity is already in progress. Resume it before starting a new mission.');
     }
     transaction.set(ref, {
-      kind: 'mission', sessionId, clientId, missionId, tier, missionOrigin,
+      kind: 'mission', sessionId, clientId, missionId, tier, missionOrigin, timerLimitSeconds,
       // Firestore rejects undefined values. Ordinary missions have no daily
       // challenge metadata, so omit those fields instead of writing undefined.
       ...(dailyChallenge?.date ? { dailyChallengeDate: dailyChallenge.date } : {}),
@@ -246,6 +261,22 @@ export const saveMissionSessionProgress = async (
     transaction.update(ref, { ...progress, revision, updatedAt: serverTimestamp() });
     return true;
   });
+};
+
+export const ensureMissionSessionTimer = async (userId: string, sessionId: string, clientId: string, timerLimitSeconds: number) => {
+  const ref = activeSessionRef(userId);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    const saved = snapshot.data();
+    if (saved?.sessionId !== sessionId || saved?.clientId !== clientId || saved?.kind !== 'mission' || saved?.status !== 'in_progress') return;
+    if (Number(saved.timerLimitSeconds ?? 0) > 0) return;
+    transaction.update(ref, { timerLimitSeconds, startedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  });
+  const serverOffsetMs = await syncActiveSessionClock(userId);
+  const savedSession = await getActiveSession(userId);
+  const startedAt = savedSession?.startedAt as Timestamp | undefined;
+  if (!savedSession || !startedAt) throw new Error('Could not restore the mission timer.');
+  return { startedAtMs: startedAt.toMillis(), serverOffsetMs };
 };
 
 export const completeMissionSession = async (userId: string, sessionId: string) => {
@@ -360,6 +391,7 @@ export const getUserProgress = async (
       scores: {},
       completedMissions: [],
       progression: normalizeProgression(null),
+      cosmetics: { ...DEFAULT_COSMETICS },
       avatarId: DEFAULT_AVATAR_ID,
       preferences: {},
       leaderboardOptIn: false,
@@ -381,12 +413,61 @@ export const getUserProgress = async (
         ? data.completedMissions
         : [],
     progression: normalizeProgression(data.progression),
+    cosmetics: normalizeCosmetics(data.cosmetics),
     avatarId: getAvatarById(data.avatarId).id,
     preferences: data.preferences && typeof data.preferences === 'object' ? data.preferences as Record<string, unknown> : {},
     leaderboardOptIn: data.leaderboardOptIn === true,
     leaderboardAlias: typeof data.leaderboardAlias === 'string' ? data.leaderboardAlias : '',
     certificates: Array.isArray(data.certificates) ? data.certificates.filter(isUserCertificate) : []
   };
+};
+
+const ownedCosmeticField = (kind: CosmeticKind) => kind === 'frame' ? 'ownedFrameIds' : kind === 'palette' ? 'ownedPaletteIds' : 'ownedTitleIds';
+const equippedCosmeticField = (kind: CosmeticKind) => kind === 'frame' ? 'equippedFrameId' : kind === 'palette' ? 'equippedPaletteId' : 'equippedTitleId';
+
+export const purchaseCosmetic = async (userId: string, kind: CosmeticKind, itemId: string): Promise<PlayerCosmetics> => {
+  const item = COSMETIC_CATALOG[kind].find(candidate => candidate.id === itemId);
+  if (!item) throw new Error('That cosmetic is not available.');
+  const userRef = doc(db, 'users', userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(userRef);
+    const cosmetics = normalizeCosmetics(snapshot.data()?.cosmetics);
+    const ownedField = ownedCosmeticField(kind);
+    const owned = cosmetics[ownedField];
+    if (owned.includes(item.id)) return cosmetics;
+    if (cosmetics.coins < item.price) throw new Error('You do not have enough coins for this item.');
+    const next = { ...cosmetics, coins: cosmetics.coins - item.price, [ownedField]: [...owned, item.id] };
+    transaction.set(userRef, { cosmetics: next }, { merge: true });
+    return next;
+  });
+};
+
+export const equipCosmetic = async (userId: string, kind: CosmeticKind, itemId: string): Promise<PlayerCosmetics> => {
+  const item = COSMETIC_CATALOG[kind].find(candidate => candidate.id === itemId);
+  if (!item) throw new Error('That cosmetic is not available.');
+  const userRef = doc(db, 'users', userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(userRef);
+    const cosmetics = normalizeCosmetics(snapshot.data()?.cosmetics);
+    if (!cosmetics[ownedCosmeticField(kind)].includes(item.id)) throw new Error('Purchase this item before equipping it.');
+    const next = { ...cosmetics, [equippedCosmeticField(kind)]: item.id };
+    transaction.set(userRef, { cosmetics: next }, { merge: true });
+    return next;
+  });
+};
+
+export const awardFirstMissionCoins = async (userId: string, missionId: string, tier: string): Promise<{ cosmetics: PlayerCosmetics; awarded: number }> => {
+  if (missionId.startsWith('daily-')) throw new Error('Daily challenges do not award shop coins.');
+  const reward = getCosmeticReward(tier);
+  const userRef = doc(db, 'users', userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(userRef);
+    const cosmetics = normalizeCosmetics(snapshot.data()?.cosmetics);
+    if (cosmetics.rewardedMissionIds.includes(missionId)) return { cosmetics, awarded: 0 };
+    const next = { ...cosmetics, coins: cosmetics.coins + reward, rewardedMissionIds: [...cosmetics.rewardedMissionIds, missionId] };
+    transaction.set(userRef, { cosmetics: next }, { merge: true });
+    return { cosmetics: next, awarded: reward };
+  });
 };
 
 export interface UserCertificate {
@@ -670,7 +751,8 @@ export interface MissionAttemptRecord {
   missionTitle: string;
   tier: string;
   concept: string;
-  outcome: 'completed' | 'timed_out';
+  outcome: 'completed' | 'timed_out' | 'abandoned';
+  stepsReached?: number;
   challengeMode?: boolean;
   dailyChallengeDate?: string;
   dailyChallengeType?: 'timeAttack' | 'accuracy';

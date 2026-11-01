@@ -8,7 +8,8 @@ import {
   Trophy,
   XCircle,
   ArrowLeft,
-  BookOpen
+  BookOpen,
+  Star
 } from 'lucide-react';
 
 import type {
@@ -26,6 +27,7 @@ import {
   type Question
 } from './QuizModule';
 import { CommandFieldGuide } from './CommandFieldGuide';
+import { getMissionXp, type PlayerProgression } from '../data/progression';
 
 interface TierDashboardProps {
   tierName: Tier;
@@ -49,6 +51,7 @@ interface TierDashboardProps {
   ) => void;
 
   completedMissions: string[];
+  progression: PlayerProgression;
 
   userScores: Record<
     string,
@@ -78,13 +81,15 @@ const shuffledQuestions = (questions: Question[]): Question[] => {
   for (let index = copy.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
-    const answer = copy[index].options[copy[index].correctAnswer];
-    const options = copy[index].options;
+  }
+  for (const question of copy) {
+    const answer = question.options[question.correctAnswer];
+    const options = question.options;
     for (let optionIndex = options.length - 1; optionIndex > 0; optionIndex -= 1) {
       const optionSwapIndex = Math.floor(Math.random() * (optionIndex + 1));
       [options[optionIndex], options[optionSwapIndex]] = [options[optionSwapIndex], options[optionIndex]];
     }
-    copy[index].correctAnswer = options.indexOf(answer);
+    question.correctAnswer = options.indexOf(answer);
   }
   return copy;
 };
@@ -98,13 +103,14 @@ export const TierDashboard = ({
   onSessionReady,
   onStartMission,
   completedMissions,
+  progression,
   userScores,
   activeSession
 }: TierDashboardProps) => {
 
   const [assessmentQuestions] = useState(() => ({
-    pre: tierName === 'BEGINNER' ? shuffledQuestions(preTestQuestions) : preTestQuestions,
-    post: tierName === 'BEGINNER' ? shuffledQuestions(postTestQuestions) : postTestQuestions
+    pre: shuffledQuestions(preTestQuestions),
+    post: shuffledQuestions(postTestQuestions)
   }));
 
   const activePreTestQuestions = assessmentQuestions.pre;
@@ -196,6 +202,12 @@ export const TierDashboard = ({
   );
 
   const nextMission = tierMissions.find(mission => !completedMissions.includes(mission.id));
+  const masteryStarsFor = (missionId: string) => {
+    const grade = Number(progression.missionStats[missionId]?.bestGrade ?? 0);
+    return grade >= 2.75 ? 3 : grade >= 2 ? 2 : grade >= 1.5 ? 1 : 0;
+  };
+  const earnedMasteryStars = tierMissions.reduce((sum, mission) => sum + masteryStarsFor(mission.id), 0);
+  const possibleMasteryStars = tierMissions.length * 3;
 
   const finalPercentage =
     finalScore !== null &&
@@ -214,9 +226,9 @@ export const TierDashboard = ({
 
   if (stage === 'intro') {
     return (
-      <div className="h-full overflow-y-auto p-6">
+      <div className="h-full min-w-0 overflow-x-hidden overflow-y-auto p-3 sm:p-6">
 
-        <div className="mx-auto w-full max-w-[1320px]">
+        <div className="mx-auto w-full min-w-0 max-w-[1320px]">
 
           <button
             onClick={onExit}
@@ -238,7 +250,7 @@ export const TierDashboard = ({
 
               </div>
 
-              <div>
+              <div className="min-w-0">
 
                 <p className="text-xs text-green-700 tracking-widest">
                   CERTIFICATION TIER
@@ -356,7 +368,7 @@ export const TierDashboard = ({
           activePreTestQuestions
         }
         showReviewAfterComplete={
-          false
+          true
         }
         onComplete={(
           score: number,
@@ -394,9 +406,9 @@ export const TierDashboard = ({
 
   if (stage === 'missions') {
     return (
-      <div className="h-full overflow-y-auto p-6">
+      <div className="h-full min-w-0 overflow-x-hidden overflow-y-auto p-3 sm:p-6">
 
-        <div className="mx-auto w-full max-w-[1320px]">
+        <div className="mx-auto w-full min-w-0 max-w-[1320px]">
 
           <button
             onClick={onExit}
@@ -409,7 +421,7 @@ export const TierDashboard = ({
 
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
 
-              <div>
+              <div className="min-w-0">
 
                 <p className="text-xs text-green-700 tracking-widest">
                   TRAINING PHASE
@@ -470,7 +482,17 @@ export const TierDashboard = ({
 
           {showCommandGuide && <CommandFieldGuide tier={tierName} onClose={() => setShowCommandGuide(false)} />}
 
-          <div className="relative space-y-4 before:absolute before:bottom-5 before:left-[21px] before:top-5 before:w-px before:bg-green-800/60">
+          {nextMission && completedCount > 0 && <div className="mb-5 flex flex-col gap-3 border border-cyan-700/50 bg-cyan-950/15 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">Next mission available</p>
+              <p className="mt-1 text-sm text-green-200">Continue with {nextMission.title}. Your completed cases remain saved.</p>
+            </div>
+            <button type="button" onClick={() => onStartMission(nextMission.id)} className="min-h-11 shrink-0 border border-cyan-500 px-5 py-2 text-xs font-black uppercase text-cyan-200 hover:bg-cyan-500 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Continue to Mission {String(tierMissions.indexOf(nextMission) + 1).padStart(2, '0')}</button>
+          </div>}
+
+          {allMissionsComplete && <div className="mb-5 border border-green-500/40 bg-green-950/20 p-4 text-sm text-green-200">All missions in this tier are complete. You can replay a case or continue to the final assessment.</div>}
+
+          <div className="relative min-w-0 space-y-4">
 
             {tierMissions.map(
               (
@@ -488,22 +510,22 @@ export const TierDashboard = ({
                   index === firstIncompleteMissionIndex;
 
                 return (
+                  <div key={mission.id} className="relative min-w-0">
                   <div
-                    key={mission.id}
-                    className={`roadmap-node-card relative border p-5 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(34,197,94,0.08)] ${
+                    className={`roadmap-node-card relative z-10 min-w-0 border p-4 transition-colors duration-200 motion-reduce:transition-none sm:p-5 ${
                       completed
-                        ? 'border-green-500/40 bg-green-500/5'
+                        ? 'border-green-500/40 bg-green-500/5 hover:border-green-400'
                         : unlocked
-                        ? 'border-green-500/20 bg-black/60'
+                        ? 'border-green-500/20 bg-black/60 hover:border-green-400'
                         : 'border-green-500/10 bg-black/40 opacity-60'
                     }`}
                   >
 
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+                    <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-5">
 
-                      <div className="flex items-start gap-4">
+                      <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
 
-                        <div className="w-11 h-11 shrink-0 border border-green-500/30 flex items-center justify-center">
+                        <div className={`relative z-20 flex h-11 w-11 shrink-0 items-center justify-center border border-green-500/30 ${completed ? 'bg-[#06100b]' : 'bg-black'}`}>
 
                           {completed ? (
                             <CheckCircle2
@@ -528,7 +550,7 @@ export const TierDashboard = ({
 
                         </div>
 
-                        <div>
+                        <div className="min-w-0 flex-1">
 
                           <p className="text-[10px] text-green-700">
                             MISSION{' '}
@@ -540,17 +562,28 @@ export const TierDashboard = ({
                             )}
                           </p>
 
-                          <h2 className="text-lg font-bold text-green-300">
+                          <h2 className="break-words text-lg font-bold text-green-300">
                             {mission.title}
                           </h2>
 
-                          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          <div className="mt-2 flex min-w-0 flex-wrap gap-2 text-xs">
                             <span className="rounded-full border border-cyan-800 px-2 py-1 text-cyan-300">{mission.category ?? 'case'} · {mission.difficulty}</span>
                             <span className="rounded-full border border-green-900 px-2 py-1 text-green-500">~{Math.max(3, Math.ceil(mission.steps.length * 1.5))} min</span>
                             {completed && <span className="rounded-sm border border-green-500/50 bg-green-500/10 px-2 py-1 font-bold tracking-wider text-green-300">RESOLVED</span>}
                           </div>
 
-                          <p className="mt-2 text-sm leading-6 text-green-700">
+                          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" aria-label={completed ? `Best mission mastery: ${masteryStarsFor(mission.id)} of 3 stars` : `First clear reward: ${getMissionXp(mission.tier)} XP plus skill bonuses`}>
+                            {completed ? <>
+                              <span className="font-semibold uppercase tracking-wide text-amber-200">Best mastery</span>
+                              <span className="inline-flex items-center gap-0.5" aria-hidden="true">{[0, 1, 2].map(star => <Star key={star} size={14} className={star < masteryStarsFor(mission.id) ? 'fill-amber-300 text-amber-300' : 'text-amber-900'} />)}</span>
+                              {masteryStarsFor(mission.id) < 3 && <span className="text-green-500">Replay to improve your best medal</span>}
+                            </> : <>
+                              <span className="font-semibold uppercase tracking-wide text-cyan-300">First clear</span>
+                              <span className="text-cyan-200">+{getMissionXp(mission.tier)} XP · up to +40 skill XP</span>
+                            </>}
+                          </div>
+
+                          <p className="mt-2 min-w-0 break-words text-sm leading-6 text-green-700">
                             {mission.learningGoal ?? mission.intro}
                           </p>
 
@@ -576,7 +609,7 @@ export const TierDashboard = ({
                           unlocked
                             ? 'border-green-500 text-green-400 hover:bg-green-500 hover:text-black'
                             : 'border-green-500/10 text-green-700 cursor-not-allowed'
-                        }`}
+                        } min-h-11 w-full shrink-0 whitespace-normal break-words md:w-auto md:min-w-[140px] md:max-w-[190px]`}
                       >
                         {completed
                           ? 'Replay Mission'
@@ -588,6 +621,8 @@ export const TierDashboard = ({
                     </div>
 
                   </div>
+                  {index < tierMissions.length - 1 && <span aria-hidden="true" className="pointer-events-none absolute left-[38px] top-full z-0 h-4 w-px bg-green-800/70 sm:left-[42px]" />}
+                  </div>
                 );
               }
             )}
@@ -598,7 +633,7 @@ export const TierDashboard = ({
 
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
 
-              <div>
+              <div className="min-w-0">
 
                 <p className="text-xs text-green-700">
                   MISSION PROGRESS
@@ -607,6 +642,10 @@ export const TierDashboard = ({
                 <p className="text-2xl font-black text-green-300 mt-1">
                   {completedCount}/
                   {tierMissions.length}
+                </p>
+                <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-amber-200" aria-label={`Mission mastery: ${earnedMasteryStars} of ${possibleMasteryStars} stars`}>
+                  <Star size={14} className="fill-amber-300 text-amber-300" aria-hidden="true" />
+                  {earnedMasteryStars}/{possibleMasteryStars} mastery stars
                 </p>
 
               </div>

@@ -1,8 +1,8 @@
-import avatar1 from '../assets/avatar 1.jpg';
-import avatar2 from '../assets/avatar 2.jpg';
-import avatar3 from '../assets/avatar 3.jpg';
-import avatar4 from '../assets/avatar 4.jpg';
-import avatar5 from '../assets/avatar 5.jpg';
+import avatar1 from '../assets/avatar 1.webp';
+import avatar2 from '../assets/avatar 2.webp';
+import avatar3 from '../assets/avatar 3.webp';
+import avatar4 from '../assets/avatar 4.webp';
+import avatar5 from '../assets/avatar 5.webp';
 
 export const AVATARS = [
   { id: 'avatar-1', label: 'Avatar 1', src: avatar1 },
