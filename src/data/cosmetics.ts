@@ -38,6 +38,7 @@ export interface PlayerCosmetics {
   equippedPaletteId: string;
   equippedTitleId: string;
   rewardedMissionIds: string[];
+  rewardedCertificationTiers: string[];
 }
 
 export const DEFAULT_COSMETICS: PlayerCosmetics = {
@@ -48,7 +49,8 @@ export const DEFAULT_COSMETICS: PlayerCosmetics = {
   equippedFrameId: 'frame-standard',
   equippedPaletteId: 'palette-classic',
   equippedTitleId: 'title-operator',
-  rewardedMissionIds: []
+  rewardedMissionIds: [],
+  rewardedCertificationTiers: []
 };
 
 export const normalizeCosmetics = (value: unknown): PlayerCosmetics => {
@@ -71,8 +73,11 @@ export const normalizeCosmetics = (value: unknown): PlayerCosmetics => {
     equippedFrameId: equipped(candidate.equippedFrameId, ownedFrameIds, 'frame-standard'),
     equippedPaletteId: equipped(candidate.equippedPaletteId, ownedPaletteIds, 'palette-classic'),
     equippedTitleId: equipped(candidate.equippedTitleId, ownedTitleIds, 'title-operator'),
-    rewardedMissionIds: Array.isArray(candidate.rewardedMissionIds) ? [...new Set(candidate.rewardedMissionIds.filter((id): id is string => typeof id === 'string'))] : []
+    rewardedMissionIds: Array.isArray(candidate.rewardedMissionIds) ? [...new Set(candidate.rewardedMissionIds.filter((id): id is string => typeof id === 'string'))] : [],
+    rewardedCertificationTiers: Array.isArray(candidate.rewardedCertificationTiers) ? [...new Set(candidate.rewardedCertificationTiers.filter((tier): tier is string => ['BEGINNER', 'INTERMEDIATE', 'EXPERT'].includes(tier)))] : []
   };
 };
 
-export const getCosmeticReward = (tier: string) => tier === 'EXPERT' ? 50 : tier === 'INTERMEDIATE' ? 35 : 20;
+export const MISSION_CLEAR_COIN_REWARD = 50;
+export const CERTIFICATION_CLEAR_COIN_REWARD = 100;
+export const getCosmeticReward = () => MISSION_CLEAR_COIN_REWARD;

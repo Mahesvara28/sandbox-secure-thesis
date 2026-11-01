@@ -1286,6 +1286,27 @@ function App() {
         ? 'HANDLER: Daily time attack. Work through the familiar training case carefully before the timer ends. Speed helps only when your steps are correct.'
         : 'HANDLER: Daily accuracy trial. There is no timer. Choose commands deliberately and use the evidence to reach the supported conclusion.',
       scenario: `${practiceMission.scenario} This is today’s one-attempt ${isTimeAttack ? 'timed' : 'accuracy'} trial.`,
+      steps: isTimeAttack ? practiceMission.steps : [
+        ...practiceMission.steps,
+        {
+          desc: 'Decide whether the evidence confirms impact or only supports further review.',
+          cmd: 'choose needs-review',
+          hint: ['A lead can justify follow-up without proving access or impact.', 'Choose the conclusion that stays within what the records establish.'],
+          decision: {
+            prompt: 'What conclusion is best supported by the evidence reviewed?',
+            correctId: 'needs-review',
+            choices: [
+              { id: 'needs-review', label: 'The evidence warrants review, but does not by itself confirm impact.', feedback: 'Correct. Keep the finding scoped to what the records show and identify what still needs validation.' },
+              { id: 'confirmed-impact', label: 'The evidence proves the system was compromised.', feedback: 'The records shown are clues for investigation; they do not establish confirmed compromise or impact.' }
+            ]
+          }
+        },
+        {
+          desc: 'Report the cautious finding and state that further validation is needed.',
+          cmd: 'report needs-review',
+          hint: ['Summarize the observed lead without claiming unproven impact.', 'Use the report action with the supported finding: needs-review.']
+        }
+      ],
       timerLimit: isTimeAttack ? 180 : 0,
       difficulty: 'standard'
     };
@@ -1603,7 +1624,7 @@ function App() {
         playSound('levelComplete');
         const report = awardMissionProgression(activeMission, caseNotes, caseConfidence);
         if (user && !activeMission.id.startsWith('daily-')) {
-          void awardFirstMissionCoins(user.uid, activeMission.id, activeMission.tier)
+          void awardFirstMissionCoins(user.uid, activeMission.id)
             .then(result => {
               setCosmetics(result.cosmetics);
             })
@@ -1837,6 +1858,7 @@ function App() {
                 setCertificates(previous => previous.some(item => item.tier === result.certificate.tier)
                   ? previous
                   : [...previous, result.certificate]);
+                setCosmetics(result.cosmetics);
                 if (result.created) setCertificateToShow(result.certificate);
               } catch (error) {
                 console.error('Assessment passed, but the certificate could not be saved:', error);

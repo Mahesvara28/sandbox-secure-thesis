@@ -2550,7 +2550,7 @@ export const ProfileScreen = ({
         </div>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border border-[var(--game-amber)]/50 bg-[var(--game-amber)]/5 p-4">
           <div><p className="text-xs font-bold uppercase tracking-widest text-[var(--game-amber)]">Your shop coins</p><p className="mt-1 text-2xl font-black tabular-nums text-[var(--game-text)]">{cosmetics.coins}</p></div>
-          <p className="max-w-xl text-sm leading-6 text-[var(--game-muted)]">Eligible missions award coins once per mission: 20 for Beginner, 35 for Intermediate, and 50 for Expert. A replay cannot earn a second reward, and daily trials do not award coins. Assessment scores never affect your balance.</p>
+          <p className="max-w-xl text-sm leading-6 text-[var(--game-muted)]">Earn 50 coins for each eligible mission clear and 100 coins for each certification earned. Mission rewards are one-time; replays and daily trials do not award coins. Assessment scores do not affect your balance.</p>
         </div>
         {cosmeticMessage && <p className="mb-4 border border-[var(--game-border)] p-3 text-sm text-[var(--game-text)]" role="status">{cosmeticMessage}</p>}
         <div className="space-y-6">

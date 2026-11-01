@@ -34,7 +34,7 @@ import { normalizeProgression, type PlayerProgression } from './data/progression
 import { CONTENT_VERSION } from './data/contentVersion';
 import { AVATARS, DEFAULT_AVATAR_ID, getAvatarById, type AvatarId } from './data/avatars';
 import { ASSESSMENT_TIME_LIMIT_SECONDS } from './data/assessmentTiming';
-import { COSMETIC_CATALOG, DEFAULT_COSMETICS, getCosmeticReward, normalizeCosmetics, type CosmeticKind, type PlayerCosmetics } from './data/cosmetics';
+import { CERTIFICATION_CLEAR_COIN_REWARD, COSMETIC_CATALOG, DEFAULT_COSMETICS, getCosmeticReward, normalizeCosmetics, type CosmeticKind, type PlayerCosmetics } from './data/cosmetics';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
@@ -462,9 +462,9 @@ export const equipCosmetic = async (userId: string, kind: CosmeticKind, itemId: 
   });
 };
 
-export const awardFirstMissionCoins = async (userId: string, missionId: string, tier: string): Promise<{ cosmetics: PlayerCosmetics; awarded: number }> => {
+export const awardFirstMissionCoins = async (userId: string, missionId: string): Promise<{ cosmetics: PlayerCosmetics; awarded: number }> => {
   if (missionId.startsWith('daily-')) throw new Error('Daily challenges do not award shop coins.');
-  const reward = getCosmeticReward(tier);
+  const reward = getCosmeticReward();
   const userRef = doc(db, 'users', userId);
   return runTransaction(db, async transaction => {
     const snapshot = await transaction.get(userRef);
@@ -499,21 +499,40 @@ const isUserCertificate = (value: unknown): value is UserCertificate => {
 export const saveUserCertificate = async (
   userId: string,
   certificate: Omit<UserCertificate, 'id' | 'issuedAt'>
-): Promise<{ certificate: UserCertificate; created: boolean }> => {
+): Promise<{ certificate: UserCertificate; created: boolean; cosmetics: PlayerCosmetics }> => {
   const userRef = doc(db, 'users', userId);
   return runTransaction(db, async transaction => {
     const snapshot = await transaction.get(userRef);
-    const saved = snapshot.data()?.certificates;
+    const userData = snapshot.data();
+    const cosmetics = normalizeCosmetics(userData?.cosmetics);
+    const saved = userData?.certificates;
     const certificates = Array.isArray(saved) ? saved.filter(isUserCertificate) : [];
     const existing = certificates.find(item => item.tier === certificate.tier);
-    if (existing) return { certificate: existing, created: false };
+    if (existing) {
+      if (cosmetics.rewardedCertificationTiers.includes(certificate.tier)) {
+        return { certificate: existing, created: false, cosmetics };
+      }
+      const rewardedCosmetics = {
+        ...cosmetics,
+        coins: cosmetics.coins + CERTIFICATION_CLEAR_COIN_REWARD,
+        rewardedCertificationTiers: [...cosmetics.rewardedCertificationTiers, certificate.tier]
+      };
+      transaction.set(userRef, { cosmetics: rewardedCosmetics }, { merge: true });
+      return { certificate: existing, created: false, cosmetics: rewardedCosmetics };
+    }
     const created: UserCertificate = {
       ...certificate,
       id: `cert-${certificate.tier.toLowerCase()}`,
       issuedAt: new Date().toISOString()
     };
-    transaction.set(userRef, { certificates: [...certificates, created] }, { merge: true });
-    return { certificate: created, created: true };
+    const alreadyRewarded = cosmetics.rewardedCertificationTiers.includes(certificate.tier);
+    const nextCosmetics = alreadyRewarded ? cosmetics : {
+      ...cosmetics,
+      coins: cosmetics.coins + CERTIFICATION_CLEAR_COIN_REWARD,
+      rewardedCertificationTiers: [...cosmetics.rewardedCertificationTiers, certificate.tier]
+    };
+    transaction.set(userRef, { certificates: [...certificates, created], cosmetics: nextCosmetics }, { merge: true });
+    return { certificate: created, created: true, cosmetics: nextCosmetics };
   });
 };
 
