@@ -322,6 +322,8 @@ export const AuthScreen = ({
             <button id="auth-tab-register" type="button" role="tab" tabIndex={authMode === 'register' ? 0 : -1} aria-selected={authMode === 'register'} aria-controls="auth-form-panel" onClick={() => setAuthMode('register')} className={authMode === 'register' ? activeTabClass : inactiveTabClass}>Create account</button>
           </div>
 
+          {authMode === 'login' && <p className="mb-4 text-xs leading-5 text-[var(--game-muted)]">Email accounts must verify their address before entering the game. If you still need a link, enter your credentials and sign in to request another.</p>}
+
           <div id="auth-form-panel" role="tabpanel" aria-labelledby={authMode === 'login' ? 'auth-tab-login' : 'auth-tab-register'}>
             {authMode === 'login' ? <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
               <div><label htmlFor="login-email" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Email address</label><input id="login-email" name="email" autoComplete="email" required type="email" value={regEmail} onChange={event => setRegEmail(event.target.value)} className={fieldClass} placeholder="operator@example.com" /></div>

@@ -15,6 +15,7 @@ import {
   saveUserScore,
   registerWithEmail,
   loginWithEmail,
+  sendAccountVerification,
   sendPasswordReset,
   saveCompletedMissions,
   savePreTestScore,
@@ -670,6 +671,38 @@ function App() {
         auth,
         async currentUser => {
           if (cancelled) return;
+          if (currentUser) {
+            try {
+              // Firebase may restore a cached user before its verified-email
+              // claim is current. Refresh before profile reads and rule checks.
+              await currentUser.reload();
+              await currentUser.getIdToken(true);
+            } catch (error) {
+              if (cancelled) return;
+              console.error('Could not refresh the signed-in user before loading progress:', error);
+              setUser(currentUser);
+              setBootStage('authenticated');
+              progressLoadFailedRef.current = true;
+              setProgressLoadFailed(true);
+              setIsLoadingAuth(false);
+              return;
+            }
+          }
+          const requiresEmailVerification = Boolean(currentUser?.providerData.some(provider => provider.providerId === 'password') && !currentUser.emailVerified);
+          if (currentUser && requiresEmailVerification) {
+            // Firebase restores auth sessions before the game mounts. Keep
+            // unverified email/password accounts on the login screen.
+            setUser(null);
+            setBootStage('login');
+            setIsLoadingAuth(false);
+            progressLoadFailedRef.current = false;
+            setProgressLoadFailed(false);
+            setScreen('dashboard');
+            setActiveMission(null);
+            setActiveSession(null);
+            setSessionConflict(null);
+            return;
+          }
           setUser(
             currentUser
           );
@@ -992,6 +1025,7 @@ function App() {
   const handleLogin =
     async () => {
       setAuthError('');
+      setAuthSuccess(false);
 
       try {
         const loggedIn =
@@ -999,6 +1033,23 @@ function App() {
             regEmail,
             regPassword
           );
+
+        if (loggedIn.providerData.some(provider => provider.providerId === 'password') && !loggedIn.emailVerified) {
+          let verificationSent = false;
+          try {
+            await sendAccountVerification(loggedIn);
+            verificationSent = true;
+          } catch (error) {
+            console.warn('Could not resend account verification email:', error);
+          }
+          await logOut();
+          setRegPassword('');
+          setAuthSuccessMessage(verificationSent
+            ? `Verify ${loggedIn.email ?? 'your email'} using the link we just sent, then sign in.`
+            : 'Your email is not verified yet. Check your inbox and spam folder. We could not resend the link right now; try signing in again later.');
+          setAuthSuccess(true);
+          return;
+        }
 
         setBootStage(
           'authenticated'
@@ -1062,20 +1113,23 @@ function App() {
             regUsername
           );
 
+        let verificationSent = false;
+        try {
+          await sendAccountVerification(created);
+          verificationSent = true;
+        } catch (error) {
+          console.warn('Account was created, but its verification email could not be sent:', error);
+        }
+        await logOut();
+        setAuthMode('login');
+        setRegPassword('');
+
         setAuthSuccess(
           true
         );
-      setAuthSuccessMessage('Account created successfully.');
-
-        setTimeout(() => {
-          setBootStage(
-            'authenticated'
-          );
-
-          maybeShowOnboarding(
-            created.uid
-          );
-        }, 1500);
+        setAuthSuccessMessage(verificationSent
+          ? `Account created. Verify ${created.email ?? 'your email'} with the link we sent, then sign in.`
+          : 'Account created, but the verification email could not be sent. Sign in later to request another verification link.');
       } catch (
         error: unknown
       ) {

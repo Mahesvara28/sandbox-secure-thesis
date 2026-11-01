@@ -8,6 +8,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile,
+  sendEmailVerification,
   sendPasswordResetEmail,
   browserLocalPersistence,
   browserSessionPersistence,
@@ -108,12 +109,12 @@ export const registerWithEmail = async (
     }
   );
 
-  await ensureUserProfile(result.user, username);
-  // The auth listener may have created the profile during account creation;
-  // persist the chosen registration name in either ordering.
-  await setDoc(doc(db, 'users', result.user.uid), { username, email: result.user.email ?? email }, { merge: true });
-
   return result.user;
+};
+
+export const sendAccountVerification = async (user: User) => {
+  await authReady;
+  await sendEmailVerification(user);
 };
 
 export const loginWithEmail = async (
@@ -127,6 +128,11 @@ export const loginWithEmail = async (
       email,
       password
     );
+
+  // Refresh the verified-email claim so Firestore rules recognize the
+  // account immediately after the user follows the verification link.
+  await result.user.reload();
+  await result.user.getIdToken(true);
 
   return result.user;
 };
