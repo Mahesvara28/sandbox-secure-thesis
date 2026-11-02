@@ -1,18 +1,20 @@
-import { BookOpen, CheckCircle2, HelpCircle, Terminal, Clock3, Network, FileText, X } from 'lucide-react';
+import { BookOpen, CheckCircle2, HelpCircle, Terminal, Clock3, Network, FileText, Keyboard, ShieldAlert, X } from 'lucide-react';
 
 interface MissionToolGuideProps {
   onComplete: () => void;
 }
 
 const tools = [
-  { icon: FileText, name: 'Mission context', description: 'The briefing and scenario describe what happened and what is known so far. Use that context to decide what evidence to check.' },
+  { icon: FileText, name: 'Mission context', description: 'The briefing and scenario describe what happened and what is known so far. The current objective and suggested tools help you choose what evidence to check.' },
   { icon: CheckCircle2, name: 'Objective and progress', description: 'The objective panel tells you the current task. The progress indicator shows how many steps you have completed and what comes next.' },
   { icon: Terminal, name: 'Terminal', description: 'Type a command in the prompt and press Enter. This is a simulation with sample systems and data; it does not access a real computer or network. Type help to see supported commands.' },
+  { icon: Keyboard, name: 'Tab completion', description: 'Press Tab to complete a command or simulated file path. For a report step, type report followed by a space, then press Tab to fill in the finding expected for the current objective.' },
   { icon: HelpCircle, name: 'Hints', description: 'Open Hint for a nudge. Hints appear in stages: read the first one, then reveal another only if you are still stuck.' },
   { icon: BookOpen, name: 'Command Field Guide', description: 'Use this reference to check what a command does, see an example, and learn its limits. It supports your decision; it does not replace the mission objective.' },
   { icon: BookOpen, name: 'Glossary', description: 'Open the glossary for a plain-language explanation of the key idea in this mission.' },
-  { icon: Network, name: 'Network map', description: 'View simulated hosts, addresses, services, and connections. Some response actions create a visual change here so you can verify the result.' },
-  { icon: Clock3, name: 'Timer and system status', description: 'Check whether a challenge timer is running and review the current system state. Untimed missions let you work at your own pace.' },
+  { icon: Network, name: 'Network map and evidence board', description: 'Review simulated hosts, addresses, services, and connections. When an objective asks you to inspect a clue, select the matching evidence item. Some response actions change the map so you can verify the result.' },
+  { icon: Clock3, name: 'Timer and Trace-Back', description: 'Check whether the mission is timed. In Time Attack, the countdown also shows the intruder’s progress; untimed practice and Accuracy Trial let you work at your own pace.' },
+  { icon: ShieldAlert, name: 'Report a finding', description: 'Use the report action when asked to summarize evidence. Tab completion can suggest the current objective’s finding; keep your report within what the records support.' },
 ];
 
 export default function MissionToolGuide({ onComplete }: MissionToolGuideProps) {

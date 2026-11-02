@@ -512,6 +512,9 @@ export const TierDashboard = ({
                 return (
                   <div key={mission.id} className="relative min-w-0">
                   <div
+                    data-tier={tierName.toLowerCase()}
+                    data-unlocked={unlocked}
+                    data-completed={completed}
                     className={`roadmap-node-card relative z-10 min-w-0 border p-4 transition-colors duration-200 motion-reduce:transition-none sm:p-5 ${
                       completed
                         ? 'border-green-500/40 bg-green-500/5 hover:border-green-400'
@@ -521,7 +524,7 @@ export const TierDashboard = ({
                     }`}
                   >
 
-                    <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-5">
+                    <div className="relative z-[2] flex min-w-0 flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-5">
 
                       <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
 

@@ -30,7 +30,7 @@ const guideSteps = [
   {
     title: 'DASHBOARD',
     subtitle: 'Your home screen',
-    description: 'Continue opens your next certification step. The status strip shows your rank, XP, streak, and mission count. The dashboard has separate daily Time Attack and Accuracy Trial cards. More has Progress, Badges, and the Time Attack leaderboard when daily challenges are available. Choose one tab at a time; use How to Play to revisit this guide.',
+    description: 'Continue opens your next certification step. The status strip shows your rank, XP, streak, and mission count. Time Attack and Accuracy Trial are separate daily challenges; More includes their separate leaderboard views when available, plus Progress and Badges. Use How to Play to revisit this tour.',
     icon: LayoutDashboard,
     color: 'blue',
     visual: 'DASHBOARD'
@@ -39,7 +39,7 @@ const guideSteps = [
     title: 'ACADEMY',
     subtitle: 'Certification path',
     description:
-      'Choose a certification tier. Its path is pre-test, Academy missions in order, then post-test. Your progress is saved so you can return to your training.',
+      'Choose a certification tier card. Its path is pre-test, Academy missions in order, then post-test. Your progress is saved so you can return to training. The certification missions stay inside the Academy.',
     icon: GraduationCap,
     color: 'blue',
     visual: 'ACADEMY'
@@ -48,7 +48,7 @@ const guideSteps = [
     title: 'MISSIONS',
     subtitle: 'Investigate security incidents',
     description:
-      'The Missions tab contains optional standalone practice. These scenarios are separate from Academy certification missions and do not replace them.',
+      'The Missions tab contains optional standalone practice, with Files, Network, and Timelines filters. These scenarios are separate from Academy certification missions and do not replace them.',
     icon: Target,
     color: 'red',
     visual: 'MISSIONS'
@@ -56,7 +56,7 @@ const guideSteps = [
   {
     title: 'PROFILE & SUPPORT',
     subtitle: 'Scores and help',
-    description: 'Profile holds your assessment results, full badge wall, and completed case archive. Use How to Play in More to revisit this tour. Your first Academy mission also introduces the investigation tools.',
+    description: 'Profile has tabs for your progress, achievements, certificates, case archive, learning data, and leaderboards. The separate Shop tab is where you preview and equip personal avatar frames, terminal colors, and titles. Your first Academy mission introduces its investigation tools.',
     icon: UserRound,
     color: 'purple',
     visual: 'PROFILE'

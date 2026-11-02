@@ -45,17 +45,258 @@ body[data-theme='light'] {
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
-.daily-challenge-card::after {
+/* Split cards use two staggered cover panels, then reveal their title and
+   description text when hovered or focused. */
+.daily-challenge-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.daily-challenge-card {
+  min-width: 0;
+  --daily-cover-timing: 0.5s;
+  --daily-cover-ease: cubic-bezier(0.66, 0.08, 0.19, 0.97);
+  --daily-highlight: var(--game-cyan);
+  aspect-ratio: 4 / 3;
+  min-height: 22rem;
+  padding: 0;
+  box-shadow: var(--game-shadow);
+  transition: box-shadow 1s var(--daily-cover-ease), border-color 220ms ease;
+}
+
+.daily-accuracy-card {
+  --daily-highlight: var(--game-green);
+}
+
+.roadmap-node-card {
+  --holo-a: var(--game-green);
+  --holo-b: #4ade80;
+  isolation: isolate;
+}
+
+.roadmap-node-card[data-tier='intermediate'] {
+  --holo-a: #3b82f6;
+  --holo-b: #60a5fa;
+}
+
+.roadmap-node-card[data-tier='expert'] {
+  --holo-a: #ef4444;
+  --holo-b: #f87171;
+}
+
+.roadmap-node-card::before,
+.roadmap-node-card::after {
   position: absolute;
-  z-index: 1;
   inset: 0;
   content: '';
   pointer-events: none;
-  background: linear-gradient(100deg,
-    color-mix(in srgb, var(--game-surface) 99%, transparent) 0%,
-    color-mix(in srgb, var(--game-surface) 95%, transparent) 42%,
-    color-mix(in srgb, var(--game-surface) 72%, transparent) 69%,
-    color-mix(in srgb, var(--game-surface) 28%, transparent) 100%);
+}
+
+.roadmap-node-card::before {
+  z-index: 1;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, var(--holo-a), transparent 42%, var(--holo-b)) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  opacity: 0.56;
+  animation: holographic-border-pulse 2s ease-in-out infinite alternate;
+}
+
+.roadmap-node-card::after {
+  z-index: 1;
+  inset: 5px;
+  background:
+    linear-gradient(var(--holo-a), var(--holo-a)) left top / 14px 1px,
+    linear-gradient(var(--holo-a), var(--holo-a)) left top / 1px 14px,
+    linear-gradient(var(--holo-b), var(--holo-b)) right top / 14px 1px,
+    linear-gradient(var(--holo-b), var(--holo-b)) right top / 1px 14px,
+    linear-gradient(var(--holo-a), var(--holo-a)) left bottom / 14px 1px,
+    linear-gradient(var(--holo-a), var(--holo-a)) left bottom / 1px 14px,
+    linear-gradient(var(--holo-b), var(--holo-b)) right bottom / 14px 1px,
+    linear-gradient(var(--holo-b), var(--holo-b)) right bottom / 1px 14px;
+  background-repeat: no-repeat;
+  opacity: 0.34;
+  transition: opacity 180ms ease;
+}
+
+.roadmap-node-card:hover::before,
+.roadmap-node-card:focus-within::before {
+  animation: none;
+  opacity: 0.9;
+}
+
+.roadmap-node-card:hover::after,
+.roadmap-node-card:focus-within::after {
+  opacity: 0.82;
+}
+
+.roadmap-node-card[data-unlocked='false']::before {
+  animation: none;
+  opacity: 0.22;
+}
+
+.roadmap-node-card[data-completed='true']::before {
+  opacity: 0.72;
+}
+
+@keyframes holographic-border-pulse {
+  from { opacity: 0.34; }
+  to { opacity: 0.72; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roadmap-node-card::before,
+  .roadmap-node-card::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.daily-challenge-card > img {
+  z-index: 0;
+  border-radius: inherit;
+  transform: scale(1);
+  transition: transform 0.8s var(--daily-cover-ease);
+}
+
+.daily-card-shade {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(4 9 14 / 8%) 12%, rgb(4 9 14 / 20%) 42%, rgb(4 9 14 / 88%) 100%);
+}
+
+.daily-challenge-card::before,
+.daily-challenge-card::after {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  content: '';
+  pointer-events: none;
+  background: rgb(0 0 0 / 48%);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--daily-cover-timing) var(--daily-cover-ease);
+}
+
+.daily-challenge-card::after {
+  top: 50%;
+  transition-delay: 0.15s;
+}
+
+.daily-card-copy {
+  position: absolute;
+  z-index: 3;
+  inset: auto 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.daily-card-title {
+  margin: 0;
+  color: var(--game-text);
+  font-size: clamp(1.35rem, 2.4vw, 2rem);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.daily-card-description {
+  max-width: 38rem;
+  margin: 0 0 0.45rem;
+  color: #f0f4f6;
+  font-size: clamp(0.8rem, 1.1vw, 0.95rem);
+  line-height: 1.45;
+}
+
+.daily-split-char,
+.daily-split-word {
+  display: inline-block;
+  opacity: 1;
+  transform: translateY(0);
+  transition-property: transform, opacity, color;
+  transition-timing-function: cubic-bezier(0.38, 0.26, 0.05, 1.07);
+  transition-duration: 0.75s, 0.75s, 1.5s;
+}
+
+.daily-split-word {
+  margin-right: 0.25em;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .daily-challenge-card .daily-split-char,
+  .daily-challenge-card .daily-split-word {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  .daily-challenge-card:hover::before,
+  .daily-challenge-card:hover::after,
+  .daily-challenge-card:focus-within::before,
+  .daily-challenge-card:focus-within::after {
+    transform: scaleX(1);
+  }
+
+  .daily-challenge-card:hover > img,
+  .daily-challenge-card:focus-within > img {
+    transform: scale(1.1);
+  }
+
+  .daily-challenge-card:hover,
+  .daily-challenge-card:focus-within {
+    box-shadow: 0 0 1.5rem color-mix(in srgb, var(--daily-highlight) 34%, transparent), var(--game-shadow);
+  }
+
+  .daily-challenge-card:hover .daily-split-char,
+  .daily-challenge-card:focus-within .daily-split-char {
+    opacity: 1;
+    transform: translateY(0);
+    color: var(--daily-highlight);
+    transition-delay: calc(0.1s + var(--daily-split-index) * 0.05s);
+  }
+
+  .daily-challenge-card:hover .daily-split-word,
+  .daily-challenge-card:focus-within .daily-split-word {
+    opacity: 1;
+    transform: translateY(0);
+    color: #f0f4f6;
+    transition-delay: calc(0.1s + var(--daily-split-index) * 0.015s);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-challenge-card::before,
+  .daily-challenge-card::after,
+  .daily-challenge-card .daily-split-char,
+  .daily-challenge-card .daily-split-word {
+    transition-delay: 0ms !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .daily-challenge-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 639px) {
+  .daily-challenge-card {
+    aspect-ratio: 5 / 4;
+    min-height: 19rem;
+  }
+
+  .daily-card-copy {
+    inset-inline: 1rem;
+    bottom: 1rem;
+  }
 }
 
 .academy-tier-card::after {
@@ -70,6 +311,119 @@ body[data-theme='light'] {
     rgb(0 0 0 / 68%) 55%,
     rgb(0 0 0 / 28%) 70%,
     rgb(0 0 0 / 4%) 100%);
+}
+
+.academy-tier-card::before {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background:
+    linear-gradient(110deg, transparent 38%, color-mix(in srgb, var(--game-cyan) 18%, transparent) 50%, transparent 62%),
+    repeating-linear-gradient(to bottom, transparent 0 5px, color-mix(in srgb, var(--game-cyan) 15%, transparent) 6px 7px);
+  background-size: 220% 100%, 100% 7px;
+  opacity: 0.42;
+  animation: academy-scanline-pan 4s linear infinite, academy-signal-sweep 8s ease-in-out infinite;
+}
+
+.academy-tier-card[data-tier='beginner'] { --academy-glitch-accent: #22c55e; }
+.academy-tier-card[data-tier='intermediate'] { --academy-glitch-accent: #3b82f6; }
+.academy-tier-card[data-tier='expert'] { --academy-glitch-accent: #ef4444; }
+
+.academy-tier-card > img {
+  transform: scale(1.07);
+  transition: transform 650ms cubic-bezier(0.2, 0.75, 0.25, 1);
+  animation: academy-image-pan 6s ease-in-out infinite alternate;
+}
+
+.academy-tier-card:hover::before,
+.academy-tier-card:focus-within::before {
+  opacity: 0.78;
+  animation-duration: 1.8s, 3s;
+}
+
+.academy-tier-card:hover > img,
+.academy-tier-card:focus-within > img {
+  animation: none;
+  transform: scale(1.2) translate3d(-0.75%, 0.35%, 0);
+}
+
+.academy-tier-card:hover,
+.academy-tier-card:focus-within {
+  box-shadow: 0 0 1.35rem color-mix(in srgb, var(--academy-glitch-accent) 32%, transparent), var(--game-shadow);
+}
+
+.academy-tier-title {
+  position: relative;
+  isolation: isolate;
+}
+
+.academy-tier-title::before,
+.academy-tier-title::after {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  content: attr(data-glitch-text);
+  pointer-events: none;
+  opacity: 0;
+  font-weight: inherit;
+}
+
+.academy-tier-title::before { color: var(--game-cyan); }
+.academy-tier-title::after { color: var(--academy-glitch-accent); }
+
+.academy-tier-card:hover .academy-tier-title::before,
+.academy-tier-card:focus-within .academy-tier-title::before {
+  animation: academy-title-glitch-top 650ms steps(2, end) 3;
+}
+
+.academy-tier-card:hover .academy-tier-title::after,
+.academy-tier-card:focus-within .academy-tier-title::after {
+  animation: academy-title-glitch-bottom 650ms steps(2, end) 3;
+}
+
+@keyframes academy-scanline-pan {
+  from { background-position: 0 0; }
+  to { background-position: 0 7px; }
+}
+
+@keyframes academy-signal-sweep {
+  from { background-position: 140% 0, 0 0; }
+  to { background-position: -140% 0, 0 7px; }
+}
+
+@keyframes academy-image-pan {
+  from { transform: scale(1.07) translate3d(0, 0, 0); }
+  to { transform: scale(1.14) translate3d(-1.2%, 0.6%, 0); }
+}
+
+@keyframes academy-title-glitch-top {
+  0% { clip-path: inset(0 0 75% 0); opacity: 0.8; transform: translateX(-2px); }
+  30% { clip-path: inset(15% 0 52% 0); opacity: 0.7; transform: translateX(2px); }
+  65% { clip-path: inset(4% 0 68% 0); opacity: 0.85; transform: translateX(-1px); }
+  100% { clip-path: inset(0 0 75% 0); opacity: 0; transform: translateX(0); }
+}
+
+@keyframes academy-title-glitch-bottom {
+  0% { clip-path: inset(65% 0 0 0); opacity: 0.7; transform: translateX(2px); }
+  35% { clip-path: inset(48% 0 12% 0); opacity: 0.8; transform: translateX(-2px); }
+  70% { clip-path: inset(72% 0 0 0); opacity: 0.65; transform: translateX(1px); }
+  100% { clip-path: inset(65% 0 0 0); opacity: 0; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .academy-tier-card::before,
+  .academy-tier-card > img,
+  .academy-tier-title::before,
+  .academy-tier-title::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .academy-tier-card > img {
+    transform: scale(1.07) !important;
+  }
 }
 
 body[data-theme='light'] .academy-tier-card::after {
@@ -512,6 +866,77 @@ body[data-theme='light'] .fixed.inset-0[class*="bg-black"] {
     color-mix(in srgb, var(--game-surface) 94%, transparent) 40%,
     color-mix(in srgb, var(--game-surface) 75%, transparent) 65%,
     color-mix(in srgb, var(--game-surface) 25%, transparent) 100%);
+}
+.mission-art-card[data-category='files'] { --mission-glitch-accent: var(--game-green); }
+.mission-art-card[data-category='network'] { --mission-glitch-accent: var(--game-cyan); }
+.mission-art-card[data-category='logs'] { --mission-glitch-accent: var(--game-yellow); }
+.mission-art-card[data-category='practice'] { --mission-glitch-accent: var(--game-green); }
+.mission-art-image {
+  z-index: 0;
+  transform: scale(1.07);
+  transition: transform 650ms cubic-bezier(0.2, 0.75, 0.25, 1);
+  animation: academy-image-pan 6s ease-in-out infinite alternate;
+}
+.mission-art-card::before {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background:
+    linear-gradient(110deg, transparent 38%, color-mix(in srgb, var(--game-cyan) 18%, transparent) 50%, transparent 62%),
+    repeating-linear-gradient(to bottom, transparent 0 5px, color-mix(in srgb, var(--game-cyan) 15%, transparent) 6px 7px);
+  background-size: 220% 100%, 100% 7px;
+  opacity: 0.32;
+  animation: academy-scanline-pan 4s linear infinite, academy-signal-sweep 8s ease-in-out infinite;
+}
+.mission-art-title {
+  position: relative;
+  isolation: isolate;
+}
+.mission-art-title::before,
+.mission-art-title::after {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  content: attr(data-glitch-text);
+  pointer-events: none;
+  opacity: 0;
+  font-weight: inherit;
+}
+.mission-art-title::before { color: var(--game-cyan); }
+.mission-art-title::after { color: var(--mission-glitch-accent); }
+.mission-art-card:hover::before,
+.mission-art-card:focus-within::before {
+  opacity: 0.72;
+  animation-duration: 1.8s, 3s;
+}
+.mission-art-card:hover .mission-art-image,
+.mission-art-card:focus-within .mission-art-image {
+  animation: none;
+  transform: scale(1.2) translate3d(-0.75%, 0.35%, 0);
+}
+.mission-art-card:hover,
+.mission-art-card:focus-within {
+  box-shadow: 0 0 1.35rem color-mix(in srgb, var(--mission-glitch-accent) 32%, transparent), var(--game-shadow);
+}
+.mission-art-card:hover .mission-art-title::before,
+.mission-art-card:focus-within .mission-art-title::before {
+  animation: academy-title-glitch-top 650ms steps(2, end) 3;
+}
+.mission-art-card:hover .mission-art-title::after,
+.mission-art-card:focus-within .mission-art-title::after {
+  animation: academy-title-glitch-bottom 650ms steps(2, end) 3;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mission-art-card::before,
+  .mission-art-image,
+  .mission-art-title::before,
+  .mission-art-title::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .mission-art-image { transform: scale(1.07) !important; }
 }
 .shop-art-banner::after {
   background: linear-gradient(90deg,

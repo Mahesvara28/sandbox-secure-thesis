@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { UserCertificate } from '../Firebase';
@@ -30,6 +30,17 @@ import { ACHIEVEMENTS } from '../data/achievements';
 import { applyCertificationRewards, rankProgress, type PlayerProgression, getTierLearningGain } from '../data/progression';
 import { AchievementBadge, GameCard, ProgressBar, SectionHeader } from './GameUI';
 import { COSMETIC_CATALOG, type CosmeticKind, type PlayerCosmetics } from '../data/cosmetics';
+
+const DailySplitText = ({ text, split }: { text: string; split: 'characters' | 'words' }) => {
+  if (split === 'characters') {
+    return <span aria-hidden="true" className="daily-split-text">{Array.from(text).map((character, index) => (
+      <span key={`${character}-${index}`} className="daily-split-char" style={{ '--daily-split-index': index } as CSSProperties}>{character === ' ' ? '\u00a0' : character}</span>
+    ))}</span>;
+  }
+  return <span aria-hidden="true" className="daily-split-text">{text.split(/\s+/).map((word, index) => (
+    <span key={`${word}-${index}`} className="daily-split-word" style={{ '--daily-split-index': index } as CSSProperties}>{word}</span>
+  ))}</span>;
+};
 
 import {
   Terminal,
@@ -577,14 +588,26 @@ export const DashboardScreen = ({
       </div>}
 
       {!isNewUser && <>
-        {dailyChallengeAvailable && <section className="grid gap-4 lg:grid-cols-2" aria-label="Daily challenges">
-          <GameCard className="daily-challenge-card relative isolate min-h-64 overflow-hidden border-[var(--game-cyan)] p-4 sm:p-5" aria-label="Daily Time Attack">
-            <img src={dailyTimeAttackImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-90" />
-            <div className="relative z-10 flex h-full min-h-56 flex-col justify-between gap-4"><div className="max-w-[78%]"><p className="game-eyebrow">Daily Time Attack · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyTimeAttackMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Clear today’s timed case for a place on the Time Attack leaderboard.</p></div><button type="button" disabled={dailyTimeAttackPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('timeAttack')} className="min-h-11 w-full border border-[var(--game-cyan)] bg-[var(--game-surface)]/90 px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyTimeAttackPlayed ? 'Attempt used today' : 'Start Time Attack'}</button></div>
+        {dailyChallengeAvailable && <section className="daily-challenge-grid" aria-label="Daily challenges">
+          <GameCard className="daily-challenge-card daily-time-card relative isolate overflow-hidden border-[var(--game-cyan)]" aria-label="Daily Time Attack">
+            <img src={dailyTimeAttackImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
+            <div className="daily-card-shade" aria-hidden="true" />
+            <div className="daily-card-copy">
+              <p className="game-eyebrow">Daily Time Attack · one attempt</p>
+              <h2 className="daily-card-title" aria-label={dailyTimeAttackMissionTitle}><DailySplitText text={dailyTimeAttackMissionTitle} split="characters" /></h2>
+              <p className="daily-card-description" aria-label="Clear today’s timed case for a place on the Time Attack leaderboard."><DailySplitText text="Clear today’s timed case for a place on the Time Attack leaderboard." split="words" /></p>
+              <button type="button" disabled={dailyTimeAttackPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('timeAttack')} className="min-h-11 w-full border border-[var(--game-cyan)] bg-[var(--game-surface)]/90 px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyTimeAttackPlayed ? 'Attempt used today' : 'Start Time Attack'}</button>
+            </div>
           </GameCard>
-          <GameCard className="daily-challenge-card relative isolate min-h-64 overflow-hidden border-[var(--game-green)] p-4 sm:p-5" aria-label="Daily Accuracy Trial">
-            <img src={dailyAccuracyImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-90" />
-            <div className="relative z-10 flex h-full min-h-56 flex-col justify-between gap-4"><div className="max-w-[78%]"><p className="game-eyebrow">Daily Accuracy Trial · one attempt</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{dailyAccuracyMissionTitle}</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Work carefully through today’s untimed case. Accuracy is tracked independently from your Time Attack.</p></div><button type="button" disabled={dailyAccuracyPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('accuracy')} className="min-h-11 w-full border border-[var(--game-green)] bg-[var(--game-surface)]/90 px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-green)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyAccuracyPlayed ? 'Attempt used today' : 'Start Accuracy Trial'}</button></div>
+          <GameCard className="daily-challenge-card daily-accuracy-card relative isolate overflow-hidden border-[var(--game-green)]" aria-label="Daily Accuracy Trial">
+            <img src={dailyAccuracyImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
+            <div className="daily-card-shade" aria-hidden="true" />
+            <div className="daily-card-copy">
+              <p className="game-eyebrow">Daily Accuracy Trial · one attempt</p>
+              <h2 className="daily-card-title" aria-label={dailyAccuracyMissionTitle}><DailySplitText text={dailyAccuracyMissionTitle} split="characters" /></h2>
+              <p className="daily-card-description" aria-label="Work carefully through today’s untimed case. Accuracy is tracked independently from your Time Attack."><DailySplitText text="Work carefully through today’s untimed case. Accuracy is tracked independently from your Time Attack." split="words" /></p>
+              <button type="button" disabled={dailyAccuracyPlayed || progressLoadFailed} onClick={() => onStartDailyTrial('accuracy')} className="min-h-11 w-full border border-[var(--game-green)] bg-[var(--game-surface)]/90 px-4 py-2 text-sm font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-green)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">{dailyAccuracyPlayed ? 'Attempt used today' : 'Start Accuracy Trial'}</button>
+            </div>
           </GameCard>
         </section>}
 
@@ -936,6 +959,7 @@ export const AcademyScreen = ({
                 key={
                   tier.id
                 }
+                data-tier={tier.id.toLowerCase()}
                 className={`academy-tier-card relative isolate min-h-44 overflow-hidden border ${tier.border} bg-black/60 p-6`}
               >
 
@@ -966,7 +990,9 @@ export const AcademyScreen = ({
                     <div className="min-w-0 md:max-w-[72%]">
 
                       <h2
-                        className={`text-2xl font-black ${tier.color}`}
+                        data-glitch-text={`${tier.title} CERTIFICATION`}
+                        aria-label={`${tier.title} Certification`}
+                        className={`academy-tier-title text-2xl font-black ${tier.color}`}
                       >
                         {
                           tier.title
@@ -1174,6 +1200,7 @@ export const MissionsScreen = ({
                 key={
                   mission.id
                 }
+                data-category={mission.category ?? 'practice'}
                 className={`mission-art-card relative isolate overflow-hidden p-5 ${
                   completed
                     ? 'border-[var(--game-green)]'
@@ -1189,7 +1216,7 @@ export const MissionsScreen = ({
                     loading="lazy"
                     decoding="async"
                     draggable={false}
-                    className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right opacity-75"
+                    className="mission-art-image pointer-events-none absolute inset-0 h-full w-full object-cover object-right opacity-75"
                   />
                 )}
 
@@ -1220,7 +1247,7 @@ export const MissionsScreen = ({
                     <div>
 
                       <p className="game-eyebrow">CASE FILE · {String(index + 1).padStart(2, '0')} · {mission.category ?? 'practice'}</p>
-                      <h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">
+                      <h2 data-glitch-text={mission.title} className="mission-art-title mt-1 text-lg font-bold text-[var(--game-text)]">
                         {
                           mission.title
                         }
@@ -1542,8 +1569,19 @@ export const TerminalScreen = ({
       const connectionRecord = activeMission.id === 'm5' ? '\nNETFLOW: TCP 4444 peer 198.51.100.23 observed at 10:14 · source not yet verified' : '';
       return `=== SIMULATED NETWORK STATUS ===\nHost: sandbox-server · 192.168.1.10\nSSH 22/tcp: listening\nHTTP 80/tcp: listening\n${hasUnexpectedListener ? `Unknown 4444/tcp: ${disabledService === '4444' ? 'disabled' : 'listening (not in baseline)'}\n` : ''}Source ${containedTarget || '198.51.100.23'}: ${containedTarget ? 'contained in this scenario' : 'under review'}${connectionRecord}\nNo real network was contacted.`;
     }
-    if (name === 'ping') return `PING ${args[0] ?? '127.0.0.1'} (simulated)\n3 packets transmitted, 3 received, 0% packet loss\nTraining result only; this does not contact a real host.`;
+    if (name === 'ping') {
+      const host = args[0];
+      if (!host) {
+        const objectiveHost = currentStep?.cmd.match(/^ping\s+(\S+)$/i)?.[1];
+        return `Usage: ping [host]\n${objectiveHost ? `This objective's host is ${objectiveHost}. Type ping and press Tab to complete it.` : 'Add the host address you want to check.'}`;
+      }
+      return `PING ${host} (simulated)\n3 packets transmitted, 3 received, 0% packet loss\nTraining result only; this does not contact a real host.`;
+    }
     if (name === 'nmap') {
+      if (!args[0] && currentStep?.cmd.match(/^nmap\s+\S+$/i)) {
+        const objectiveHost = currentStep.cmd.match(/^nmap\s+(\S+)$/i)?.[1];
+        return `Usage: nmap [host]\nThis objective's host is ${objectiveHost}. Type nmap and press Tab to complete it.`;
+      }
       const target = args[0] ?? 'localhost';
       const isLocal = target === 'localhost' || target === '127.0.0.1';
       return `Simulated scan report for ${target}\nPORT     STATE     SERVICE\n22/tcp   open      ssh${isLocal ? '\n80/tcp   open      http' : ''}${isLocal && ['m5', 'm9'].includes(activeMission.id) ? `\n4444/tcp ${disabledService === '4444' ? 'closed' : 'open'}      unknown${disabledService === '4444' ? ' (disabled in simulation)' : ''}` : ''}\nNo packets were sent to a real host.`;
@@ -1689,14 +1727,24 @@ export const TerminalScreen = ({
       const lastSpace = source.lastIndexOf(' ');
       const argumentPrefix = lastSpace < 0 ? '' : source.slice(lastSpace + 1);
       const commandNames = ['help', 'pwd', 'ls', 'cd', 'cat', 'whoami', 'grep', 'journalctl', 'ss', 'netstat', 'ps', 'find', 'stat', 'nmap', 'ping', 'status', 'preserve', 'record-evidence', 'assess', 'block', 'disable-service', 'kill', 'crontab', 'remove-persistence', 'report', 'clear'];
+      const targetCommand = currentStep?.cmd.match(/^(ping|nmap)\s+(\S+)$/i);
+      const reportFinding = commandName === 'report'
+        ? currentStep?.cmd.match(/^report\s+(.+)$/i)?.[1]
+        : undefined;
       const files = Object.keys(MOCK_FILES);
       const directories = Object.keys(MOCK_FILE_SYSTEM);
       const relativeEntries = MOCK_FILE_SYSTEM[currentPath] ?? [];
       const pathNames = [...new Set([...files, ...directories, ...relativeEntries, ...files.map(path => path.split('/').pop() ?? path)])];
       const candidates = isCompletingCommand
-        ? commandNames.filter(name => name.startsWith(source.trim().toLowerCase()))
+        ? targetCommand && source.trim().toLowerCase() === targetCommand[1].toLowerCase()
+          ? [currentStep?.cmd ?? '']
+          : commandNames.filter(name => name.startsWith(source.trim().toLowerCase()))
         : ['cat', 'cd', 'grep', 'find', 'stat'].includes(commandName)
           ? pathNames.filter(path => path.startsWith(argumentPrefix))
+          : targetCommand && commandName === targetCommand[1].toLowerCase()
+            ? [targetCommand[2]].filter(target => target.startsWith(argumentPrefix))
+          : reportFinding
+            ? [reportFinding].filter(finding => finding.startsWith(argumentPrefix))
           : [];
       if (candidates.length) {
         event.preventDefault();
@@ -1909,7 +1957,7 @@ export const TerminalScreen = ({
                 }
                 onFocus={() => { shouldFollowTerminalRef.current = true; }}
                 aria-label="Enter a simulated terminal command"
-                title="Press Tab to complete a command or simulated file path."
+                title="Press Tab to complete a command or file path. After typing report and a space, press Tab to complete the current finding."
                 placeholder="type a command…"
                 className="min-w-0 flex-1 bg-transparent outline-none text-green-300 placeholder:text-green-900"
                 autoCapitalize="off"

@@ -547,12 +547,12 @@ export const MISSIONS: Mission[] = [
       {
         desc: 'Test connectivity to the suspicious host.',
         cmd: 'ping 198.51.100.23',
-        hint: 'Use ping to test whether the simulated host responds.'
+        hint: ['Ping needs a host address. The suspicious host in this case is 198.51.100.23.', 'Type ping and press Tab to complete the target, or enter ping 198.51.100.23.']
       },
       {
         desc: 'Perform a simulated scan of the suspicious host. This checks its listed services; it does not log in or connect to a shell.',
         cmd: 'nmap 198.51.100.23',
-        hint: 'Use nmap followed by the target IP address.'
+        hint: ['Use nmap followed by the suspicious host address: 198.51.100.23.', 'Type nmap and press Tab to complete the target, or enter nmap 198.51.100.23.']
       },
       {
         desc: 'Interpret the scan carefully: identify the service shown, without assuming an open service proves malicious activity.',
@@ -1229,9 +1229,9 @@ export const MISSIONS: Mission[] = [
       },
       {
         desc: 'Verify containment and cleanup by checking the process list, network status, listeners, scheduled tasks, and authorized keys in any order.',
-        cmd: 'verify incident response',
+        cmd: 'ps aux',
         requiredCommands: ['ps aux', 'status', 'netstat -tuln', 'crontab -l', 'cat ~/.ssh/authorized_keys'],
-        hint: ['Run each listed read-only check in any order.', 'Confirm PID 2214, the 4444 listener, the temporary-path task, and unfamiliar key are absent; confirm the approved services remain.']
+        hint: ['Run each listed read-only check once, in any order. The objective completes after all five checks are recorded.', 'Confirm PID 2214, the 4444 listener, the temporary-path task, and unfamiliar key are absent; confirm the approved services remain.']
       },
       {
         desc: 'Return to the operator home directory.',
