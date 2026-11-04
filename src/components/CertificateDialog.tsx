@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { UserCertificate } from '../Firebase';
 
-export const CertificateDialog = ({ certificate, onClose }: { certificate: UserCertificate | null; onClose: () => void }) => {
+export const CertificateDialog = ({ certificate, onClose, awardedCoins = 0 }: { certificate: UserCertificate | null; onClose: () => void; awardedCoins?: number }) => {
   useEffect(() => {
     if (!certificate) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -27,6 +27,11 @@ export const CertificateDialog = ({ certificate, onClose }: { certificate: UserC
         <p className="mt-8 text-xs text-[var(--game-muted)]">Awarded {Number.isNaN(issuedDate.getTime()) ? certificate.issuedAt : issuedDate.toLocaleDateString()}</p>
         <p className="mt-2 font-mono text-[10px] text-[var(--game-muted)]">Certificate ID · {certificate.id}</p>
       </article>
+      {awardedCoins > 0 && <div className="no-print mx-auto mt-4 max-w-4xl border border-[var(--game-green)] bg-[var(--game-surface)] p-4 text-center" role="status">
+        <p className="text-sm font-bold uppercase tracking-wider text-[var(--game-green)]">Certification earned</p>
+        <p className="mt-1 text-sm text-[var(--game-text)]">Your certificate is saved in Profile → Certificates.</p>
+        <p className="mt-1 text-sm font-bold text-[var(--game-green)]">+{awardedCoins} shop coins awarded</p>
+      </div>}
       <div className="no-print mt-4 flex flex-col-reverse justify-end gap-2 sm:flex-row">
         <button type="button" onClick={onClose} className="min-h-11 rounded-md border border-[var(--game-border)] px-5 py-2 text-sm font-semibold hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Close</button>
         <button type="button" onClick={() => window.print()} className="min-h-11 rounded-md bg-[var(--game-green)] px-5 py-2 text-sm font-bold text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Print certificate</button>
