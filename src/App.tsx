@@ -15,7 +15,6 @@ import {
   saveUserScore,
   registerWithEmail,
   loginWithEmail,
-  sendAccountVerification,
   sendPasswordReset,
   saveCompletedMissions,
   savePreTestScore,
@@ -39,7 +38,8 @@ import {
   saveUserCertificate,
   purchaseCosmetic,
   equipCosmetic,
-  awardFirstMissionCoins
+  awardFirstMissionCoins,
+  isEnabledAdmin
 } from './Firebase';
 import type { UserCertificate } from './Firebase';
 import { getMissionXp, normalizeProgression, rankProgress, type PlayerProgression } from './data/progression';
@@ -62,6 +62,7 @@ import OnboardingGuide from './components/OnboardingGuide';
 import MissionToolGuide from './components/MissionToolGuide';
 import { RewardDialog, type RewardDialogItem } from './components/RewardDialog';
 import { CertificateDialog } from './components/CertificateDialog';
+import AdminDashboard from './components/AdminDashboard';
 
 import {
   NetworkMapModal,
@@ -92,7 +93,8 @@ import {
   LogOut,
   Settings,
   Play,
-  Store
+  Store,
+  ShieldCheck
 } from 'lucide-react';
 
 type Screen =
@@ -101,7 +103,8 @@ type Screen =
   | 'missions'
   | 'terminal'
   | 'profile'
-  | 'shop';
+  | 'shop'
+  | 'admin';
 
 type BootStage =
   | 'booting'
@@ -249,6 +252,7 @@ function App() {
 
   const [user, setUser] =
     useState<FirebaseUser | null>(null);
+  const [adminAccess, setAdminAccess] = useState(false);
 
   const [userScores, setUserScores] =
     useState<Record<string, TierScore>>({});
@@ -270,6 +274,7 @@ function App() {
   const [cosmetics, setCosmetics] = useState<PlayerCosmetics>(() => normalizeCosmetics(DEFAULT_COSMETICS));
   const [certificates, setCertificates] = useState<UserCertificate[]>([]);
   const [certificateToShow, setCertificateToShow] = useState<UserCertificate | null>(null);
+  const [certificateAwardedCoins, setCertificateAwardedCoins] = useState(0);
 
   const [playerProgression, setPlayerProgression] = useState<PlayerProgression>(() => normalizeProgression(null));
   const playerProgressionRef = useRef<PlayerProgression>(playerProgression);
@@ -688,27 +693,13 @@ function App() {
               return;
             }
           }
-          const requiresEmailVerification = Boolean(currentUser?.providerData.some(provider => provider.providerId === 'password') && !currentUser.emailVerified);
-          if (currentUser && requiresEmailVerification) {
-            // Firebase restores auth sessions before the game mounts. Keep
-            // unverified email/password accounts on the login screen.
-            setUser(null);
-            setBootStage('login');
-            setIsLoadingAuth(false);
-            progressLoadFailedRef.current = false;
-            setProgressLoadFailed(false);
-            setScreen('dashboard');
-            setActiveMission(null);
-            setActiveSession(null);
-            setSessionConflict(null);
-            return;
-          }
           setUser(
             currentUser
           );
 
           if (currentUser) {
             setBootStage('authenticated');
+            setAdminAccess(await isEnabledAdmin(currentUser.uid).catch(() => false));
             authLoadingStartedAtRef.current = Date.now();
             progressLoadFailedRef.current = true;
             setIsLoadingAuth(true);
@@ -901,6 +892,7 @@ function App() {
               setProgressLoadFailed(true);
             }
           } else {
+            setAdminAccess(false);
             progressLoadFailedRef.current = false;
             setProgressLoadFailed(false);
             setUserScores({});
@@ -1034,23 +1026,6 @@ function App() {
             regPassword
           );
 
-        if (loggedIn.providerData.some(provider => provider.providerId === 'password') && !loggedIn.emailVerified) {
-          let verificationSent = false;
-          try {
-            await sendAccountVerification(loggedIn);
-            verificationSent = true;
-          } catch (error) {
-            console.warn('Could not resend account verification email:', error);
-          }
-          await logOut();
-          setRegPassword('');
-          setAuthSuccessMessage(verificationSent
-            ? `Verify ${loggedIn.email ?? 'your email'} using the link we just sent, then sign in.`
-            : 'Your email is not verified yet. Check your inbox and spam folder. We could not resend the link right now; try signing in again later.');
-          setAuthSuccess(true);
-          return;
-        }
-
         setBootStage(
           'authenticated'
         );
@@ -1113,23 +1088,9 @@ function App() {
             regUsername
           );
 
-        let verificationSent = false;
-        try {
-          await sendAccountVerification(created);
-          verificationSent = true;
-        } catch (error) {
-          console.warn('Account was created, but its verification email could not be sent:', error);
-        }
-        await logOut();
-        setAuthMode('login');
         setRegPassword('');
-
-        setAuthSuccess(
-          true
-        );
-        setAuthSuccessMessage(verificationSent
-          ? `Account created. Verify ${created.email ?? 'your email'} with the link we sent, then sign in.`
-          : 'Account created, but the verification email could not be sent. Sign in later to request another verification link.');
+        setAuthSuccess(true);
+        setAuthSuccessMessage(`Test account created${created.email ? ` for ${created.email}` : ''}. You are now signed in.`);
       } catch (
         error: unknown
       ) {
@@ -1195,6 +1156,7 @@ function App() {
       setRegUsername('');
 
       setUser(null);
+      setAdminAccess(false);
       userPreferencesRef.current = {};
       setUserPreferences({});
       setActiveSession(null);
@@ -1859,7 +1821,10 @@ function App() {
                   ? previous
                   : [...previous, result.certificate]);
                 setCosmetics(result.cosmetics);
-                if (result.created) setCertificateToShow(result.certificate);
+                if (result.created || result.awardedCoins > 0) {
+                  setCertificateAwardedCoins(result.awardedCoins);
+                  setCertificateToShow(result.certificate);
+                }
               } catch (error) {
                 console.error('Assessment passed, but the certificate could not be saved:', error);
               }
@@ -2184,6 +2149,11 @@ function App() {
               <span className="hidden md:inline">Shop</span>
             </button>
 
+            {adminAccess && <button type="button" onClick={() => setScreen('admin')} role="tab" aria-selected={screen === 'admin'} className={`relative px-3 lg:px-4 py-2 border transition-colors ${screen === 'admin' ? 'border-cyan-500 bg-cyan-500/5 text-cyan-300' : 'border-transparent text-green-800 hover:border-cyan-900 hover:text-cyan-300'}`} aria-current={screen === 'admin' ? 'page' : undefined} aria-label="Research analytics">
+              {screen === 'admin' && <motion.span layoutId="main-nav-indicator" className="absolute inset-x-2 bottom-0 h-0.5 bg-cyan-400" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />}
+              <ShieldCheck size={14} className="mr-2 inline" /><span className="hidden md:inline">Admin</span>
+            </button>}
+
           </div>
         </div>
 
@@ -2344,6 +2314,8 @@ function App() {
           />
         )}
 
+        {screen === 'admin' && adminAccess && user && <AdminDashboard uid={user.uid} />}
+
         {activeMission && (
           <div className={screen === 'terminal' ? 'block h-full' : 'hidden'}>
             <TerminalScreen
@@ -2432,7 +2404,10 @@ function App() {
             leaderboardAlias={leaderboardAlias}
             progressLoadFailed={progressLoadFailed}
             certificates={certificates}
-            onViewCertificate={setCertificateToShow}
+            onViewCertificate={certificate => {
+              setCertificateAwardedCoins(0);
+              setCertificateToShow(certificate);
+            }}
             onSaveAvatarChoice={async nextAvatarId => {
               if (!user || progressLoadFailedRef.current) throw new Error('Saved progress is unavailable.');
               await saveAvatarChoice(user.uid, nextAvatarId);
@@ -2581,7 +2556,10 @@ function App() {
         if (rewardQueue.length <= 1) setRewardsReady(false);
       }} />
 
-      <CertificateDialog certificate={certificateToShow} onClose={() => setCertificateToShow(null)} />
+      <CertificateDialog certificate={certificateToShow} awardedCoins={certificateAwardedCoins} onClose={() => {
+        setCertificateToShow(null);
+        setCertificateAwardedCoins(0);
+      }} />
 
       {showOnboarding && (
         <OnboardingGuide

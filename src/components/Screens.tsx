@@ -333,7 +333,7 @@ export const AuthScreen = ({
             <button id="auth-tab-register" type="button" role="tab" tabIndex={authMode === 'register' ? 0 : -1} aria-selected={authMode === 'register'} aria-controls="auth-form-panel" onClick={() => setAuthMode('register')} className={authMode === 'register' ? activeTabClass : inactiveTabClass}>Create account</button>
           </div>
 
-          {authMode === 'login' && <p className="mb-4 text-xs leading-5 text-[var(--game-muted)]">Email accounts must verify their address before entering the game. If you still need a link, enter your credentials and sign in to request another.</p>}
+          {authMode === 'login' && <p className="mb-4 text-xs leading-5 text-[var(--game-muted)]">Email verification is temporarily off for testing. Password resets still require access to the email inbox.</p>}
 
           <div id="auth-form-panel" role="tabpanel" aria-labelledby={authMode === 'login' ? 'auth-tab-login' : 'auth-tab-register'}>
             {authMode === 'login' ? <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
@@ -912,6 +912,12 @@ export const AcademyScreen = ({
           terminal missions.
         </p>
 
+        <div className="mt-4 border-l-2 border-[var(--game-cyan)] bg-[var(--game-surface)]/80 p-4" aria-label="Campaign briefing">
+          <p className="game-eyebrow">Campaign · the incident desk</p>
+          <p className="mt-1 text-sm font-bold text-[var(--game-text)]">Start with context, build a defensible finding, then coordinate a careful response.</p>
+          <p className="mt-1 text-sm leading-5 text-[var(--game-muted)]">Beginner introduces the analyst workflow, Intermediate connects system and network evidence, and Expert asks you to correlate an incident and report what is known and unknown.</p>
+        </div>
+
       </div>
 
       <div className="grid gap-6">
@@ -1128,12 +1134,18 @@ export const MissionsScreen = ({
   startMission,
   completedMissions = []
 }: MissionsScreenProps) => {
-  const [missionFilter, setMissionFilter] = useState<'all' | 'files' | 'network' | 'logs'>(
+  const [missionFilter, setMissionFilter] = useState<'all' | 'files' | 'network' | 'logs' | 'drills'>(
     'all'
   );
+  const [drillAnswers, setDrillAnswers] = useState<Record<string, string>>({});
+  const practiceDrills = [
+    { id: 'log-status', title: 'Read the response', prompt: 'A web log shows: 203.0.113.8 GET /staff HTTP/1.1 401. What is the safest conclusion?', options: [{ id: 'denied', label: 'The request was recorded and authentication was denied.' }, { id: 'access', label: 'The source successfully accessed the staff page.' }, { id: 'identity', label: 'The log proves which person made the request.' }], answer: 'denied', feedback: 'A 401 records an authentication failure. It does not prove successful access or identify the person behind an IP.' },
+    { id: 'scope-response', title: 'Choose a scoped response', prompt: 'An approved baseline allows SSH from the office subnet. One unfamiliar address has repeated failed SSH attempts. Which response is best supported?', options: [{ id: 'scoped', label: 'Preserve the records, assess the source, then block only that address if policy authorizes it.' }, { id: 'broad', label: 'Disable SSH for every user immediately.' }, { id: 'ignore', label: 'Treat failed attempts as proof of compromise and close the case.' }], answer: 'scoped', feedback: 'A scoped response preserves access for approved users. A broad shutdown could disrupt operations; failed attempts alone do not prove compromise.' },
+    { id: 'report-boundary', title: 'Separate fact from conclusion', prompt: 'A process inventory shows an unfamiliar listener on port 8448, but no connection or access logs are available. What belongs in the report?', options: [{ id: 'fact', label: 'An unfamiliar listener was observed; ownership and impact need further validation.' }, { id: 'compromise', label: 'An attacker accessed the system through port 8448.' }, { id: 'safe', label: 'The service is safe because no access log was found.' }], answer: 'fact', feedback: 'Report the observed listener and name what remains unknown. Missing logs do not establish either compromise or safety.' }
+  ];
   const missions = [
     ...TUTORIAL_MISSIONS
-  ].filter(mission => missionFilter === 'all' || mission.category === missionFilter);
+  ].filter(mission => missionFilter !== 'drills' && (missionFilter === 'all' || mission.category === missionFilter));
   const completedCount = missions.filter(mission => completedMissions.includes(mission.id)).length;
 
   return (
@@ -1157,7 +1169,7 @@ export const MissionsScreen = ({
             <p className="text-sm text-green-500/40 mt-1">
               Practice with standalone missions. Certification training missions are kept in the Academy.
             </p>
-            <p className="mt-3 text-xs text-green-400/60">{completedCount} of {missions.length} shown missions completed</p>
+            <p className="mt-3 text-xs text-green-300">{missionFilter === 'drills' ? 'Optional drills · practice only · no certification score or currency changes' : `${completedCount} of ${missions.length} shown missions completed`}</p>
 
           </div>
 
@@ -1170,7 +1182,8 @@ export const MissionsScreen = ({
           ['all', 'ALL PRACTICE'],
           ['files', 'FILES'],
           ['network', 'NETWORK'],
-          ['logs', 'TIMELINES']
+          ['logs', 'TIMELINES'],
+          ['drills', 'QUICK DRILLS']
         ] as const).map(([filter, label]) => (
           <button
             key={filter}
@@ -1183,7 +1196,18 @@ export const MissionsScreen = ({
         ))}
       </div>
 
-      <div className="space-y-4">
+      {missionFilter === 'drills' && <section className="grid gap-4 lg:grid-cols-3" aria-label="Optional practice drills">
+        {practiceDrills.map(drill => {
+          const answer = drillAnswers[drill.id];
+          return <article key={drill.id} className="game-card p-5">
+            <p className="game-eyebrow">Optional drill</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{drill.title}</h2><p className="mt-3 text-sm leading-6 text-[var(--game-text)]">{drill.prompt}</p>
+            <div className="mt-4 space-y-2">{drill.options.map(option => <button key={option.id} type="button" onClick={() => setDrillAnswers(previous => ({ ...previous, [drill.id]: option.id }))} className={`min-h-11 w-full border p-3 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] ${answer === option.id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-text)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:border-[var(--game-cyan)]'}`}>{option.label}</button>)}</div>
+            {answer && <p className={`mt-3 border p-3 text-sm leading-5 ${answer === drill.answer ? 'border-[var(--game-green)] text-[var(--game-text)]' : 'border-[var(--game-yellow)] text-[var(--game-text)]'}`} role="status">{drill.feedback}</p>}
+          </article>;
+        })}
+      </section>}
+
+      {missionFilter !== 'drills' && <div className="space-y-4">
 
         {missions.map(
           (
@@ -1325,7 +1349,7 @@ export const MissionsScreen = ({
           }
         )}
 
-      </div>
+      </div>}
 
     </div>
   );
@@ -2306,6 +2330,7 @@ export const ProfileScreen = ({
 }: ProfileScreenProps) => {
   const [exportMessage, setExportMessage] = useState('');
   const [archive, setArchive] = useState<MissionAttemptRecord[]>([]);
+  const [allMissionAttempts, setAllMissionAttempts] = useState<MissionAttemptRecord[]>([]);
   const [archiveCompletionCounts, setArchiveCompletionCounts] = useState<Record<string, number>>({});
   const [assessmentAttemptCount, setAssessmentAttemptCount] = useState(0);
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
@@ -2317,7 +2342,7 @@ export const ProfileScreen = ({
   const [artworkPreview, setArtworkPreview] = useState<{ title: string; src: string; alt: string } | null>(null);
   const [cosmeticMessage, setCosmeticMessage] = useState('');
   const [cosmeticBusyId, setCosmeticBusyId] = useState('');
-  const [activeProfileSection, setActiveProfileSection] = useState<'overview' | 'progress' | 'achievements' | 'certificates' | 'archive' | 'data' | 'leaderboards'>('overview');
+  const [activeProfileSection, setActiveProfileSection] = useState<'overview' | 'progress' | 'skills' | 'achievements' | 'certificates' | 'archive' | 'data' | 'leaderboards'>('overview');
   const avatarOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedAvatarId = localAvatar?.uid === user?.uid ? localAvatar?.id ?? getAvatarById(avatarId).id : getAvatarById(avatarId).id;
   const equippedCosmeticId = (kind: CosmeticKind) => kind === 'frame' ? cosmetics.equippedFrameId : kind === 'palette' ? cosmetics.equippedPaletteId : cosmetics.equippedTitleId;
@@ -2384,6 +2409,7 @@ export const ProfileScreen = ({
         if (!previous || previous.completedAt < attempt.completedAt) latestByMission.set(attempt.missionId, attempt);
       }
       setArchiveCompletionCounts(completionCounts);
+      setAllMissionAttempts(attempts);
       setArchive([...latestByMission.values()].sort((a, b) => b.completedAt.localeCompare(a.completedAt)));
     }).catch(error => console.warn('Could not load case archive:', error));
     void getAssessmentAttempts(user.uid).then(attempts => {
@@ -2579,7 +2605,7 @@ export const ProfileScreen = ({
       {view === 'profile' && <>
         <div role="tablist" aria-label="Profile sections" className="flex gap-2 overflow-x-auto border-b border-[var(--game-border)] pb-2">
           {([
-            ['overview', 'Overview'], ['progress', 'Progress'], ['achievements', 'Rank & achievements'], ['certificates', 'Certificates'], ['archive', 'Case archive'], ['data', 'Learning data'], ['leaderboards', 'Leaderboards']
+            ['overview', 'Overview'], ['progress', 'Progress'], ['skills', 'Skill practice'], ['achievements', 'Rank & achievements'], ['certificates', 'Certificates'], ['archive', 'Case archive'], ['data', 'Learning data'], ['leaderboards', 'Leaderboards']
           ] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={activeProfileSection === id} onClick={() => setActiveProfileSection(id)} className={`min-h-11 shrink-0 border px-4 py-2 text-sm font-bold ${activeProfileSection === id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-cyan)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:border-[var(--game-cyan)]'}`}>{label}</button>)}
         </div>
         {activeProfileSection === 'overview' && <GameCard className="grid gap-4 p-5 sm:grid-cols-3 sm:p-6">
@@ -2653,6 +2679,23 @@ export const ProfileScreen = ({
         <SectionHeader eyebrow="Clearance profile" title={`${rankProgress(progression.xp).current.name} · ${progression.xp} XP`} detail={`${progression.streak.current} day streak · ${progression.streak.longest} day personal best`} />
         <ProgressBar value={rankProgress(progression.xp).percent} label={rankProgress(progression.xp).next ? `Progress to ${rankProgress(progression.xp).next?.name}` : 'Maximum rank'} />
         <div className="mt-5 grid gap-3 sm:grid-cols-2">{ACHIEVEMENTS.map(achievement => <AchievementBadge key={achievement.id} achievement={achievement} earned={progression.badges.includes(achievement.id)} />)}</div>
+      </GameCard>}
+
+      {view === 'profile' && activeProfileSection === 'skills' && <GameCard className="p-5 sm:p-6">
+        <SectionHeader eyebrow="Observed practice" title="Skill practice map" detail="Shows recorded investigation habits from completed missions. These indicators are learning feedback, not validated proficiency scores." />
+        {(() => {
+          const completed = allMissionAttempts.filter(attempt => attempt.outcome === 'completed' && attempt.skillSignals);
+          const signals = [
+            { key: 'evidenceFirst', label: 'Evidence before response', description: 'Recorded evidence collection before a simulated response action.' },
+            { key: 'verifiedAll', label: 'Response verification', description: 'Verified all simulated response actions after applying them.' },
+            { key: 'calibratedReport', label: 'Evidence-based reporting', description: 'Submitted a report calibrated to the available evidence.' }
+          ] as const;
+          return completed.length ? <div className="mt-5 grid gap-3 md:grid-cols-3">{signals.map(signal => {
+            const positive = completed.filter(attempt => attempt.skillSignals?.[signal.key]).length;
+            const value = Math.round(positive / completed.length * 100);
+            return <article key={signal.key} className="border border-[var(--game-border)] bg-[var(--game-surface)] p-4"><div className="flex items-baseline justify-between gap-3"><h3 className="font-bold text-[var(--game-text)]">{signal.label}</h3><span className="text-sm font-bold text-[var(--game-cyan)]">{value}%</span></div><p className="mt-2 text-sm text-[var(--game-muted)]">{signal.description}</p><ProgressBar value={value} label={`${positive} of ${completed.length} recorded completions`} /><p className="mt-2 text-xs text-[var(--game-muted)]">{positive} / {completed.length} completed attempts</p></article>;
+          })}</div> : <div className="empty-state mt-4">Complete a mission to build your practice map.</div>;
+        })()}
       </GameCard>}
 
       {view === 'profile' && activeProfileSection === 'certificates' && <GameCard className="p-5 sm:p-6">
