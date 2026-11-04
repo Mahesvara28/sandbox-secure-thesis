@@ -8,7 +8,6 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile,
-  sendEmailVerification,
   sendPasswordResetEmail,
   browserLocalPersistence,
   browserSessionPersistence,
@@ -112,11 +111,6 @@ export const registerWithEmail = async (
   return result.user;
 };
 
-export const sendAccountVerification = async (user: User) => {
-  await authReady;
-  await sendEmailVerification(user);
-};
-
 export const loginWithEmail = async (
   email: string,
   password: string
@@ -129,8 +123,7 @@ export const loginWithEmail = async (
       password
     );
 
-  // Refresh the verified-email claim so Firestore rules recognize the
-  // account immediately after the user follows the verification link.
+  // Refresh the auth token so Firebase services see the current account state.
   await result.user.reload();
   await result.user.getIdToken(true);
 
@@ -428,6 +421,48 @@ export const getUserProgress = async (
   };
 };
 
+export interface AdminAnalyticsParticipant {
+  uid: string;
+  username: string;
+  createdAt?: string;
+  scores: Record<string, Record<string, number | undefined>>;
+  completedMissions: string[];
+  missionAttempts: MissionAttemptRecord[];
+  assessmentAttempts: AssessmentAttemptRecord[];
+}
+
+/**
+ * Read-only analytics loader. The admins/{uid} check is a UI gate only;
+ * Firestore Security Rules must independently restrict every collection read.
+ */
+export const getAdminAnalyticsSnapshot = async (uid: string): Promise<AdminAnalyticsParticipant[]> => {
+  const admin = await getDoc(doc(db, 'admins', uid));
+  if (!admin.exists() || admin.data().enabled !== true) throw new Error('ADMIN_ACCESS_REQUIRED');
+
+  const users = await getDocsFromServer(collection(db, 'users'));
+  return Promise.all(users.docs.map(async userDoc => {
+    const data = userDoc.data();
+    const [missionDocs, assessmentDocs] = await Promise.all([
+      getDocsFromServer(collection(db, 'users', userDoc.id, 'missionAttempts')),
+      getDocsFromServer(collection(db, 'users', userDoc.id, 'assessmentAttempts'))
+    ]);
+    return {
+      uid: userDoc.id,
+      username: typeof data.username === 'string' ? data.username : 'Operator',
+      createdAt: typeof data.createdAt === 'string' ? data.createdAt : undefined,
+      scores: data.scores && typeof data.scores === 'object' ? data.scores : {},
+      completedMissions: Array.isArray(data.completedMissions) ? data.completedMissions.filter((value): value is string => typeof value === 'string') : [],
+      missionAttempts: missionDocs.docs.map(item => item.data() as MissionAttemptRecord),
+      assessmentAttempts: assessmentDocs.docs.map(item => item.data() as AssessmentAttemptRecord)
+    };
+  }));
+};
+
+export const isEnabledAdmin = async (uid: string) => {
+  const admin = await getDoc(doc(db, 'admins', uid));
+  return admin.exists() && admin.data().enabled === true;
+};
+
 const ownedCosmeticField = (kind: CosmeticKind) => kind === 'frame' ? 'ownedFrameIds' : kind === 'palette' ? 'ownedPaletteIds' : 'ownedTitleIds';
 const equippedCosmeticField = (kind: CosmeticKind) => kind === 'frame' ? 'equippedFrameId' : kind === 'palette' ? 'equippedPaletteId' : 'equippedTitleId';
 
@@ -499,7 +534,7 @@ const isUserCertificate = (value: unknown): value is UserCertificate => {
 export const saveUserCertificate = async (
   userId: string,
   certificate: Omit<UserCertificate, 'id' | 'issuedAt'>
-): Promise<{ certificate: UserCertificate; created: boolean; cosmetics: PlayerCosmetics }> => {
+): Promise<{ certificate: UserCertificate; created: boolean; cosmetics: PlayerCosmetics; awardedCoins: number }> => {
   const userRef = doc(db, 'users', userId);
   return runTransaction(db, async transaction => {
     const snapshot = await transaction.get(userRef);
@@ -510,7 +545,7 @@ export const saveUserCertificate = async (
     const existing = certificates.find(item => item.tier === certificate.tier);
     if (existing) {
       if (cosmetics.rewardedCertificationTiers.includes(certificate.tier)) {
-        return { certificate: existing, created: false, cosmetics };
+        return { certificate: existing, created: false, cosmetics, awardedCoins: 0 };
       }
       const rewardedCosmetics = {
         ...cosmetics,
@@ -518,7 +553,7 @@ export const saveUserCertificate = async (
         rewardedCertificationTiers: [...cosmetics.rewardedCertificationTiers, certificate.tier]
       };
       transaction.set(userRef, { cosmetics: rewardedCosmetics }, { merge: true });
-      return { certificate: existing, created: false, cosmetics: rewardedCosmetics };
+      return { certificate: existing, created: false, cosmetics: rewardedCosmetics, awardedCoins: CERTIFICATION_CLEAR_COIN_REWARD };
     }
     const created: UserCertificate = {
       ...certificate,
@@ -532,7 +567,7 @@ export const saveUserCertificate = async (
       rewardedCertificationTiers: [...cosmetics.rewardedCertificationTiers, certificate.tier]
     };
     transaction.set(userRef, { certificates: [...certificates, created], cosmetics: nextCosmetics }, { merge: true });
-    return { certificate: created, created: true, cosmetics: nextCosmetics };
+    return { certificate: created, created: true, cosmetics: nextCosmetics, awardedCoins: alreadyRewarded ? 0 : CERTIFICATION_CLEAR_COIN_REWARD };
   });
 };
 
