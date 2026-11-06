@@ -15,6 +15,7 @@ import {
   saveUserScore,
   registerWithEmail,
   loginWithEmail,
+  isUnverifiedEmailPasswordUser,
   sendPasswordReset,
   saveCompletedMissions,
   savePreTestScore,
@@ -39,7 +40,8 @@ import {
   purchaseCosmetic,
   equipCosmetic,
   awardFirstMissionCoins,
-  isEnabledAdmin
+  isEnabledAdmin,
+  submitIssueReport
 } from './Firebase';
 import type { UserCertificate } from './Firebase';
 import { getMissionXp, normalizeProgression, rankProgress, type PlayerProgression } from './data/progression';
@@ -94,7 +96,8 @@ import {
   Settings,
   Play,
   Store,
-  ShieldCheck
+  ShieldCheck,
+  MessageSquareWarning
 } from 'lucide-react';
 
 type Screen =
@@ -126,6 +129,7 @@ const friendlyAuthError = (error: unknown, fallback: string) => {
     'auth/wrong-password': 'Email or password is incorrect.',
     'auth/user-not-found': 'No account was found for that email address.',
     'auth/email-already-in-use': 'This email is already registered.',
+    'auth/email-not-verified': 'Verify your email using the link we sent before signing in. Check your spam folder too.',
     'auth/weak-password': 'Password must be at least 6 characters.',
     'auth/network-request-failed': 'Network connection failed. Check your connection and try again.'
   };
@@ -233,6 +237,7 @@ function App() {
 
   const [authMode, setAuthMode] =
     useState<AuthMode>('login');
+  const pendingEmailVerificationRef = useRef(false);
 
   const [regUsername, setRegUsername] =
     useState('');
@@ -353,6 +358,11 @@ function App() {
   const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem('sandbox-secure-music') !== 'off');
   const [audioVolume, setAudioVolume] = useState(() => Number(localStorage.getItem('sandbox-secure-volume') ?? 0.22));
   const [showSettings, setShowSettings] = useState(false);
+  const [showIssueReport, setShowIssueReport] = useState(false);
+  const [issueReportText, setIssueReportText] = useState('');
+  const [issueReportError, setIssueReportError] = useState('');
+  const [issueReportSent, setIssueReportSent] = useState(false);
+  const [submittingIssueReport, setSubmittingIssueReport] = useState(false);
 
   const backgroundAudioRef = useRef<HTMLAudioElement | null>(null);
   const backgroundTrackRef = useRef<string | null>(null);
@@ -677,6 +687,18 @@ function App() {
         async currentUser => {
           if (cancelled) return;
           if (currentUser) {
+            if (isUnverifiedEmailPasswordUser(currentUser)) {
+              // Registration sends the verification email and signs out; ignore
+              // its temporary auth event while that flow is in progress.
+              if (pendingEmailVerificationRef.current) return;
+              setUser(null);
+              setBootStage('login');
+              setIsLoadingAuth(false);
+              setProgressLoadFailed(false);
+              setAuthError('Verify your email address using the link we sent before signing in. Check your spam folder too.');
+              void logOut().catch(error => console.error('Could not sign out an unverified account:', error));
+              return;
+            }
             try {
               // Firebase may restore a cached user before its verified-email
               // claim is current. Refresh before profile reads and rule checks.
@@ -1081,6 +1103,7 @@ function App() {
       }
 
       try {
+        pendingEmailVerificationRef.current = true;
         const created =
           await registerWithEmail(
             regEmail,
@@ -1088,12 +1111,15 @@ function App() {
             regUsername
           );
 
+        pendingEmailVerificationRef.current = false;
         setRegPassword('');
+        setAuthMode('login');
         setAuthSuccess(true);
-        setAuthSuccessMessage(`Test account created${created.email ? ` for ${created.email}` : ''}. You are now signed in.`);
+        setAuthSuccessMessage(`Account created${created.email ? ` for ${created.email}` : ''}. Open the verification email and follow its link before signing in. Check your spam folder if it does not appear.`);
       } catch (
         error: unknown
       ) {
+        pendingEmailVerificationRef.current = false;
         setAuthError(friendlyAuthError(error, 'Registration failed. Check your details and try again.'));
       }
     };
@@ -1136,6 +1162,25 @@ function App() {
       setAuthError(code === 'auth/user-not-found'
         ? 'No account was found for that email address.'
         : 'Could not send a password reset email. Check the address and try again.');
+    }
+  };
+
+  const handleSubmitIssueReport = async () => {
+    if (!user || submittingIssueReport) return;
+    setIssueReportError('');
+    setIssueReportSent(false);
+    setSubmittingIssueReport(true);
+    try {
+      await submitIssueReport(user.uid, user.displayName || 'Operator', issueReportText);
+      setIssueReportText('');
+      setIssueReportSent(true);
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+      setIssueReportError(code === 'permission-denied'
+        ? 'Firestore rejected this report. Confirm the deployed rules include the issueReports create rule, that Firebase project sandbox-thesis is selected, and that this account has a verified email. After verifying, sign out and sign in again.'
+        : error instanceof Error ? error.message : 'Could not send the report. Check your connection and try again.');
+    } finally {
+      setSubmittingIssueReport(false);
     }
   };
 
@@ -1679,6 +1724,10 @@ function App() {
       const readOnlyCommands = new Set(['ls', 'pwd', 'cat', 'ps', 'netstat', 'ss', 'status', 'whoami', 'grep', 'find', 'stat', 'journalctl', 'crontab', 'nmap', 'ping', 'inspect']);
       const enteredCommand = input.split(/\s+/)[0]?.toLowerCase() ?? '';
       if (readOnlyCommands.has(enteredCommand)) {
+        const expectedHostCommand = currentStep.cmd.match(/^(ping|nmap)\s+(\S+)$/i);
+        if (expectedHostCommand && enteredCommand === expectedHostCommand[1].toLowerCase()) {
+          sendSysMsg(`[OBJECTIVE NOT COMPLETE]: This simulated ${enteredCommand} ran, but this step expects ${expectedHostCommand[1]} ${expectedHostCommand[2]}. Type ${enteredCommand} and press Tab to complete the objective's target.`);
+        }
         // Read-only exploration is allowed at any point and does not consume an objective.
         return;
       }
@@ -2154,6 +2203,10 @@ function App() {
               <ShieldCheck size={14} className="mr-2 inline" /><span className="hidden md:inline">Admin</span>
             </button>}
 
+            <button type="button" onClick={() => { setIssueReportError(''); setIssueReportSent(false); setShowIssueReport(true); }} className="relative px-3 lg:px-4 py-2 border border-transparent text-green-800 transition-colors hover:border-amber-900 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400" aria-label="Report an issue" title="Report an issue">
+              <MessageSquareWarning size={14} className="inline md:mr-2" /><span className="hidden md:inline">Report issue</span>
+            </button>
+
           </div>
         </div>
 
@@ -2432,6 +2485,22 @@ function App() {
             <label className="block"><span className="block text-sm font-bold text-white">Music and effect volume · {Math.round(audioVolume * 100)}%</span><input type="range" min="0" max="1" step="0.01" value={audioVolume} onChange={event => setAudioVolume(Number(event.target.value))} className="mt-3 w-full accent-cyan-500" /></label>
             <label className="flex items-center justify-between gap-4"><span><span className="block text-sm font-bold text-white">Sound effects</span><span className="text-xs text-gray-400">Command errors and mission completion sounds.</span></span><input type="checkbox" checked={!isMuted} onChange={event => setIsMuted(!event.target.checked)} className="h-5 w-5 accent-cyan-500" /></label>
           </div>
+        </section>
+      </div>}
+
+      {showIssueReport && <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/80 p-4" role="presentation" onClick={() => setShowIssueReport(false)}>
+        <section role="dialog" aria-modal="true" aria-labelledby="issue-report-title" className="w-full max-w-xl border border-amber-700 bg-[var(--game-surface)] p-5 text-[var(--game-text)] shadow-2xl sm:p-7" onClick={event => event.stopPropagation()}>
+          <div className="flex items-start justify-between gap-4 border-b border-[var(--game-border)] pb-4">
+            <div><p className="game-eyebrow text-amber-500">Player support</p><h2 id="issue-report-title" className="mt-1 text-xl font-black">Report an issue</h2></div>
+            <button type="button" onClick={() => setShowIssueReport(false)} className="min-h-10 border border-[var(--game-border)] px-3 text-xs font-bold">Close</button>
+          </div>
+          <p className="mt-4 text-sm leading-6 text-[var(--game-muted)]">Describe what happened and what you were doing. Your report and display name can be read by the game administrator. Do not include passwords or other sensitive information.</p>
+          <label htmlFor="issue-report-message" className="mt-4 block text-sm font-semibold">What went wrong?</label>
+          <textarea id="issue-report-message" value={issueReportText} onChange={event => { setIssueReportText(event.target.value); setIssueReportSent(false); }} maxLength={2000} rows={6} placeholder="For example: Intermediate mission 2 did not advance after I ran the suggested command…" className="mt-2 w-full resize-y border border-[var(--game-border)] bg-[var(--game-page)] p-3 text-sm text-[var(--game-text)] placeholder:text-[var(--game-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400" />
+          <div className="mt-2 flex items-center justify-between gap-3 text-xs text-[var(--game-muted)]"><span>10–2,000 characters</span><span>{issueReportText.length}/2,000</span></div>
+          {issueReportError && <p role="alert" className="mt-3 border border-[var(--game-red)] p-3 text-sm text-[var(--game-red)]">{issueReportError}</p>}
+          {issueReportSent && <p role="status" className="mt-3 border border-[var(--game-green)] p-3 text-sm text-[var(--game-green)]">Your report was sent to the game administrator.</p>}
+          <div className="mt-5 flex justify-end"><button type="button" disabled={submittingIssueReport || issueReportText.trim().length < 10} onClick={() => void handleSubmitIssueReport()} className="min-h-11 border border-amber-600 bg-amber-600/15 px-4 py-2 text-sm font-bold text-[var(--game-text)] disabled:cursor-not-allowed disabled:opacity-50">{submittingIssueReport ? 'Sending…' : 'Send report'}</button></div>
         </section>
       </div>}
 

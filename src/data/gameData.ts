@@ -41,6 +41,10 @@ export interface Mission {
 }
 
 // --- TUTORIAL MISSIONS ---
+// CONTENT EDITING GUIDE — tutorial and daily challenge mission definitions.
+// Find a mission by its title or id, then edit its steps. A step's accepted
+// answer is described by cmd/target/alternates/requiredCommands and any
+// decision.correctId fields. Keep ids stable because saved progress uses them.
 export const TUTORIAL_MISSIONS: Mission[] = [
   {
     id: 't1',
@@ -294,6 +298,8 @@ export const TUTORIAL_MISSIONS: Mission[] = [
 ];
 
 // Short guided bridge lessons at the start of the timed Intermediate certification path.
+// CONTENT EDITING GUIDE — guided bridge missions shown before Intermediate
+// certification cases. Edit the mission object/steps below; preserve stable ids.
 export const BRIDGE_MISSIONS: Mission[] = [
   {
     id: 'bridge-process', title: 'Bridge 1: Programs in Motion', tier: 'INTERMEDIATE',
@@ -360,6 +366,10 @@ export const BRIDGE_MISSIONS: Mission[] = [
   }
 ];
 
+// CONTENT EDITING GUIDE — certification mission scenarios and accepted answers.
+// Search for a mission title, then edit its briefing, objectives, step commands,
+// accepted alternatives, decision choices, hints, and debrief in that object.
+// Keep mission ids stable to retain existing learner progress and attempt history.
 // --- CAMPAIGN MISSIONS ---
 export const MISSIONS: Mission[] = [
   {
@@ -1280,6 +1290,9 @@ for (const mission of [...TUTORIAL_MISSIONS, ...BRIDGE_MISSIONS, ...MISSIONS]) {
 }
 
 // --- QUIZ DATA (10 Questions Each) ---
+// ASSESSMENT CONTENT EDITING GUIDE — find a question by its question text or id.
+// Edit question/options/correctAnswer/explanation together; avoid changing ids
+// because saved attempts and analytics use tier + assessment + question order.
 export const BEGINNER_PRETEST: Question[] = [
   { id: 1, question: "In a text-based workspace, files are organized into folders. Why check your current folder before opening a file by name?", options: ["To know where the workspace will look for that file", "To identify the person using another computer", "To learn whether a network service is safe", "To change the account password"], correctAnswer: 0, explanation: "Knowing your location helps you find the intended file; it does not tell you whether the file is safe." },
   { id: 2, question: "A training workspace has a folder named evidence. What is the purpose of opening that folder?", options: ["To view the files stored there", "To prove every file is safe", "To identify who created each file", "To block network access"], correctAnswer: 0, explanation: "Opening a folder helps you see and inspect its contents; it does not verify who created them." },
@@ -1406,6 +1419,8 @@ Network
   block [IP]              Contain a simulated network address
 
 Analysis and response
+  inspect [clue]          Inspect an evidence card in this case
+  choose [option]         Submit a choice when the objective asks you to decide
   grep [-i] [-n] [word] [file]  Search a simulated text file
   grep --ip [IP] [file]  Filter records by source address
   grep --after/--before HH:MM:SS [file] Filter records by time
@@ -1424,7 +1439,7 @@ Analysis and response
   inspect [clue]          Inspect a clue on the investigation board
 Evidence decision box   Select an option when the mission asks you to choose a target or conclusion
 
-TRAINING-ONLY COMMANDS: block, disable-service, preserve, record-evidence, assess, remove-persistence, report, and inspect are simplified game actions. grep --ip/--after/--before are custom filters in this simulation.
+TRAINING-ONLY COMMANDS: choose, inspect, block, disable-service, preserve, record-evidence, assess, remove-persistence, and report are simplified game actions. grep --ip/--after/--before are custom filters in this simulation.
 Real work uses authorized firewall or service-management tools, evidence-handling and case-management procedures, and the documented filters in grep or a log-analysis platform.
 
 Use the command that fits your current objective. All hosts, files, commands, and response actions are simulated; nothing contacts or changes a real system.`;

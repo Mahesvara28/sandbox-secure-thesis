@@ -82,6 +82,45 @@ import { TierDashboard } from './TierDashboard';
 import { CommandFieldGuide } from './CommandFieldGuide';
 import { SecurityBrief } from './SecurityBrief';
 import { SECURITY_BRIEF_ITEMS } from '../data/securityBrief';
+import { getDailyQuickDrills, QUICK_DRILLS_PER_DAY } from '../data/quickDrills';
+
+type DailyQuickDrillState = { completed: number; selectedAnswer: string | null };
+
+const DailyQuickDrill = ({ uid, dateKey }: { uid: string; dateKey: string }) => {
+  const dailyDrills = getDailyQuickDrills(uid, dateKey);
+  const storageKey = `sandbox-secure-quick-drills:${uid}:${dateKey}`;
+  const [state, setState] = useState<DailyQuickDrillState>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<DailyQuickDrillState>;
+        if (typeof parsed.completed === 'number' && typeof parsed.selectedAnswer !== 'undefined') {
+          return { completed: Math.max(0, Math.min(QUICK_DRILLS_PER_DAY, parsed.completed)), selectedAnswer: parsed.selectedAnswer };
+        }
+      }
+    } catch { /* Storage can be unavailable in private browsing; the drill still works in memory. */ }
+    return { completed: 0, selectedAnswer: null };
+  });
+  const saveState = (next: DailyQuickDrillState) => {
+    setState(next);
+    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* Keep the current practice session usable without storage. */ }
+  };
+  const drill = dailyDrills[state.completed];
+  const selectedIsCorrect = Boolean(drill && state.selectedAnswer === drill.answer);
+
+  return <section className="game-card p-5 sm:p-6" aria-label="Daily quick drill">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><p className="game-eyebrow">Quick drill · practice only</p><h2 className="mt-1 text-xl font-black uppercase text-[var(--game-text)]">Build your investigation instincts</h2><p className="mt-2 text-sm text-[var(--game-muted)]">Answer five short scenarios. Your next drill changes after each answer. No certification score or currency is affected.</p></div>
+      <span className="shrink-0 border border-[var(--game-cyan)] px-3 py-2 text-xs font-bold text-[var(--game-text)]">{Math.min(state.completed + (state.selectedAnswer ? 1 : 0), QUICK_DRILLS_PER_DAY)} / {QUICK_DRILLS_PER_DAY} answered</span>
+    </div>
+    {drill ? <article className="mt-5 border border-[var(--game-border)] bg-[var(--game-surface-raised)] p-4 sm:p-5" aria-live="polite">
+      <p className="text-xs font-bold uppercase tracking-wider text-[var(--game-cyan)]">Drill {state.completed + 1} · {drill.title}</p>
+      <p className="mt-3 text-sm leading-6 text-[var(--game-text)]">{drill.prompt}</p>
+      <div className="mt-4 grid gap-2">{drill.options.map(option => <button key={option.id} type="button" disabled={Boolean(state.selectedAnswer)} onClick={() => saveState({ ...state, selectedAnswer: option.id })} className={`min-h-11 w-full border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-default ${state.selectedAnswer === option.id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-text)]' : 'border-[var(--game-border)] text-[var(--game-text)] hover:border-[var(--game-cyan)]'}`}>{option.label}</button>)}</div>
+      {state.selectedAnswer && <div className={`mt-4 border p-3 text-sm leading-6 ${selectedIsCorrect ? 'border-[var(--game-green)]' : 'border-[var(--game-yellow)]'}`} role="status"><p className="font-bold text-[var(--game-text)]">{selectedIsCorrect ? 'Good analysis.' : 'Review the evidence.'}</p><p className="mt-1 text-[var(--game-text)]">{drill.feedback}</p><button type="button" onClick={() => saveState({ completed: state.completed + 1, selectedAnswer: null })} className="mt-3 min-h-10 border border-[var(--game-cyan)] px-4 py-2 text-xs font-bold text-[var(--game-text)] hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">{state.completed + 1 === QUICK_DRILLS_PER_DAY ? 'Finish today’s drills' : 'Next drill'} <span aria-hidden="true">→</span></button></div>}
+    </article> : <div className="mt-5 border border-[var(--game-green)] p-4" role="status"><p className="font-bold text-[var(--game-text)]">Today’s five drills are complete.</p><p className="mt-1 text-sm text-[var(--game-muted)]">A fresh set is ready tomorrow.</p><button type="button" onClick={() => saveState({ completed: 0, selectedAnswer: null })} className="mt-3 min-h-10 border border-[var(--game-border)] px-4 py-2 text-xs font-bold text-[var(--game-text)] hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Review today’s drills</button></div>}
+  </section>;
+};
 
 const RANK_BADGES: Record<string, string> = {
   Recruit: recruitRankBadge,
@@ -333,7 +372,7 @@ export const AuthScreen = ({
             <button id="auth-tab-register" type="button" role="tab" tabIndex={authMode === 'register' ? 0 : -1} aria-selected={authMode === 'register'} aria-controls="auth-form-panel" onClick={() => setAuthMode('register')} className={authMode === 'register' ? activeTabClass : inactiveTabClass}>Create account</button>
           </div>
 
-          {authMode === 'login' && <p className="mb-4 text-xs leading-5 text-[var(--game-muted)]">Email verification is temporarily off for testing. Password resets still require access to the email inbox.</p>}
+          {authMode === 'login' && <p className="mb-4 text-xs leading-5 text-[var(--game-muted)]">Email and password accounts must verify their email address before signing in. Check your inbox and spam folder for the verification link.</p>}
 
           <div id="auth-form-panel" role="tabpanel" aria-labelledby={authMode === 'login' ? 'auth-tab-login' : 'auth-tab-register'}>
             {authMode === 'login' ? <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
@@ -580,6 +619,8 @@ export const DashboardScreen = ({
         <div className="mt-6 flex flex-wrap gap-3"><button type="button" onClick={onContinue} className="min-h-12 rounded-md bg-[var(--game-green)] px-6 py-3 text-sm font-bold text-black shadow-md transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2">{resumeActivityLabel ?? (currentTierScore?.preTestScore === undefined ? 'Start pre-test' : 'Continue training')} <ChevronRight size={16} className="ml-1 inline" /></button>{resumeActivityLabel === 'Resume replay' && onContinueNextMission && nextMission && <button type="button" onClick={onContinueNextMission} className="min-h-12 rounded-md border border-[var(--game-cyan)] px-5 py-3 text-sm font-bold text-[var(--game-cyan)] hover:bg-[var(--game-cyan)] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Continue to next mission</button>}</div>
         </div>
       </GameCard>
+
+      {user && <DailyQuickDrill key={`${user.uid}-${dailyTrialDate}`} uid={user.uid} dateKey={dailyTrialDate} />}
 
       {!isNewUser && !isLoadingProgress && <div className="game-card grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 p-3 sm:gap-4 sm:p-4" aria-label="Training status">
         <div className="min-w-0"><div className="flex flex-col text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2"><span className="truncate font-semibold text-[var(--game-text)]">{rank.current.name}</span><span className="whitespace-nowrap text-[var(--game-muted)]">{progression.xp}{rank.next ? `/${rank.next.threshold}` : ''} XP</span></div><div role="img" aria-label={rank.next ? `${rank.percent}% progress to ${rank.next.name}` : 'Maximum rank'}><ProgressBar value={rank.percent} className="mt-2" /></div></div>
@@ -1134,18 +1175,13 @@ export const MissionsScreen = ({
   startMission,
   completedMissions = []
 }: MissionsScreenProps) => {
-  const [missionFilter, setMissionFilter] = useState<'all' | 'files' | 'network' | 'logs' | 'drills'>(
+  const [fieldGuideTier, setFieldGuideTier] = useState<Tier | null>(null);
+  const [missionFilter, setMissionFilter] = useState<'all' | 'files' | 'network' | 'logs'>(
     'all'
   );
-  const [drillAnswers, setDrillAnswers] = useState<Record<string, string>>({});
-  const practiceDrills = [
-    { id: 'log-status', title: 'Read the response', prompt: 'A web log shows: 203.0.113.8 GET /staff HTTP/1.1 401. What is the safest conclusion?', options: [{ id: 'denied', label: 'The request was recorded and authentication was denied.' }, { id: 'access', label: 'The source successfully accessed the staff page.' }, { id: 'identity', label: 'The log proves which person made the request.' }], answer: 'denied', feedback: 'A 401 records an authentication failure. It does not prove successful access or identify the person behind an IP.' },
-    { id: 'scope-response', title: 'Choose a scoped response', prompt: 'An approved baseline allows SSH from the office subnet. One unfamiliar address has repeated failed SSH attempts. Which response is best supported?', options: [{ id: 'scoped', label: 'Preserve the records, assess the source, then block only that address if policy authorizes it.' }, { id: 'broad', label: 'Disable SSH for every user immediately.' }, { id: 'ignore', label: 'Treat failed attempts as proof of compromise and close the case.' }], answer: 'scoped', feedback: 'A scoped response preserves access for approved users. A broad shutdown could disrupt operations; failed attempts alone do not prove compromise.' },
-    { id: 'report-boundary', title: 'Separate fact from conclusion', prompt: 'A process inventory shows an unfamiliar listener on port 8448, but no connection or access logs are available. What belongs in the report?', options: [{ id: 'fact', label: 'An unfamiliar listener was observed; ownership and impact need further validation.' }, { id: 'compromise', label: 'An attacker accessed the system through port 8448.' }, { id: 'safe', label: 'The service is safe because no access log was found.' }], answer: 'fact', feedback: 'Report the observed listener and name what remains unknown. Missing logs do not establish either compromise or safety.' }
-  ];
   const missions = [
     ...TUTORIAL_MISSIONS
-  ].filter(mission => missionFilter !== 'drills' && (missionFilter === 'all' || mission.category === missionFilter));
+  ].filter(mission => missionFilter === 'all' || mission.category === missionFilter);
   const completedCount = missions.filter(mission => completedMissions.includes(mission.id)).length;
 
   return (
@@ -1169,7 +1205,7 @@ export const MissionsScreen = ({
             <p className="text-sm text-green-500/40 mt-1">
               Practice with standalone missions. Certification training missions are kept in the Academy.
             </p>
-            <p className="mt-3 text-xs text-green-300">{missionFilter === 'drills' ? 'Optional drills · practice only · no certification score or currency changes' : `${completedCount} of ${missions.length} shown missions completed`}</p>
+            <p className="mt-3 text-xs text-green-300">{`${completedCount} of ${missions.length} shown missions completed`}</p>
 
           </div>
 
@@ -1183,7 +1219,6 @@ export const MissionsScreen = ({
           ['files', 'FILES'],
           ['network', 'NETWORK'],
           ['logs', 'TIMELINES'],
-          ['drills', 'QUICK DRILLS']
         ] as const).map(([filter, label]) => (
           <button
             key={filter}
@@ -1196,18 +1231,7 @@ export const MissionsScreen = ({
         ))}
       </div>
 
-      {missionFilter === 'drills' && <section className="grid gap-4 lg:grid-cols-3" aria-label="Optional practice drills">
-        {practiceDrills.map(drill => {
-          const answer = drillAnswers[drill.id];
-          return <article key={drill.id} className="game-card p-5">
-            <p className="game-eyebrow">Optional drill</p><h2 className="mt-1 text-lg font-bold text-[var(--game-text)]">{drill.title}</h2><p className="mt-3 text-sm leading-6 text-[var(--game-text)]">{drill.prompt}</p>
-            <div className="mt-4 space-y-2">{drill.options.map(option => <button key={option.id} type="button" onClick={() => setDrillAnswers(previous => ({ ...previous, [drill.id]: option.id }))} className={`min-h-11 w-full border p-3 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] ${answer === option.id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-text)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:border-[var(--game-cyan)]'}`}>{option.label}</button>)}</div>
-            {answer && <p className={`mt-3 border p-3 text-sm leading-5 ${answer === drill.answer ? 'border-[var(--game-green)] text-[var(--game-text)]' : 'border-[var(--game-yellow)] text-[var(--game-text)]'}`} role="status">{drill.feedback}</p>}
-          </article>;
-        })}
-      </section>}
-
-      {missionFilter !== 'drills' && <div className="space-y-4">
+      <div className="space-y-4">
 
         {missions.map(
           (
@@ -1323,22 +1347,25 @@ export const MissionsScreen = ({
 
                   </div>
 
-                  <button
-                    onClick={() =>
-                      startMission(
-                        mission
-                      )
-                    }
-                    className="shrink-0 flex min-h-11 items-center justify-center gap-2 rounded-md border border-green-500 px-5 py-2 text-xs font-bold uppercase text-green-300 transition hover:-translate-y-0.5 hover:bg-green-500 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-                  >
-                    <Play
-                      size={13}
-                    />
-
-                    {completed
-                      ? 'Replay'
-                      : 'Deploy'}
-                  </button>
+                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => setFieldGuideTier(mission.tier)}
+                      aria-label={`Open ${mission.tier.toLowerCase()} command field guide for ${mission.title}`}
+                      className="flex min-h-11 items-center justify-center gap-2 border border-cyan-700 px-4 py-2 text-xs font-bold uppercase text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-950/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                    >
+                      <BookOpen size={14} />
+                      Command field guide
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startMission(mission)}
+                      className="flex min-h-11 items-center justify-center gap-2 border border-green-500 px-5 py-2 text-xs font-bold uppercase text-green-300 transition hover:-translate-y-0.5 hover:bg-green-500 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                    >
+                      <Play size={13} />
+                      {completed ? 'Replay' : 'Deploy'}
+                    </button>
+                  </div>
 
                 </div>
 
@@ -1349,7 +1376,14 @@ export const MissionsScreen = ({
           }
         )}
 
-      </div>}
+      </div>
+
+      {fieldGuideTier && (
+        <CommandFieldGuide
+          tier={fieldGuideTier}
+          onClose={() => setFieldGuideTier(null)}
+        />
+      )}
 
     </div>
   );
@@ -1750,8 +1784,9 @@ export const TerminalScreen = ({
       const isCompletingCommand = !/\s/.test(source);
       const lastSpace = source.lastIndexOf(' ');
       const argumentPrefix = lastSpace < 0 ? '' : source.slice(lastSpace + 1);
-      const commandNames = ['help', 'pwd', 'ls', 'cd', 'cat', 'whoami', 'grep', 'journalctl', 'ss', 'netstat', 'ps', 'find', 'stat', 'nmap', 'ping', 'status', 'preserve', 'record-evidence', 'assess', 'block', 'disable-service', 'kill', 'crontab', 'remove-persistence', 'report', 'clear'];
+      const commandNames = ['help', 'pwd', 'ls', 'cd', 'cat', 'whoami', 'grep', 'journalctl', 'ss', 'netstat', 'ps', 'find', 'stat', 'nmap', 'ping', 'status', 'inspect', 'choose', 'preserve', 'record-evidence', 'assess', 'block', 'disable-service', 'kill', 'crontab', 'remove-persistence', 'report', 'clear'];
       const targetCommand = currentStep?.cmd.match(/^(ping|nmap)\s+(\S+)$/i);
+      const inspectTarget = currentStep?.cmd.match(/^inspect\s+(\S+)$/i);
       const reportFinding = commandName === 'report'
         ? currentStep?.cmd.match(/^report\s+(.+)$/i)?.[1]
         : undefined;
@@ -1762,9 +1797,13 @@ export const TerminalScreen = ({
       const candidates = isCompletingCommand
         ? targetCommand && source.trim().toLowerCase() === targetCommand[1].toLowerCase()
           ? [currentStep?.cmd ?? '']
+          : inspectTarget && source.trim().toLowerCase() === 'inspect'
+            ? [currentStep?.cmd ?? '']
           : commandNames.filter(name => name.startsWith(source.trim().toLowerCase()))
         : ['cat', 'cd', 'grep', 'find', 'stat'].includes(commandName)
           ? pathNames.filter(path => path.startsWith(argumentPrefix))
+          : commandName === 'inspect' && inspectTarget
+            ? [inspectTarget[1]].filter(target => target.startsWith(argumentPrefix))
           : targetCommand && commandName === targetCommand[1].toLowerCase()
             ? [targetCommand[2]].filter(target => target.startsWith(argumentPrefix))
           : reportFinding

@@ -1,0 +1,177 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Require authenticated accounts to have a verified email address.
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;
+    }
+
+    // Require the entry nickname to match the participant's saved opt-in alias.
+    function optedInAliasMatches(nickname) {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.leaderboardOptIn == true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.leaderboardAlias == nickname;
+    }
+
+    function validChallengeDate(entryId, data) {
+      return data.challengeDate is string
+        && data.challengeDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && entryId == request.auth.uid + '_' + data.challengeDate;
+    }
+
+    // Admins can check their own role document.
+    // Clients cannot create, update, delete, or list admin records.
+    match /admins/{uid} {
+      allow get: if signedIn()
+        && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+
+    // Players can submit their own issue report; only enabled admins can read or resolve reports.
+    match /issueReports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['uid', 'username', 'message', 'createdAt', 'status'])
+        && request.resource.data.keys().hasOnly(['uid', 'username', 'message', 'createdAt', 'status'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.username is string
+        && request.resource.data.username.size() <= 60
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 10
+        && request.resource.data.message.size() <= 2000
+        && request.resource.data.createdAt is string
+        && request.resource.data.status == 'open';
+
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in ['open', 'resolved'];
+      allow delete: if false;
+    }
+
+    // Participants can access their own profile and subcollections.
+    match /users/{userId} {
+      allow read, create, update: if signedIn()
+        && request.auth.uid == userId;
+
+      // Admin analytics can read profiles.
+      allow read: if isAdmin();
+    }
+
+    match /users/{userId}/{path=**} {
+      allow read, create, update: if signedIn()
+        && request.auth.uid == userId;
+    }
+
+    // Admin analytics can read only mission and assessment attempt subcollections.
+    match /users/{userId}/{subcollection}/{documentId} {
+      allow read: if isAdmin()
+        && subcollection in ['missionAttempts', 'assessmentAttempts'];
+    }
+
+    // Daily Time Attack: signed-in users may read. Opted-in owners may create
+    // one validated entry per UID/date. Entries cannot be changed or deleted.
+    match /dailyTimeAttackEntries/{entryId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && optedInAliasMatches(request.resource.data.nickname)
+        && validChallengeDate(entryId, request.resource.data)
+        && request.resource.data.keys().hasAll([
+          'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
+          'clearTimeSeconds', 'wrongCommandCount', 'completedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
+          'clearTimeSeconds', 'wrongCommandCount', 'completedAt', 'avatarId'
+        ])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() > 0
+        && request.resource.data.nickname.size() <= 24
+        && request.resource.data.missionId is string
+        && request.resource.data.missionId.size() <= 100
+        && request.resource.data.missionTitle is string
+        && request.resource.data.missionTitle.size() <= 160
+        && request.resource.data.clearTimeSeconds is int
+        && request.resource.data.clearTimeSeconds >= 5
+        && request.resource.data.clearTimeSeconds <= 3600
+        && request.resource.data.wrongCommandCount is int
+        && request.resource.data.wrongCommandCount >= 0
+        && request.resource.data.completedAt is string
+        && request.resource.data.completedAt.matches(
+          '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$'
+        )
+        && (
+          !('avatarId' in request.resource.data)
+          || request.resource.data.avatarId in [
+            'avatar-1', 'avatar-2', 'avatar-3', 'avatar-4', 'avatar-5'
+          ]
+        );
+
+      allow update, delete: if false;
+    }
+
+    // Daily Accuracy: signed-in users may read. Opted-in owners may create
+    // validated entries; scores are integers from 0 to 100.
+    match /dailyAccuracyEntries/{entryId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && optedInAliasMatches(request.resource.data.nickname)
+        && validChallengeDate(entryId, request.resource.data)
+        && request.resource.data.keys().hasAll([
+          'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
+          'accuracyScore', 'wrongCommandCount', 'wrongDecisionCount',
+          'hintLevelsShown', 'completedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
+          'accuracyScore', 'wrongCommandCount', 'wrongDecisionCount',
+          'hintLevelsShown', 'completedAt', 'avatarId'
+        ])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() > 0
+        && request.resource.data.nickname.size() <= 24
+        && request.resource.data.missionId is string
+        && request.resource.data.missionId.size() <= 100
+        && request.resource.data.missionTitle is string
+        && request.resource.data.missionTitle.size() <= 160
+        && request.resource.data.accuracyScore is int
+        && request.resource.data.accuracyScore >= 0
+        && request.resource.data.accuracyScore <= 100
+        && request.resource.data.wrongCommandCount is int
+        && request.resource.data.wrongCommandCount >= 0
+        && request.resource.data.wrongDecisionCount is int
+        && request.resource.data.wrongDecisionCount >= 0
+        && request.resource.data.hintLevelsShown is int
+        && request.resource.data.hintLevelsShown >= 0
+        && request.resource.data.completedAt is string
+        && request.resource.data.completedAt.matches(
+          '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$'
+        )
+        && (
+          !('avatarId' in request.resource.data)
+          || request.resource.data.avatarId in [
+            'avatar-1', 'avatar-2', 'avatar-3', 'avatar-4', 'avatar-5'
+          ]
+        );
+
+      allow update, delete: if false;
+    }
+
+    // Deny everything not explicitly allowed above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

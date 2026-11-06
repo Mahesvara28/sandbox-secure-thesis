@@ -8,6 +8,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile,
+  sendEmailVerification,
   sendPasswordResetEmail,
   browserLocalPersistence,
   browserSessionPersistence,
@@ -108,8 +109,27 @@ export const registerWithEmail = async (
     }
   );
 
+  try {
+    await sendAccountVerification(result.user);
+  } catch (error) {
+    // Do not leave an unverified account signed in if Firebase cannot send the message.
+    await signOut(auth);
+    throw error;
+  }
+
+  // New email/password accounts stay out of the game until they verify and sign in again.
+  await signOut(auth);
+
   return result.user;
 };
+
+export const sendAccountVerification = async (user: User) => {
+  await authReady;
+  await sendEmailVerification(user);
+};
+
+export const isUnverifiedEmailPasswordUser = (user: User) =>
+  !user.emailVerified && user.providerData.some(provider => provider.providerId === 'password');
 
 export const loginWithEmail = async (
   email: string,
@@ -126,6 +146,13 @@ export const loginWithEmail = async (
   // Refresh the auth token so Firebase services see the current account state.
   await result.user.reload();
   await result.user.getIdToken(true);
+
+  if (isUnverifiedEmailPasswordUser(result.user)) {
+    await signOut(auth);
+    const error = new Error('Email address has not been verified.') as Error & { code: string };
+    error.code = 'auth/email-not-verified';
+    throw error;
+  }
 
   return result.user;
 };
@@ -456,6 +483,43 @@ export const getAdminAnalyticsSnapshot = async (uid: string): Promise<AdminAnaly
       assessmentAttempts: assessmentDocs.docs.map(item => item.data() as AssessmentAttemptRecord)
     };
   }));
+};
+
+export interface PlayerIssueReport {
+  id: string;
+  uid: string;
+  username: string;
+  message: string;
+  createdAt: string;
+  status: 'open' | 'resolved';
+}
+
+export const submitIssueReport = async (uid: string, username: string, message: string) => {
+  const trimmedMessage = message.trim();
+  if (trimmedMessage.length < 10 || trimmedMessage.length > 2000) {
+    throw new Error('Write between 10 and 2,000 characters so the issue can be understood.');
+  }
+  await addDoc(collection(db, 'issueReports'), {
+    uid,
+    username: username.trim().slice(0, 60) || 'Operator',
+    message: trimmedMessage,
+    createdAt: new Date().toISOString(),
+    status: 'open'
+  });
+};
+
+export const getAdminIssueReports = async (uid: string): Promise<PlayerIssueReport[]> => {
+  const admin = await getDoc(doc(db, 'admins', uid));
+  if (!admin.exists() || admin.data().enabled !== true) throw new Error('ADMIN_ACCESS_REQUIRED');
+  const snapshot = await getDocsFromServer(collection(db, 'issueReports'));
+  return snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PlayerIssueReport))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+};
+
+export const setAdminIssueReportStatus = async (uid: string, reportId: string, status: PlayerIssueReport['status']) => {
+  const admin = await getDoc(doc(db, 'admins', uid));
+  if (!admin.exists() || admin.data().enabled !== true) throw new Error('ADMIN_ACCESS_REQUIRED');
+  await updateDoc(doc(db, 'issueReports', reportId), { status, updatedAt: new Date().toISOString() });
 };
 
 export const isEnabledAdmin = async (uid: string) => {

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, RefreshCw, ShieldCheck } from 'lucide-react';
-import { getAdminAnalyticsSnapshot, type AdminAnalyticsParticipant, type MissionAttemptRecord } from '../Firebase';
+import { CheckCircle2, Download, RefreshCw, ShieldCheck } from 'lucide-react';
+import { getAdminAnalyticsSnapshot, getAdminIssueReports, setAdminIssueReportStatus, type AdminAnalyticsParticipant, type MissionAttemptRecord, type PlayerIssueReport } from '../Firebase';
 import { BRIDGE_MISSIONS, MISSIONS } from '../data/gameData';
 
-type AdminTab = 'overview' | 'learning' | 'missions' | 'participants';
+type AdminTab = 'overview' | 'learning' | 'missions' | 'participants' | 'issues';
 const tiers = ['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const;
 const percent = (score: number, total: number) => total > 0 ? Math.round(score / total * 100) : null;
 const median = (values: number[]) => {
@@ -16,17 +16,24 @@ const attemptDate = (attempt: MissionAttemptRecord) => Date.parse(attempt.comple
 
 export default function AdminDashboard({ uid }: { uid: string }) {
   const [participants, setParticipants] = useState<AdminAnalyticsParticipant[]>([]);
+  const [issueReports, setIssueReports] = useState<PlayerIssueReport[]>([]);
+  const [issueReportsError, setIssueReportsError] = useState('');
+  const [updatingReportId, setUpdatingReportId] = useState('');
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [error, setError] = useState('');
   const refresh = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       setParticipants(await getAdminAnalyticsSnapshot(uid));
-      setLoadedAt(new Date());
+      try {
+        setIssueReports(await getAdminIssueReports(uid));
+        setIssueReportsError('');
+      } catch {
+        setIssueReportsError('Issue reports are unavailable. Publish the issueReports rules from firestore.rules, then refresh.');
+      }
     } catch (reason) {
       const code = reason instanceof Error ? reason.message : '';
       setError(code === 'ADMIN_ACCESS_REQUIRED'
@@ -37,6 +44,20 @@ export default function AdminDashboard({ uid }: { uid: string }) {
     }
   }, [uid]);
 
+  const updateReportStatus = async (report: PlayerIssueReport) => {
+    setUpdatingReportId(report.id);
+    setIssueReportsError('');
+    try {
+      const status = report.status === 'open' ? 'resolved' : 'open';
+      await setAdminIssueReportStatus(uid, report.id, status);
+      setIssueReports(current => current.map(item => item.id === report.id ? { ...item, status } : item));
+    } catch {
+      setIssueReportsError('Could not update this report. Check the admin Firestore rules and try again.');
+    } finally {
+      setUpdatingReportId('');
+    }
+  };
+
   useEffect(() => {
     const timer = window.setTimeout(() => { void refresh(); }, 0);
     return () => window.clearTimeout(timer);
@@ -45,16 +66,11 @@ export default function AdminDashboard({ uid }: { uid: string }) {
   const analysis = useMemo(() => {
     const missionAttempts = participants.flatMap(person => person.missionAttempts);
     const assessmentAttempts = participants.flatMap(person => person.assessmentAttempts);
-    const sevenDaysAgo = loadedAt ? loadedAt.getTime() - 7 * 86400000 : Number.POSITIVE_INFINITY;
     const learnerKeys = (assessment: 'pre' | 'post') => new Set(participants.flatMap(person => person.assessmentAttempts
       .filter(attempt => attempt.assessment === assessment)
       .map(attempt => `${person.uid}:${attempt.tier}`)));
     const learnersWithPre = learnerKeys('pre');
     const learnersWithPost = learnerKeys('post');
-    const activeRecently = participants.filter(person => {
-      const latest = Math.max(0, ...person.missionAttempts.map(attemptDate), ...person.assessmentAttempts.map(attempt => Date.parse(attempt.timestamp || '')));
-      return latest >= sevenDaysAgo;
-    }).length;
     const passCounts = Object.fromEntries(tiers.map(tier => [tier, participants.filter(person => {
       const score = person.scores[tier] as Record<string, unknown> | undefined;
       const finalScore = Number(score?.finalScore ?? score?.score ?? 0);
@@ -98,8 +114,8 @@ export default function AdminDashboard({ uid }: { uid: string }) {
       const tierPassed = latestScore !== undefined && postPercent !== null && postPercent >= 70 && required.length > 0 && required.every(id => person.completedMissions.includes(id));
       return { id: `Learner ${String(index + 1).padStart(3, '0')}`, name: person.username, lastActivity, missionCount: person.missionAttempts.length, tier: latestScore?.tier ?? '—', preScore: prePercent === null ? '—' : `${prePercent}%`, postScore: postPercent === null ? '—' : `${postPercent}%`, status: latestScore ? (tierPassed ? 'Passed' : 'Not passed') : 'No post-test' };
     });
-    return { missionAttempts, assessmentAttempts, activeRecently, learnersWithPre: new Set([...learnersWithPre].map(value => value.split(':')[0])).size, learnersWithMissions: new Set(participants.filter(person => person.missionAttempts.length > 0).map(person => person.uid)).size, learnersWithPost: new Set([...learnersWithPost].map(value => value.split(':')[0])).size, passCounts, learning, missions, participantRows };
-  }, [participants, loadedAt]);
+    return { missionAttempts, assessmentAttempts, learnersWithPre: new Set([...learnersWithPre].map(value => value.split(':')[0])).size, learnersWithMissions: new Set(participants.filter(person => person.missionAttempts.length > 0).map(person => person.uid)).size, learnersWithPost: new Set([...learnersWithPost].map(value => value.split(':')[0])).size, passCounts, learning, missions, participantRows };
+  }, [participants]);
 
   const exportSummary = () => {
     const rows = [['Mission', 'Tier', 'Attempts', 'Completions', 'Completion rate (%)', 'Median completion time (seconds)', 'Average hints', 'Wrong commands', 'Abandoned', 'Timed out'], ...analysis.missions.map(row => [row.title, row.tier, row.attempts, row.completed, row.rate, row.medianSeconds ?? '', row.hints, row.wrongCommands, row.abandoned, row.timedOut])];
@@ -177,23 +193,24 @@ export default function AdminDashboard({ uid }: { uid: string }) {
 
   return <div className="game-screen mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
     <header className="game-card flex flex-col gap-4 p-5 sm:flex-row sm:items-end sm:justify-between">
-      <div><p className="game-eyebrow">Restricted · read only</p><h1 className="text-2xl font-black uppercase text-[var(--game-text)]">Research analytics</h1><p className="mt-2 text-sm text-[var(--game-muted)]">Aggregated learner and mission activity. Emails and raw account IDs are not displayed.</p></div>
+      <div><p className="game-eyebrow">Restricted · research admin</p><h1 className="text-2xl font-black uppercase text-[var(--game-text)]">Research analytics</h1><p className="mt-2 text-sm text-[var(--game-muted)]">Counts are based on saved player profiles, not recent activity. Emails and raw account IDs are not displayed.</p></div>
       <div className="flex flex-wrap gap-2"><button type="button" onClick={exportSummary} disabled={!participants.length} className="min-h-10 border border-[var(--game-border)] px-3 text-xs font-bold text-[var(--game-text)] disabled:opacity-50"><Download size={14} className="mr-2 inline" />Export mission summary</button><button type="button" onClick={exportLearnerProgress} disabled={!participants.length} className="min-h-10 border border-[var(--game-cyan)] px-3 text-xs font-bold text-[var(--game-cyan)] disabled:opacity-50"><Download size={14} className="mr-2 inline" />Export all learner progress</button><button type="button" onClick={() => void refresh()} disabled={loading} className="min-h-10 border border-[var(--game-cyan)] px-3 text-xs font-bold text-[var(--game-cyan)] disabled:opacity-50"><RefreshCw size={14} className={`mr-2 inline ${loading ? 'animate-spin' : ''}`} />{loading ? 'Refreshing…' : 'Refresh data'}</button></div>
     </header>
-    <div className="flex flex-wrap gap-2" role="tablist" aria-label="Analytics sections">{([['overview', 'Overview'], ['learning', 'Learning outcomes'], ['missions', 'Missions'], ['participants', 'Participants']] as const).map(([id, label]) => <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className={`min-h-10 border px-3 text-xs font-bold ${activeTab === id ? 'border-[var(--game-cyan)] text-[var(--game-cyan)]' : 'border-[var(--game-border)] text-[var(--game-muted)]'}`}>{label}</button>)}</div>
+    <div className="flex flex-wrap gap-2" role="tablist" aria-label="Analytics sections">{([['overview', 'Overview'], ['learning', 'Learning outcomes'], ['missions', 'Missions'], ['participants', 'Participants'], ['issues', `Issue reports · ${issueReports.filter(item => item.status === 'open').length}`]] as const).map(([id, label]) => <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className={`min-h-10 border px-3 text-xs font-bold ${activeTab === id ? 'border-[var(--game-cyan)] text-[var(--game-cyan)]' : 'border-[var(--game-border)] text-[var(--game-muted)]'}`}>{label}</button>)}</div>
     {error && <div role="alert" className="border border-[var(--game-red)] p-4 text-sm text-[var(--game-red)]"><p>{error}</p><p className="mt-2 text-xs">The UI check is not security enforcement. Apply and test the restricted Firestore rules described in ADMIN_DASHBOARD_SETUP.md before using this screen with participant data.</p></div>}
-    {!error && !participants.length && <div className="game-card p-6 text-sm text-[var(--game-muted)]">{loading ? 'Loading saved research data…' : 'No participant profiles were returned.'}</div>}
-    {participants.length > 0 && <>
-      <p className="text-xs text-[var(--game-muted)]">{analysis.missionAttempts.length + analysis.assessmentAttempts.length} saved attempts · {loadedAt ? `Refreshed ${loadedAt.toLocaleTimeString()}` : 'Loading'}. Active means recorded learning activity in the last 7 days, not a login timestamp.</p>
+    {!error && !participants.length && activeTab !== 'issues' && <div className="game-card p-6 text-sm text-[var(--game-muted)]">{loading ? 'Loading saved research data…' : 'No saved Firestore user profiles were returned.'}</div>}
+    {(participants.length > 0 || activeTab === 'issues') && <>
+      {activeTab !== 'issues' && !participants.length && <p className="game-card p-5 text-sm text-[var(--game-muted)]">No saved user profiles are available for analytics.</p>}
       {activeTab === 'overview' && <>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Registered profiles', participants.length], ['Recorded activity · 7 days', analysis.activeRecently], ['With a pre-test', analysis.learnersWithPre], ['With a post-test', analysis.learnersWithPost]].map(([label, value]) => <article key={label} className="game-card p-4"><p className="game-eyebrow">{label}</p><p className="mt-2 text-2xl font-black text-[var(--game-text)]">{value}</p></article>)}</div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[['Registered profile records', participants.length], ['With a pre-test', analysis.learnersWithPre], ['With a post-test', analysis.learnersWithPost]].map(([label, value]) => <article key={label} className="game-card p-4"><p className="game-eyebrow">{label}</p><p className="mt-2 text-2xl font-black text-[var(--game-text)]">{value}</p></article>)}</div>
         <section className="game-card p-5"><h2 className="text-lg font-black uppercase text-[var(--game-text)]">Certification pass rates</h2><div className="mt-4 grid gap-3 sm:grid-cols-3">{tiers.map(tier => <div key={tier} className="border border-[var(--game-border)] p-3"><p className="text-xs font-bold text-[var(--game-muted)]">{tier}</p><p className="mt-1 text-xl font-black text-[var(--game-text)]">{analysis.passCounts[tier]} / {participants.length}</p><p className="text-xs text-[var(--game-muted)]">passed · requires score and all tier missions</p></div>)}</div></section>
         <section className="game-card p-5"><h2 className="text-lg font-black uppercase text-[var(--game-text)]">Learning funnel</h2><div className="mt-4 grid gap-3 sm:grid-cols-4">{[['Registered profiles', participants.length], ['Started a mission', analysis.learnersWithMissions], ['Pre-test recorded', analysis.learnersWithPre], ['Post-test recorded', analysis.learnersWithPost]].map(([label, value]) => <div key={label} className="border-l-2 border-[var(--game-cyan)] pl-3"><p className="text-xs text-[var(--game-muted)]">{label}</p><p className="text-xl font-bold text-[var(--game-text)]">{value}</p></div>)}</div></section>
       </>}
       {activeTab === 'learning' && <section className="game-card overflow-x-auto p-5"><h2 className="text-lg font-black uppercase text-[var(--game-text)]">First-attempt assessment comparison</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Paired learner averages; percentage-point gain is post-test minus pre-test.</p><table className="mt-4 w-full min-w-[620px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr>{['Tier', 'Learners paired', 'Pre-test average', 'Post-test average', 'Average gain'].map(label => <th key={label} className="border-b border-[var(--game-border)] p-2">{label}</th>)}</tr></thead><tbody>{analysis.learning.map(row => <tr key={row.tier}><th className="border-b border-[var(--game-border)] p-2">{row.tier}</th><td className="border-b border-[var(--game-border)] p-2">{row.count}</td><td className="border-b border-[var(--game-border)] p-2">{row.pre === null ? '—' : `${row.pre}%`}</td><td className="border-b border-[var(--game-border)] p-2">{row.post === null ? '—' : `${row.post}%`}</td><td className="border-b border-[var(--game-border)] p-2 font-bold">{row.gain === null ? '—' : `${row.gain > 0 ? '+' : ''}${row.gain} pp`}</td></tr>)}</tbody></table><p className="mt-3 text-xs text-[var(--game-muted)]">Question-by-question accuracy is not available: saved assessment attempts contain total scores, not per-question responses. The Google Forms usability survey is also separate from this Firebase data.</p></section>}
       {activeTab === 'missions' && <section className="game-card overflow-x-auto p-5"><h2 className="text-lg font-black uppercase text-[var(--game-text)]">Mission friction and completion</h2><table className="mt-4 w-full min-w-[960px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr>{['Mission', 'Tier', 'Attempts', 'Complete', 'Completion rate', 'Median time', 'Hints avg.', 'Wrong commands', 'Abandoned', 'Timed out'].map(label => <th key={label} className="border-b border-[var(--game-border)] p-2">{label}</th>)}</tr></thead><tbody>{analysis.missions.map(row => <tr key={row.missionId}><th className="border-b border-[var(--game-border)] p-2">{row.title}</th><td className="border-b border-[var(--game-border)] p-2">{row.tier}</td><td className="border-b border-[var(--game-border)] p-2">{row.attempts}</td><td className="border-b border-[var(--game-border)] p-2">{row.completed}</td><td className="border-b border-[var(--game-border)] p-2">{row.rate}%</td><td className="border-b border-[var(--game-border)] p-2">{row.medianSeconds === null ? '—' : `${Math.floor(row.medianSeconds / 60)}m ${row.medianSeconds % 60}s`}</td><td className="border-b border-[var(--game-border)] p-2">{row.hints}</td><td className="border-b border-[var(--game-border)] p-2">{row.wrongCommands}</td><td className="border-b border-[var(--game-border)] p-2">{row.abandoned}</td><td className="border-b border-[var(--game-border)] p-2">{row.timedOut}</td></tr>)}</tbody></table></section>}
-      {activeTab === 'participants' && <section className="game-card overflow-x-auto p-5"><h2 className="text-lg font-black uppercase text-[var(--game-text)]">Participant activity</h2><p className="mt-1 text-xs text-[var(--game-muted)]">Aliases are display names. Learner numbers are generated for this view and are not durable research IDs.</p><label className="mt-3 block text-xs text-[var(--game-muted)]">Search participants<input value={search} onChange={event => setSearch(event.target.value)} className="mt-1 min-h-10 w-full max-w-sm border border-[var(--game-border)] bg-[var(--game-page)] px-3 text-sm text-[var(--game-text)]" /></label><table className="mt-4 w-full min-w-[900px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr>{['Learner ID', 'Display name', 'Tier', 'Pre-test', 'Post-test', 'Outcome', 'Mission attempts', 'Last recorded learning activity'].map(label => <th key={label} className="border-b border-[var(--game-border)] p-2">{label}</th>)}</tr></thead><tbody>{filteredRows.slice(0, 10).map(row => <tr key={row.id}><th className="border-b border-[var(--game-border)] p-2">{row.id}</th><td className="border-b border-[var(--game-border)] p-2">{row.name}</td><td className="border-b border-[var(--game-border)] p-2">{row.tier}</td><td className="border-b border-[var(--game-border)] p-2">{row.preScore}</td><td className="border-b border-[var(--game-border)] p-2">{row.postScore}</td><td className="border-b border-[var(--game-border)] p-2">{row.status}</td><td className="border-b border-[var(--game-border)] p-2">{row.missionCount}</td><td className="border-b border-[var(--game-border)] p-2">{row.lastActivity ? new Date(row.lastActivity).toLocaleString() : 'No recorded activity'}</td></tr>)}</tbody></table><p className="mt-2 text-xs text-[var(--game-muted)]">Showing up to 10 matches. Exact Firebase Auth registration totals and login activity are not available through the current client data.</p></section>}
+      {activeTab === 'participants' && <section className="game-card overflow-x-auto p-5"><h2 className="text-lg font-black uppercase text-[var(--game-text)]">Registered profile records</h2><p className="mt-1 text-xs leading-5 text-[var(--game-muted)]">This list reads the Firestore users collection. Deleting an account in Firebase Authentication does not automatically delete its Firestore profile, so remove the matching users/{'{uid}'} profile in Firestore to remove a deleted test account from these totals. Auth-only registration counts require a trusted backend.</p><label className="mt-3 block text-xs text-[var(--game-muted)]">Search participants<input value={search} onChange={event => setSearch(event.target.value)} className="mt-1 min-h-10 w-full max-w-sm border border-[var(--game-border)] bg-[var(--game-page)] px-3 text-sm text-[var(--game-text)]" /></label><table className="mt-4 w-full min-w-[900px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr>{['Learner ID', 'Display name', 'Tier', 'Pre-test', 'Post-test', 'Outcome', 'Mission attempts', 'Last recorded learning activity'].map(label => <th key={label} className="border-b border-[var(--game-border)] p-2">{label}</th>)}</tr></thead><tbody>{filteredRows.slice(0, 10).map(row => <tr key={row.id}><th className="border-b border-[var(--game-border)] p-2">{row.id}</th><td className="border-b border-[var(--game-border)] p-2">{row.name}</td><td className="border-b border-[var(--game-border)] p-2">{row.tier}</td><td className="border-b border-[var(--game-border)] p-2">{row.preScore}</td><td className="border-b border-[var(--game-border)] p-2">{row.postScore}</td><td className="border-b border-[var(--game-border)] p-2">{row.status}</td><td className="border-b border-[var(--game-border)] p-2">{row.missionCount}</td><td className="border-b border-[var(--game-border)] p-2">{row.lastActivity ? new Date(row.lastActivity).toLocaleString() : 'No recorded activity'}</td></tr>)}</tbody></table><p className="mt-2 text-xs text-[var(--game-muted)]">Showing up to 10 matches. Exact Firebase Auth registration totals and login activity are not available through the current client data.</p></section>}
+      {activeTab === 'issues' && <section className="game-card space-y-4 p-5"><div><h2 className="text-lg font-black uppercase text-[var(--game-text)]">Player issue reports</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Reports are visible only to enabled administrators. Do not treat user-submitted text as verified facts.</p></div>{issueReportsError && <p role="alert" className="border border-[var(--game-red)] p-3 text-sm text-[var(--game-red)]">{issueReportsError}</p>}{!issueReportsError && !issueReports.length && <p className="border border-[var(--game-border)] p-4 text-sm text-[var(--game-muted)]">No reports have been submitted.</p>}{issueReports.map(report => <article key={report.id} className="border border-[var(--game-border)] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-bold text-[var(--game-text)]">{report.username || 'Operator'} <span className="ml-2 text-xs font-normal text-[var(--game-muted)]">{new Date(report.createdAt).toLocaleString()}</span></p><span className={`mt-2 inline-block border px-2 py-1 text-[10px] font-bold uppercase text-[var(--game-text)] ${report.status === 'open' ? 'border-amber-700' : 'border-green-700'}`}>{report.status}</span></div><button type="button" disabled={updatingReportId === report.id} onClick={() => void updateReportStatus(report)} className="min-h-9 border border-[var(--game-border)] px-3 text-xs font-bold text-[var(--game-text)] disabled:opacity-50">{updatingReportId === report.id ? 'Saving…' : report.status === 'open' ? <><CheckCircle2 size={13} className="mr-1 inline" />Mark resolved</> : 'Reopen'}</button></div><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--game-text)]">{report.message}</p></article>)}</section>}
     </>}
-    <footer className="flex items-center gap-2 text-xs text-[var(--game-muted)]"><ShieldCheck size={15} />Read-only research view. Counts reflect saved Firebase profile and attempt records.</footer>
+    <footer className="flex items-center gap-2 text-xs text-[var(--game-muted)]"><ShieldCheck size={15} />Research view. Counts reflect saved Firebase profile and attempt records; user-submitted issue reports can be marked resolved.</footer>
   </div>;
 }

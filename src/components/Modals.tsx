@@ -189,6 +189,16 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
             {caseNotes.length > 0 ? <ul className="mt-2 list-inside list-disc space-y-1 text-xs leading-5 text-gray-300">{caseNotes.map((note, index) => <li key={`${index}-${note}`}>{note}</li>)}</ul> : <p className="mt-2 text-xs leading-5 text-gray-400">No notes were recorded in this run. In later missions, preserve important observations before you respond.</p>}
             {confidence && <p className="mt-3 border-t border-cyan-900/70 pt-2 text-xs text-cyan-200">Recorded confidence: {confidence.toUpperCase()}</p>}
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <section className="border border-blue-900 bg-blue-950/10 p-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-blue-300">Evidence and uncertainty</p>
+              <p className="mt-2 text-sm leading-6 text-gray-200">Treat notes as observations from this simulation. A failed login, unfamiliar listener, or source address alone does not prove who acted or that data was accessed.</p>
+            </section>
+            <section className="border border-green-900 bg-green-950/10 p-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-green-300">Verify the response</p>
+              <p className="mt-2 text-sm leading-6 text-gray-200">{report?.verifiedAll ? 'You verified each simulated response action.' : 'Use the available status checks to verify any response action and record what remains unknown.'}</p>
+            </section>
+          </div>
         </div>}
         <button type="button" autoFocus onClick={onClose} className="mt-6 border-2 border-green-500 text-green-500 px-8 py-3 hover:bg-green-500 hover:text-black font-bold uppercase transition-all w-full relative z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Return to Base →</button>
       </div>

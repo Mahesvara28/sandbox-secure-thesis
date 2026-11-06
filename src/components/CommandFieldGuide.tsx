@@ -7,7 +7,7 @@ type GuideEntry = {
   limit: string;
 };
 
-const simulationOnlyCommand = (command: string, example: string) => /^(help|inspect|report|preserve|record-evidence|assess|block|disable-service|remove-persistence)\b/.test(command)
+const simulationOnlyCommand = (command: string, example: string) => /^(help|inspect|choose|report|preserve|record-evidence|assess|block|disable-service|remove-persistence)\b/.test(command)
   || [command, example].some(value => value.includes('--ip') || value.includes('--after') || value.includes('--before'));
 
 const realWorldEquivalent = (command: string) => {
@@ -17,6 +17,7 @@ const realWorldEquivalent = (command: string) => {
   if (command.startsWith('remove-persistence')) return 'Real work: investigate the specific startup mechanism, preserve evidence, and follow approved remediation procedures.';
   if (command.startsWith('preserve') || command.startsWith('record-evidence')) return 'Real work: case-management and evidence-handling procedures; preserve original sources.';
   if (command.startsWith('assess') || command.startsWith('report')) return 'Real work: document findings, sources, uncertainty, and scope in the incident case record.';
+  if (command.startsWith('inspect') || command.startsWith('choose')) return 'Real work: these are training interface actions for reviewing evidence and recording a decision.';
   if (command.includes('--ip') || command.includes('--after') || command.includes('--before')) return 'Real work: use grep or a log-analysis platform with its documented filters; these flags are custom to this simulation.';
   return 'Real work: this command is a training interface feature; use the relevant system or case-management tool.';
 };
@@ -24,6 +25,8 @@ const realWorldEquivalent = (command: string) => {
 const GUIDE: Record<Tier, GuideEntry[]> = {
   BEGINNER: [
     { command: 'help', what: 'Shows the commands supported by this training terminal.', example: 'help', limit: 'Use the mission objective and this guide to choose which command to try next.' },
+    { command: 'inspect [evidence ID]', what: 'Opens the matching evidence card in a standalone practice case.', example: 'inspect t3-8448', limit: 'Inspect the clue requested by the current objective; an observation alone may not prove cause or impact.' },
+    { command: 'choose [option ID]', what: 'Records your selected answer when a practice case asks you to compare evidence.', example: 'choose hidden-path-request', limit: 'Use the evidence and objective to decide; this is a simulated case action, not a shell command.' },
     { command: 'pwd', what: 'Shows the folder you are currently in.', example: 'pwd', limit: 'It tells you location, not what files are present.' },
     { command: 'ls', what: 'Lists files and folders in the current location.', example: 'ls /var/log', limit: 'A filename is a lead; open the file to review its contents.' },
     { command: 'cd [folder]', what: 'Moves to a folder so later commands can use its files.', example: 'cd /var/log', limit: 'Use the exact path shown in the objective.' },
@@ -38,6 +41,8 @@ const GUIDE: Record<Tier, GuideEntry[]> = {
   ],
   INTERMEDIATE: [
     { command: 'help', what: 'Shows the commands supported by this training terminal.', example: 'help', limit: 'Use the mission objective and this guide to choose which command to try next.' },
+    { command: 'inspect [evidence ID]', what: 'Opens the matching evidence card in a standalone practice case.', example: 'inspect t3-8448', limit: 'Inspect the clue requested by the current objective; an observation alone may not prove cause or impact.' },
+    { command: 'choose [option ID]', what: 'Records your selected answer when a practice case asks you to compare evidence.', example: 'choose tcp-9443', limit: 'Use the evidence and objective to decide; this is a simulated case action, not a shell command.' },
     { command: 'cd [folder] / ls', what: 'Move to a folder and list the files available there.', example: 'cd /var/log/apache2  then  ls', limit: 'Confirm your current path before reading a relative filename.' },
     { command: 'cat [file]', what: 'Displays the contents of a simulated log or record.', example: 'cat access.log', limit: 'A single request does not show whether an attack succeeded.' },
     { command: 'ps aux', what: 'Lists running simulated processes, including IDs, owners, CPU use, and paths.', example: 'ps aux', limit: 'High CPU or an unfamiliar name alone does not prove malware.' },
@@ -55,6 +60,8 @@ const GUIDE: Record<Tier, GuideEntry[]> = {
   ],
   EXPERT: [
     { command: 'help', what: 'Shows the commands supported by this training terminal.', example: 'help', limit: 'Use the mission objective and this guide to choose which command to try next.' },
+    { command: 'inspect [evidence ID]', what: 'Opens the matching evidence card in a standalone practice case.', example: 'inspect expert-event-1', limit: 'Inspect the clue requested by the current objective; an observation alone may not prove cause or impact.' },
+    { command: 'choose [option ID]', what: 'Records your selected answer when a practice case asks you to compare evidence.', example: 'choose related-needs-validation', limit: 'Use the evidence and objective to decide; this is a simulated case action, not a shell command.' },
     { command: 'cd [folder] / cat [file]', what: 'Navigate to the evidence directory and read the source record.', example: 'cd /var/log  then  cat auth.log', limit: 'Preserve context and note missing or rotated records.' },
     { command: 'journalctl [-u ssh] [--since TIME] [--until TIME]', what: 'Filters the sample service journal by service and time window.', example: 'journalctl -u ssh --since 03:23:00 --until 03:27:00', limit: 'Clocks can differ; compare sequences and account for offsets.' },
     { command: 'record-evidence [source] [observation]', what: 'Stores an observation and where it came from, separate from your conclusion.', example: 'record-evidence auth.log repeated-failures-and-later-success', limit: 'Write what the record shows; avoid attribution in the observation.' },
