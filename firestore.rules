@@ -57,6 +57,38 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Players can submit their own feature ideas; only enabled admins can review them.
+    match /featureSuggestions/{suggestionId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'uid', 'username', 'category', 'title', 'description', 'createdAt', 'status'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid', 'username', 'category', 'title', 'description', 'createdAt', 'status'
+        ])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.username is string
+        && request.resource.data.username.size() <= 60
+        && request.resource.data.category in [
+          'Gameplay', 'Learning content', 'Interface', 'Accessibility', 'Other'
+        ]
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 5
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 10
+        && request.resource.data.description.size() <= 2000
+        && request.resource.data.createdAt is string
+        && request.resource.data.status == 'open';
+
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in ['open', 'reviewing', 'planned', 'accepted', 'declined']
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is string);
+      allow delete: if false;
+    }
+
     // Participants can access their own profile and subcollections.
     match /users/{userId} {
       allow read, create, update: if signedIn()

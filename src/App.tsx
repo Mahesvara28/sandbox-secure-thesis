@@ -67,6 +67,7 @@ import { RewardDialog, type RewardDialogItem } from './components/RewardDialog';
 import { CertificateDialog } from './components/CertificateDialog';
 import AdminDashboard from './components/AdminDashboard';
 import HelpDeskScreen from './components/HelpDeskScreen';
+import NovaCompanion from './components/NovaCompanion';
 
 import {
   NetworkMapModal,
@@ -2388,9 +2389,10 @@ function App() {
 
         {screen === 'admin' && adminAccess && user && <AdminDashboard uid={user.uid} />}
 
-        {screen === 'help' && <HelpDeskScreen
+        {screen === 'help' && user && <HelpDeskScreen
+          userId={user.uid}
+          username={user.displayName?.trim() || user.email?.split('@')[0] || 'Operator'}
           currentMission={activeMission?.title}
-          onReportIssue={() => { setIssueReportError(''); setIssueReportSent(false); setShowIssueReport(true); }}
         />}
 
         {activeMission && (
@@ -2492,6 +2494,8 @@ function App() {
         )}
 
       </main>
+
+      {user && screen !== 'help' && <NovaCompanion onOpenHelp={() => setScreen('help')} />}
 
       {showSettings && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={() => setShowSettings(false)}>
         <section className="w-full max-w-lg border border-cyan-700 bg-[#071014] p-5 shadow-2xl sm:p-7" onClick={event => event.stopPropagation()}>

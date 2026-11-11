@@ -497,6 +497,19 @@ export interface PlayerIssueReport {
   status: 'open' | 'resolved';
 }
 
+export type FeatureSuggestionStatus = 'open' | 'reviewing' | 'planned' | 'accepted' | 'declined';
+
+export interface PlayerFeatureSuggestion {
+  id: string;
+  uid: string;
+  username: string;
+  category: 'Gameplay' | 'Learning content' | 'Interface' | 'Accessibility' | 'Other';
+  title: string;
+  description: string;
+  createdAt: string;
+  status: FeatureSuggestionStatus;
+}
+
 export const submitIssueReport = async (uid: string, username: string, message: string) => {
   const trimmedMessage = message.trim();
   if (trimmedMessage.length < 10 || trimmedMessage.length > 2000) {
@@ -523,6 +536,50 @@ export const setAdminIssueReportStatus = async (uid: string, reportId: string, s
   const admin = await getDoc(doc(db, 'admins', uid));
   if (!admin.exists() || admin.data().enabled !== true) throw new Error('ADMIN_ACCESS_REQUIRED');
   await updateDoc(doc(db, 'issueReports', reportId), { status, updatedAt: new Date().toISOString() });
+};
+
+export const submitFeatureSuggestion = async (
+  uid: string,
+  username: string,
+  category: PlayerFeatureSuggestion['category'],
+  title: string,
+  description: string
+) => {
+  const trimmedTitle = title.trim();
+  const trimmedDescription = description.trim();
+  if (trimmedTitle.length < 5 || trimmedTitle.length > 100) {
+    throw new Error('Give your idea a title between 5 and 100 characters.');
+  }
+  if (trimmedDescription.length < 10 || trimmedDescription.length > 2000) {
+    throw new Error('Describe the idea in 10 to 2,000 characters.');
+  }
+  await addDoc(collection(db, 'featureSuggestions'), {
+    uid,
+    username: username.trim().slice(0, 60) || 'Operator',
+    category,
+    title: trimmedTitle,
+    description: trimmedDescription,
+    createdAt: new Date().toISOString(),
+    status: 'open'
+  });
+};
+
+export const getAdminFeatureSuggestions = async (uid: string): Promise<PlayerFeatureSuggestion[]> => {
+  const admin = await getDoc(doc(db, 'admins', uid));
+  if (!admin.exists() || admin.data().enabled !== true) throw new Error('ADMIN_ACCESS_REQUIRED');
+  const snapshot = await getDocsFromServer(collection(db, 'featureSuggestions'));
+  return snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PlayerFeatureSuggestion))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+};
+
+export const setAdminFeatureSuggestionStatus = async (
+  uid: string,
+  suggestionId: string,
+  status: FeatureSuggestionStatus
+) => {
+  const admin = await getDoc(doc(db, 'admins', uid));
+  if (!admin.exists() || admin.data().enabled !== true) throw new Error('ADMIN_ACCESS_REQUIRED');
+  await updateDoc(doc(db, 'featureSuggestions', suggestionId), { status, updatedAt: new Date().toISOString() });
 };
 
 export const isEnabledAdmin = async (uid: string) => {
