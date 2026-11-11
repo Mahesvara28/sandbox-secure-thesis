@@ -34,16 +34,17 @@ import {
   markDailyTrialUsed,
   getBrowserSessionId,
   takeOverActiveSession,
-  saveLeaderboardProfile,
   abandonMissionSession,
   saveUserCertificate,
   purchaseCosmetic,
   equipCosmetic,
   awardFirstMissionCoins,
   isEnabledAdmin,
-  submitIssueReport
+  submitIssueReport,
+  saveCampaignProgress,
+  completeStoryActivity
 } from './Firebase';
-import type { UserCertificate } from './Firebase';
+import type { CampaignProgress, UserCertificate } from './Firebase';
 import { getMissionXp, normalizeProgression, rankProgress, type PlayerProgression } from './data/progression';
 import { CONTENT_VERSION } from './data/contentVersion';
 import { ASSESSMENT_TIME_LIMIT_SECONDS } from './data/assessmentTiming';
@@ -65,6 +66,7 @@ import MissionToolGuide from './components/MissionToolGuide';
 import { RewardDialog, type RewardDialogItem } from './components/RewardDialog';
 import { CertificateDialog } from './components/CertificateDialog';
 import AdminDashboard from './components/AdminDashboard';
+import HelpDeskScreen from './components/HelpDeskScreen';
 
 import {
   NetworkMapModal,
@@ -97,7 +99,7 @@ import {
   Play,
   Store,
   ShieldCheck,
-  MessageSquareWarning
+  LifeBuoy
 } from 'lucide-react';
 
 type Screen =
@@ -107,6 +109,7 @@ type Screen =
   | 'terminal'
   | 'profile'
   | 'shop'
+  | 'help'
   | 'admin';
 
 type BootStage =
@@ -273,8 +276,7 @@ function App() {
     useState<string[]>([]);
   const [userPreferences, setUserPreferences] = useState<Record<string, unknown>>({});
   const userPreferencesRef = useRef<Record<string, unknown>>({});
-  const [leaderboardOptIn, setLeaderboardOptIn] = useState(false);
-  const [leaderboardAlias, setLeaderboardAlias] = useState('');
+  const [campaignProgress, setCampaignProgress] = useState<CampaignProgress>({ completedNodeIds: [], rewardedActivityIds: [] });
   const [avatarId, setAvatarId] = useState<AvatarId>(DEFAULT_AVATAR_ID);
   const [cosmetics, setCosmetics] = useState<PlayerCosmetics>(() => normalizeCosmetics(DEFAULT_COSMETICS));
   const [certificates, setCertificates] = useState<UserCertificate[]>([]);
@@ -609,7 +611,7 @@ function App() {
         const availableTracks = missionTracks.filter(track => track !== backgroundTrackRef.current);
         nextTrack = availableTracks[Math.floor(Math.random() * availableTracks.length)];
       }
-    } else if (bootStage !== 'booting') {
+    } else if (bootStage === 'authenticated') {
       nextRole = 'app';
       nextTrack = missionMusicTwo;
     }
@@ -824,8 +826,7 @@ function App() {
               );
               userPreferencesRef.current = progress.preferences;
               setUserPreferences(progress.preferences);
-              setLeaderboardOptIn(progress.leaderboardOptIn);
-              setLeaderboardAlias(progress.leaderboardAlias);
+              setCampaignProgress(progress.campaign);
               setAvatarId(progress.avatarId);
               setCosmetics(normalizeCosmetics(progress.cosmetics));
               setCertificates(progress.certificates);
@@ -919,10 +920,9 @@ function App() {
             setProgressLoadFailed(false);
             setUserScores({});
             setCompletedMissions([]);
+            setCampaignProgress({ completedNodeIds: [], rewardedActivityIds: [] });
             userPreferencesRef.current = {};
             setUserPreferences({});
-            setLeaderboardOptIn(false);
-            setLeaderboardAlias('');
             setAvatarId(DEFAULT_AVATAR_ID);
             setCosmetics(normalizeCosmetics(DEFAULT_COSMETICS));
             setCertificates([]);
@@ -1209,6 +1209,7 @@ function App() {
       missionSessionIdRef.current = null;
       setUserScores({});
       setCompletedMissions([]);
+      setCampaignProgress({ completedNodeIds: [], rewardedActivityIds: [] });
       setActiveMission(null);
 
       setShowOnboarding(
@@ -1330,17 +1331,6 @@ function App() {
     try { localStorage.setItem(`sandbox-secure-daily-trial-${user.uid}-${type}-${daily.dateKey}`, 'used'); } catch { /* Cloud record is authoritative. */ }
     startMission(dailyMission);
     dailyTrialRef.current = { date: daily.dateKey, type: daily.type };
-  };
-
-  const updateLeaderboardOptIn = async (enabled: boolean) => {
-    if (!user || progressLoadFailedRef.current) throw new Error('Saved profile settings are unavailable.');
-    const words = ['Cedar', 'Harbor', 'Silver', 'Moss', 'Amber', 'Quiet', 'River', 'North', 'Copper', 'Blue'];
-    const animals = ['Fox', 'Heron', 'Finch', 'Otter', 'Pine', 'Comet', 'Badger', 'Kite', 'Maple', 'Marten'];
-    const suffix = Math.floor(Math.random() * 900 + 100);
-    const alias = leaderboardAlias || `${words[Math.floor(Math.random() * words.length)]} ${animals[Math.floor(Math.random() * animals.length)]} ${suffix}`;
-    const safeAlias = await saveLeaderboardProfile(user.uid, enabled, alias);
-    setLeaderboardAlias(safeAlias);
-    setLeaderboardOptIn(enabled);
   };
 
   const confirmStartMission =
@@ -2198,14 +2188,15 @@ function App() {
               <span className="hidden md:inline">Shop</span>
             </button>
 
+            <button type="button" onClick={() => setScreen('help')} role="tab" aria-selected={screen === 'help'} className={`relative px-3 lg:px-4 py-2 border transition-colors ${screen === 'help' ? 'border-cyan-500 bg-cyan-500/5 text-cyan-300' : 'border-transparent text-green-800 hover:border-cyan-900 hover:text-cyan-300'}`} aria-current={screen === 'help' ? 'page' : undefined} aria-label="Nova help desk">
+              {screen === 'help' && <motion.span layoutId="main-nav-indicator" className="absolute inset-x-2 bottom-0 h-0.5 bg-cyan-400" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />}
+              <LifeBuoy size={14} className="mr-2 inline" /><span className="hidden md:inline">Nova Help</span>
+            </button>
+
             {adminAccess && <button type="button" onClick={() => setScreen('admin')} role="tab" aria-selected={screen === 'admin'} className={`relative px-3 lg:px-4 py-2 border transition-colors ${screen === 'admin' ? 'border-cyan-500 bg-cyan-500/5 text-cyan-300' : 'border-transparent text-green-800 hover:border-cyan-900 hover:text-cyan-300'}`} aria-current={screen === 'admin' ? 'page' : undefined} aria-label="Research analytics">
               {screen === 'admin' && <motion.span layoutId="main-nav-indicator" className="absolute inset-x-2 bottom-0 h-0.5 bg-cyan-400" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />}
               <ShieldCheck size={14} className="mr-2 inline" /><span className="hidden md:inline">Admin</span>
             </button>}
-
-            <button type="button" onClick={() => { setIssueReportError(''); setIssueReportSent(false); setShowIssueReport(true); }} className="relative px-3 lg:px-4 py-2 border border-transparent text-green-800 transition-colors hover:border-amber-900 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400" aria-label="Report an issue" title="Report an issue">
-              <MessageSquareWarning size={14} className="inline md:mr-2" /><span className="hidden md:inline">Report issue</span>
-            </button>
 
           </div>
         </div>
@@ -2318,7 +2309,6 @@ function App() {
             dailyTrialDate={getLocalDateKey()}
             dailyTimeAttackMissionTitle={getDailyTrialDetails('timeAttack').missionTitle}
             dailyAccuracyMissionTitle={getDailyTrialDetails('accuracy').missionTitle}
-            leaderboardOptIn={leaderboardOptIn}
             progression={playerProgression}
             completedMissions={completedMissions}
             isLoadingProgress={isLoadingAuth}
@@ -2340,6 +2330,35 @@ function App() {
               userScores
             }
             activeSession={activeSession}
+            campaignProgress={campaignProgress}
+            skipStoryScenes={userPreferences.skipStoryScenes === true}
+            progressLoadFailed={progressLoadFailed}
+            assessmentProgress={{
+              BEGINNER: { preTestComplete: userScores.BEGINNER?.preTestScore !== undefined, postTestComplete: userScores.BEGINNER?.finalScore !== undefined },
+              INTERMEDIATE: { preTestComplete: userScores.INTERMEDIATE?.preTestScore !== undefined, postTestComplete: userScores.INTERMEDIATE?.finalScore !== undefined },
+              EXPERT: { preTestComplete: userScores.EXPERT?.preTestScore !== undefined, postTestComplete: userScores.EXPERT?.finalScore !== undefined }
+            }}
+            unlockedTiers={{
+              BEGINNER: true,
+              INTERMEDIATE: (userScores.BEGINNER?.finalScore ?? 0) / (userScores.BEGINNER?.finalTotal || 1) >= 0.7,
+              EXPERT: (userScores.INTERMEDIATE?.finalScore ?? 0) / (userScores.INTERMEDIATE?.finalTotal || 1) >= 0.7
+            }}
+            onCompleteCampaignNode={nodeId => {
+              if (!user || progressLoadFailed) return;
+              const completedNodeIds = [...new Set([...campaignProgress.completedNodeIds, nodeId])];
+              setCampaignProgress(previous => ({ ...previous, completedNodeIds }));
+              void saveCampaignProgress(user.uid, { completedNodeIds }, progressLoadFailed).then(saved => {
+                if (saved) setCampaignProgress(saved);
+              }).catch(error => console.error('Could not save story progress:', error));
+            }}
+            onCompleteStoryActivity={async (nodeId, result) => {
+              if (!user) throw new Error('Sign in to save activity progress.');
+              const saved = await completeStoryActivity(user.uid, nodeId, { ...result, contentVersion: CONTENT_VERSION }, progressLoadFailed);
+              setCampaignProgress(saved.campaign);
+              syncProgression(saved.progression);
+              setCosmetics(saved.cosmetics);
+              return { rewarded: saved.rewarded, xp: saved.xp, coins: saved.coins };
+            }}
             onSessionReady={handleAssessmentSessionReady}
             handleQuizComplete={
               handleQuizComplete
@@ -2368,6 +2387,11 @@ function App() {
         )}
 
         {screen === 'admin' && adminAccess && user && <AdminDashboard uid={user.uid} />}
+
+        {screen === 'help' && <HelpDeskScreen
+          currentMission={activeMission?.title}
+          onReportIssue={() => { setIssueReportError(''); setIssueReportSent(false); setShowIssueReport(true); }}
+        />}
 
         {activeMission && (
           <div className={screen === 'terminal' ? 'block h-full' : 'hidden'}>
@@ -2453,8 +2477,6 @@ function App() {
               const next = await equipCosmetic(user.uid, kind, itemId);
               setCosmetics(next);
             }}
-            leaderboardOptIn={leaderboardOptIn}
-            leaderboardAlias={leaderboardAlias}
             progressLoadFailed={progressLoadFailed}
             certificates={certificates}
             onViewCertificate={certificate => {
@@ -2466,7 +2488,6 @@ function App() {
               await saveAvatarChoice(user.uid, nextAvatarId);
               setAvatarId(getAvatarById(nextAvatarId).id);
             }}
-            onSaveLeaderboardOptIn={updateLeaderboardOptIn}
           />
         )}
 
@@ -2484,6 +2505,17 @@ function App() {
             <label className="flex items-center justify-between gap-4"><span><span className="block text-sm font-bold text-white">Background music</span><span className="text-xs text-gray-400">Play music across game tabs.</span></span><input type="checkbox" checked={musicEnabled} onChange={event => setMusicEnabled(event.target.checked)} className="h-5 w-5 accent-cyan-500" /></label>
             <label className="block"><span className="block text-sm font-bold text-white">Music and effect volume · {Math.round(audioVolume * 100)}%</span><input type="range" min="0" max="1" step="0.01" value={audioVolume} onChange={event => setAudioVolume(Number(event.target.value))} className="mt-3 w-full accent-cyan-500" /></label>
             <label className="flex items-center justify-between gap-4"><span><span className="block text-sm font-bold text-white">Sound effects</span><span className="text-xs text-gray-400">Command errors and mission completion sounds.</span></span><input type="checkbox" checked={!isMuted} onChange={event => setIsMuted(!event.target.checked)} className="h-5 w-5 accent-cyan-500" /></label>
+            <label className="flex items-center justify-between gap-4"><span><span className="block text-sm font-bold text-white">Skip story scenes</span><span className="text-xs text-gray-400">Mark a scene complete and show its short recap instead.</span></span><input type="checkbox" checked={userPreferences.skipStoryScenes === true} disabled={progressLoadFailed} onChange={event => {
+              const enabled = event.target.checked;
+              const nextPreferences = { ...userPreferencesRef.current, skipStoryScenes: enabled };
+              userPreferencesRef.current = nextPreferences;
+              setUserPreferences(nextPreferences);
+              if (!user || progressLoadFailed) return;
+              void saveUserPreference(user.uid, 'skipStoryScenes', enabled).catch(error => console.error('Could not save story preference:', error));
+              void saveCampaignProgress(user.uid, { storySkipped: enabled }, progressLoadFailed).then(saved => {
+                if (saved) setCampaignProgress(saved);
+              }).catch(error => console.error('Could not save story preference:', error));
+            }} className="h-5 w-5 accent-cyan-500 disabled:cursor-not-allowed disabled:opacity-50" /></label>
           </div>
         </section>
       </div>}

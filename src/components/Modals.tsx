@@ -90,6 +90,7 @@ export const HintModal = ({ show, onClose, hints, onLevelShown }: { show: boolea
 };
 
 export const BriefingModal = ({ show, mission, onStart, onAbort, isStarting = false, error = '' }: { show: boolean; mission: Mission | null; onStart: () => void; onAbort: () => void; isStarting?: boolean; error?: string }) => {
+  const [briefingTab, setBriefingTab] = useState<'story' | 'learn' | 'tools'>('story');
   if (!show || !mission) return null;
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 p-3 sm:p-4">
@@ -100,19 +101,22 @@ export const BriefingModal = ({ show, mission, onStart, onAbort, isStarting = fa
           <h2 className="text-2xl font-black text-white uppercase">{mission.title}</h2>
           <p className="text-xs text-green-600 mt-1">{mission.tier} TIER</p>
         </div>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:space-y-6 sm:p-6">
+        <div className="shrink-0 flex gap-2 overflow-x-auto border-b border-green-900 px-4 pt-3 sm:px-6" role="tablist" aria-label="Mission briefing sections">
+          {([['story', 'Briefing'], ['learn', 'Learning'], ['tools', 'Tools & objective']] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={briefingTab === id} onClick={() => setBriefingTab(id)} className={`min-h-10 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-bold ${briefingTab === id ? 'border-cyan-400 text-cyan-300' : 'border-transparent text-green-300 hover:text-white'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300`}>{label}</button>)}
+        </div>
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:space-y-6 sm:p-6" role="tabpanel">
           {error && <p role="alert" className="border border-red-500 bg-red-950/30 px-3 py-2 text-sm font-semibold text-red-200">Could not begin this mission: {error}</p>}
-          <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Scenario</h3><p className="text-green-400 text-sm italic border-l-2 border-green-700 pl-3">"{mission.scenario}"</p></div>
-          <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Learning Goal</h3><p className="text-white text-sm">{mission.learningGoal}</p><p className="text-green-600 text-xs mt-2">{mission.briefing.concept}</p></div>
+          {briefingTab === 'story' && <div><h3 className="text-xs font-bold text-green-300 uppercase mb-2">Scenario</h3><p className="text-green-200 text-sm italic border-l-2 border-green-700 pl-3">"{mission.scenario}"</p></div>}
+          {briefingTab === 'learn' && <><div><h3 className="text-xs font-bold text-cyan-300 uppercase mb-2">Learning goal</h3><p className="text-white text-sm leading-6">{mission.learningGoal}</p><p className="text-green-200 text-sm mt-2">Concept: {mission.briefing.concept}</p></div>
           {mission.primer && <section className="border border-cyan-800 bg-cyan-950/20 p-4" aria-label="Before you begin concept primer">
             <h3 className="text-xs font-bold uppercase tracking-widest text-cyan-300">Before you begin · {mission.briefing.concept}</h3>
             <p className="mt-3 text-sm leading-6 text-gray-200">{mission.primer.definition}</p>
-            <p className="mt-2 text-xs leading-5 text-cyan-200"><strong>Think of it this way:</strong> {mission.primer.analogy}</p>
-            {mission.primer.example && <pre className="mt-3 whitespace-pre-wrap border-l-2 border-cyan-700 bg-black/50 p-3 font-mono text-xs leading-5 text-green-200">{mission.primer.example}</pre>}
-          </section>}
-          <div className="text-xs text-green-600">Difficulty: <span className="text-green-300">{mission.difficulty.toUpperCase()}</span> · {mission.timerLimit > 0 ? `Mission time limit: ${Math.floor(mission.timerLimit / 60)} minutes` : 'Untimed practice'}</div>
-          <div><h3 className="text-xs font-bold text-green-700 uppercase mb-2">Commands You'll Use</h3><div className="space-y-2">{mission.briefing.commands.map((cmd, i) => (<div key={i} className="bg-green-950/30 border border-green-900 p-2 font-mono text-xs"><span className="text-green-400">{cmd}</span>{isSimulationShortcut(cmd) && <span className="ml-2 font-sans text-[9px] font-bold uppercase tracking-wide text-cyan-300">Training shortcut</span>}</div>))}</div><p className="mt-2 text-[11px] leading-5 text-gray-400"><strong className="text-cyan-300">Simulation note:</strong> Commands marked “Training shortcut” are game actions, not standard shell commands. In real work, analysts record findings and response actions in approved case-management or security tools.</p></div>
-          <div className="border border-yellow-700 bg-yellow-950/20 p-3"><h3 className="text-xs font-bold text-yellow-600 uppercase mb-1">Objective</h3><p className="text-yellow-400 text-sm">{mission.briefing.objective}</p></div>
+            <p className="mt-3 text-sm leading-6 text-cyan-100"><strong>Think of it this way:</strong> {mission.primer.analogy}</p>
+            {mission.primer.example && <pre className="mt-3 whitespace-pre-wrap border-l-2 border-cyan-700 bg-black/50 p-3 font-mono text-sm leading-6 text-green-200">{mission.primer.example}</pre>}
+          </section>}</>}
+          {briefingTab === 'tools' && <><div className="text-sm text-green-200">Difficulty: <span className="font-bold text-green-100">{mission.difficulty.toUpperCase()}</span> · {mission.timerLimit > 0 ? `Time limit: ${Math.floor(mission.timerLimit / 60)} minutes` : 'Untimed practice'}</div>
+          <div><h3 className="text-sm font-bold text-green-200 uppercase mb-2">Commands you may use</h3><div className="space-y-2">{mission.briefing.commands.map((cmd, i) => (<div key={i} className="bg-green-950/30 border border-green-900 p-3 font-mono text-sm"><span className="text-green-200">{cmd}</span>{isSimulationShortcut(cmd) && <span className="ml-2 font-sans text-xs font-bold uppercase tracking-wide text-cyan-200">Training shortcut</span>}</div>))}</div><p className="mt-3 text-sm leading-6 text-gray-200"><strong className="text-cyan-200">Simulation note:</strong> Commands marked “Training shortcut” are game actions, not standard shell commands. In real work, analysts record findings and response actions in approved case-management or security tools.</p></div>
+          <div className="border border-yellow-700 bg-yellow-950/20 p-4"><h3 className="text-sm font-bold text-yellow-200 uppercase mb-1">Objective</h3><p className="text-yellow-100 text-sm leading-6">{mission.briefing.objective}</p></div></>}
         </div>
         <div className="shrink-0 border-t border-green-900 bg-black p-3 sm:p-4 flex flex-col gap-3 sm:flex-row">
           <button type="button" disabled={isStarting} onClick={onAbort} className="flex-1 border border-red-900 text-red-500 py-3 text-xs font-bold uppercase hover:bg-red-900/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50">Abort Mission</button>
@@ -156,6 +160,7 @@ export const CheatSheetModal = ({ show, onClose }: { show: boolean; onClose: () 
 // --- Victory Modal (ADDED) ---
 export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidence = '', report, isReplay = false }: { show: boolean; onClose: () => void; mission: Mission | null; caseNotes?: string[]; confidence?: string; isReplay?: boolean; report?: { evidence: number; accuracy: number; verification: number; independence: number; xpEarned: number; rankBefore: string; rankAfter: string; newBadges: string[]; evidenceFirst: boolean; verifiedAll: boolean; calibratedReport: boolean; hintsUsed: number; elapsedSeconds: number; timed: boolean; softTimeTarget?: number; exceededSoftTarget?: boolean } | null }) => {
   const reduceMotion = useReducedMotion();
+  const [debriefTab, setDebriefTab] = useState<'summary' | 'learning' | 'evidence'>('summary');
   if (!show) return null;
   return (
     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 animate-in fade-in duration-300">
@@ -165,7 +170,10 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
         <div className="h-1 w-full bg-green-500 mb-6 relative z-20"></div>
         <p className="text-white text-lg mb-1 relative z-20">Operation: <span className="text-green-400 font-bold">{mission?.title ?? 'Training exercise'}</span></p>
         <p className="text-green-600 text-xs uppercase tracking-widest mb-6 relative z-20">Objectives complete · review your takeaway</p>
-        {report && <motion.div initial={reduceMotion ? false : { opacity: 0, y: 10, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: reduceMotion ? 0 : 0.24 }} className="mb-4 space-y-3 text-left relative z-20">
+        <div className="relative z-20 mb-4 flex flex-wrap gap-2 border-b border-green-900/70" role="tablist" aria-label="Mission debrief sections">
+          {([['summary', 'Results'], ['learning', 'Learning'], ['evidence', 'Evidence & response']] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={debriefTab === id} onClick={() => setDebriefTab(id)} className={`min-h-10 border-b-2 px-3 py-2 text-sm font-bold ${debriefTab === id ? 'border-cyan-400 text-cyan-200' : 'border-transparent text-green-300 hover:text-white'} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300`}>{label}</button>)}
+        </div>
+        {report && debriefTab === 'summary' && <motion.div initial={reduceMotion ? false : { opacity: 0, y: 10, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: reduceMotion ? 0 : 0.24 }} className="mb-4 space-y-3 text-left relative z-20">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {([['Evidence', report.evidence], ['Accuracy', report.accuracy], ['Verification', report.verification], ['Independence', report.independence]] as const).map(([label, grade]) => <div key={label} className="border border-green-900 bg-green-950/20 p-3"><p className="text-[10px] uppercase tracking-wider text-green-600">{label}</p><p className="mt-1 text-xl font-bold text-green-200">{'★'.repeat(grade)}{'☆'.repeat(3 - grade)}</p></div>)}
           </div>
@@ -175,7 +183,7 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
           {report.newBadges.length > 0 && <p className="border border-yellow-800 bg-yellow-950/20 p-3 text-xs text-yellow-200">New badge{report.newBadges.length > 1 ? 's' : ''}: {report.newBadges.map(id => ACHIEVEMENTS.find(achievement => achievement.id === id)?.name ?? id).join(', ')}</p>}
           <p className="text-xs leading-5 text-gray-400">Skill marks describe recorded actions in this simulation; they are motivational feedback, not assessment scores.</p>
         </motion.div>}
-        {mission && <div className="space-y-4 text-left relative z-20">
+        {mission && debriefTab === 'learning' && <div className="space-y-4 text-left relative z-20">
           <div className="border border-green-900 bg-green-950/10 p-4">
             <p className="text-[10px] font-bold uppercase tracking-widest text-green-600">What you practiced</p>
             <p className="mt-2 text-sm text-green-200">{mission.learningGoal}</p>
@@ -184,6 +192,8 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
             <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Why it matters</p>
             <p className="mt-2 text-sm leading-6 text-gray-300">{mission.realWorld}</p>
           </div>
+        </div>}
+        {mission && debriefTab === 'evidence' && <div className="space-y-4 text-left relative z-20">
           <div className="border border-cyan-900 bg-cyan-950/10 p-4">
             <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-500">Your case record</p>
             {caseNotes.length > 0 ? <ul className="mt-2 list-inside list-disc space-y-1 text-xs leading-5 text-gray-300">{caseNotes.map((note, index) => <li key={`${index}-${note}`}>{note}</li>)}</ul> : <p className="mt-2 text-xs leading-5 text-gray-400">No notes were recorded in this run. In later missions, preserve important observations before you respond.</p>}

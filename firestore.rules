@@ -15,11 +15,11 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;
     }
 
-    // Require the entry nickname to match the participant's saved opt-in alias.
-    function optedInAliasMatches(nickname) {
+    // Require the public leaderboard name to match the user's saved profile name.
+    function leaderboardNameMatches(nickname) {
       return signedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.leaderboardOptIn == true
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.leaderboardAlias == nickname;
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username is string
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == nickname;
     }
 
     function validChallengeDate(entryId, data) {
@@ -77,13 +77,13 @@ service cloud.firestore {
         && subcollection in ['missionAttempts', 'assessmentAttempts'];
     }
 
-    // Daily Time Attack: signed-in users may read. Opted-in owners may create
+    // Daily Time Attack: signed-in users may read. Owners may create
     // one validated entry per UID/date. Entries cannot be changed or deleted.
     match /dailyTimeAttackEntries/{entryId} {
       allow read: if signedIn();
 
       allow create: if signedIn()
-        && optedInAliasMatches(request.resource.data.nickname)
+        && leaderboardNameMatches(request.resource.data.nickname)
         && validChallengeDate(entryId, request.resource.data)
         && request.resource.data.keys().hasAll([
           'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
@@ -96,7 +96,7 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.nickname is string
         && request.resource.data.nickname.size() > 0
-        && request.resource.data.nickname.size() <= 24
+        && request.resource.data.nickname.size() <= 60
         && request.resource.data.missionId is string
         && request.resource.data.missionId.size() <= 100
         && request.resource.data.missionTitle is string
@@ -120,13 +120,13 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Daily Accuracy: signed-in users may read. Opted-in owners may create
+    // Daily Accuracy: signed-in users may read. Owners may create
     // validated entries; scores are integers from 0 to 100.
     match /dailyAccuracyEntries/{entryId} {
       allow read: if signedIn();
 
       allow create: if signedIn()
-        && optedInAliasMatches(request.resource.data.nickname)
+        && leaderboardNameMatches(request.resource.data.nickname)
         && validChallengeDate(entryId, request.resource.data)
         && request.resource.data.keys().hasAll([
           'uid', 'nickname', 'challengeDate', 'missionId', 'missionTitle',
@@ -141,7 +141,7 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.nickname is string
         && request.resource.data.nickname.size() > 0
-        && request.resource.data.nickname.size() <= 24
+        && request.resource.data.nickname.size() <= 60
         && request.resource.data.missionId is string
         && request.resource.data.missionId.size() <= 100
         && request.resource.data.missionTitle is string

@@ -1,5 +1,8 @@
 import { SECURITY_BRIEF_ITEMS } from '../data/securityBrief';
 
+// Compute the daily rotation once per page load, not during React rendering.
+const SECURITY_BRIEF_DAY = Math.floor(Date.now() / 86_400_000);
+
 const safeHttpsUrl = (value?: string) => {
   if (!value) return undefined;
   try {
@@ -12,10 +15,12 @@ const safeHttpsUrl = (value?: string) => {
 
 export const SecurityBrief = () => {
   if (!SECURITY_BRIEF_ITEMS.length) return null;
+  const firstTip = SECURITY_BRIEF_DAY % SECURITY_BRIEF_ITEMS.length;
+  const todaysItems = Array.from({ length: Math.min(3, SECURITY_BRIEF_ITEMS.length) }, (_, offset) => SECURITY_BRIEF_ITEMS[(firstTip + offset) % SECURITY_BRIEF_ITEMS.length]);
   return <section aria-label="Security Brief" className="rounded-lg border border-[var(--game-border)] bg-[var(--game-surface)] p-4 shadow-[var(--game-shadow)]">
-    <p className="game-eyebrow">Security Brief</p>
+    <p className="game-eyebrow">Security Brief · daily rotation</p>
     <ul className="mt-3 space-y-3">
-      {SECURITY_BRIEF_ITEMS.map((item, index) => {
+      {todaysItems.map((item, index) => {
         const href = item.type === 'news' ? safeHttpsUrl(item.link) : undefined;
         return <li key={`${item.type}-${index}`} className="border-t border-[var(--game-border)] pt-3 first:border-0 first:pt-0">
           <h3 className="text-sm font-semibold leading-5 text-[var(--game-text)]">{href

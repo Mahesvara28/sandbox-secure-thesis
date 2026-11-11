@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { User as FirebaseUser } from 'firebase/auth';
-import type { UserCertificate } from '../Firebase';
-import logoImage from '../assets/logo.webp';
+import type { CampaignProgress, UserCertificate } from '../Firebase';
+import type { ActivityResult } from './ActivityShell';
+import loginBackgroundLoop from '../assets/login_loop.mp4';
 import recruitRankBadge from '../assets/Recruit.webp';
 import analystRankBadge from '../assets/Analyst.webp';
 import responderRankBadge from '../assets/Responder.webp';
@@ -26,6 +27,7 @@ import { getMissionAttempts, getAssessmentAttempts, getDailyTimeAttackEntries, g
 import type { LeaderboardEntry, AccuracyLeaderboardEntry, MissionAttemptRecord } from '../Firebase';
 import { AVATARS, getAvatarById, type AvatarId } from '../data/avatars';
 import { Avatar } from './Avatar';
+import { DialogueBox } from './DialogueBox';
 import { ACHIEVEMENTS } from '../data/achievements';
 import { applyCertificationRewards, rankProgress, type PlayerProgression, getTierLearningGain } from '../data/progression';
 import { AchievementBadge, GameCard, ProgressBar, SectionHeader } from './GameUI';
@@ -50,14 +52,11 @@ import {
   Play,
   CheckCircle2,
   Clock,
-  User,
   Award,
   BookOpen,
   ChevronRight,
   Activity,
   Wifi,
-  Database,
-  BarChart3,
   HelpCircle,
   Lock,
   Eye,
@@ -87,6 +86,7 @@ import { getDailyQuickDrills, QUICK_DRILLS_PER_DAY } from '../data/quickDrills';
 type DailyQuickDrillState = { completed: number; selectedAnswer: string | null };
 
 const DailyQuickDrill = ({ uid, dateKey }: { uid: string; dateKey: string }) => {
+  const reduceMotion = useReducedMotion();
   const dailyDrills = getDailyQuickDrills(uid, dateKey);
   const storageKey = `sandbox-secure-quick-drills:${uid}:${dateKey}`;
   const [state, setState] = useState<DailyQuickDrillState>(() => {
@@ -108,17 +108,25 @@ const DailyQuickDrill = ({ uid, dateKey }: { uid: string; dateKey: string }) => 
   const drill = dailyDrills[state.completed];
   const selectedIsCorrect = Boolean(drill && state.selectedAnswer === drill.answer);
 
-  return <section className="game-card p-5 sm:p-6" aria-label="Daily quick drill">
+  return <section className="game-card dashboard-quick-drill p-5 sm:p-6" aria-label="Daily quick drill">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><p className="game-eyebrow">Quick drill · practice only</p><h2 className="mt-1 text-xl font-black uppercase text-[var(--game-text)]">Build your investigation instincts</h2><p className="mt-2 text-sm text-[var(--game-muted)]">Answer five short scenarios. Your next drill changes after each answer. No certification score or currency is affected.</p></div>
       <span className="shrink-0 border border-[var(--game-cyan)] px-3 py-2 text-xs font-bold text-[var(--game-text)]">{Math.min(state.completed + (state.selectedAnswer ? 1 : 0), QUICK_DRILLS_PER_DAY)} / {QUICK_DRILLS_PER_DAY} answered</span>
     </div>
-    {drill ? <article className="mt-5 border border-[var(--game-border)] bg-[var(--game-surface-raised)] p-4 sm:p-5" aria-live="polite">
+    <div className="mt-4 flex items-center gap-2" aria-label={`Drill ${Math.min(state.completed + 1, QUICK_DRILLS_PER_DAY)} of ${QUICK_DRILLS_PER_DAY}`}>
+      {Array.from({ length: QUICK_DRILLS_PER_DAY }, (_, pip) => <span key={pip} aria-hidden="true" className={`h-2 flex-1 border ${pip < state.completed ? 'border-[var(--game-green)] bg-[var(--game-green)]' : pip === state.completed && drill ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]' : 'border-[var(--game-border)] bg-transparent'}`} />)}
+    </div>
+    {drill ? <AnimatePresence mode="wait" initial={false}><motion.article key={state.completed} initial={reduceMotion ? false : { opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }} exit={reduceMotion ? undefined : { opacity: 0, x: -14 }} transition={{ duration: reduceMotion ? 0 : 0.18 }} className="mt-3 border border-[var(--game-border)] bg-[var(--game-surface-raised)] p-4 sm:p-5" aria-live="polite">
       <p className="text-xs font-bold uppercase tracking-wider text-[var(--game-cyan)]">Drill {state.completed + 1} · {drill.title}</p>
       <p className="mt-3 text-sm leading-6 text-[var(--game-text)]">{drill.prompt}</p>
-      <div className="mt-4 grid gap-2">{drill.options.map(option => <button key={option.id} type="button" disabled={Boolean(state.selectedAnswer)} onClick={() => saveState({ ...state, selectedAnswer: option.id })} className={`min-h-11 w-full border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-default ${state.selectedAnswer === option.id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-text)]' : 'border-[var(--game-border)] text-[var(--game-text)] hover:border-[var(--game-cyan)]'}`}>{option.label}</button>)}</div>
+      <div className="mt-4 grid gap-2">{drill.options.map(option => {
+        const isSelected = state.selectedAnswer === option.id;
+        const isRevealedCorrect = Boolean(state.selectedAnswer) && option.id === drill.answer;
+        const optionTone = isRevealedCorrect ? 'border-[var(--game-green)] bg-[var(--game-green)]/10' : isSelected ? 'border-[var(--game-amber)] bg-[var(--game-amber)]/10' : 'border-[var(--game-border)] hover:border-[var(--game-cyan)]';
+        return <button key={option.id} type="button" disabled={Boolean(state.selectedAnswer)} onClick={() => saveState({ ...state, selectedAnswer: option.id })} className={`min-h-11 w-full border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-default ${optionTone} text-[var(--game-text)]`}><span className="flex items-center justify-between gap-3"><span>{option.label}</span>{isRevealedCorrect && <CheckCircle2 size={18} className="shrink-0 text-[var(--game-green)]" aria-label="Correct answer" />}{isSelected && !selectedIsCorrect && <span className="shrink-0 text-xs font-bold text-[var(--game-amber)]">Your choice</span>}</span></button>;
+      })}</div>
       {state.selectedAnswer && <div className={`mt-4 border p-3 text-sm leading-6 ${selectedIsCorrect ? 'border-[var(--game-green)]' : 'border-[var(--game-yellow)]'}`} role="status"><p className="font-bold text-[var(--game-text)]">{selectedIsCorrect ? 'Good analysis.' : 'Review the evidence.'}</p><p className="mt-1 text-[var(--game-text)]">{drill.feedback}</p><button type="button" onClick={() => saveState({ completed: state.completed + 1, selectedAnswer: null })} className="mt-3 min-h-10 border border-[var(--game-cyan)] px-4 py-2 text-xs font-bold text-[var(--game-text)] hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">{state.completed + 1 === QUICK_DRILLS_PER_DAY ? 'Finish today’s drills' : 'Next drill'} <span aria-hidden="true">→</span></button></div>}
-    </article> : <div className="mt-5 border border-[var(--game-green)] p-4" role="status"><p className="font-bold text-[var(--game-text)]">Today’s five drills are complete.</p><p className="mt-1 text-sm text-[var(--game-muted)]">A fresh set is ready tomorrow.</p><button type="button" onClick={() => saveState({ completed: 0, selectedAnswer: null })} className="mt-3 min-h-10 border border-[var(--game-border)] px-4 py-2 text-xs font-bold text-[var(--game-text)] hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Review today’s drills</button></div>}
+    </motion.article></AnimatePresence> : <div className="mt-3 border border-[var(--game-green)] p-4" role="status"><p className="font-bold text-[var(--game-text)]">Today’s five drills are complete.</p><p className="mt-1 text-sm text-[var(--game-muted)]">A fresh set is ready tomorrow.</p><button type="button" onClick={() => saveState({ completed: 0, selectedAnswer: null })} className="mt-3 min-h-10 border border-[var(--game-border)] px-4 py-2 text-xs font-bold text-[var(--game-text)] hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Review today’s drills</button></div>}
   </section>;
 };
 
@@ -327,36 +335,46 @@ export const AuthScreen = ({
   handlePasswordReset
 }: AuthScreenProps) => {
   const [showPassword, setShowPassword] = useState(false);
-  const [logoLoaded, setLogoLoaded] = useState(true);
+  const authVideoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const video = authVideoRef.current;
+    if (!video) return;
+    video.volume = 0.35;
+    // Start muted so browsers allow the background loop to autoplay reliably.
+    // The first user interaction below enables its audio.
+    video.muted = true;
+    void video.play().catch(() => {
+      // Keep the page usable if autoplay is disabled by browser policy.
+    });
+    return () => {
+      video.pause();
+      video.currentTime = 0;
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, []);
+  const enableAuthVideoAudio = () => {
+    const video = authVideoRef.current;
+    if (!video) return;
+    video.muted = false;
+    video.volume = 0.35;
+    void video.play().catch(() => {});
+  };
   const fieldClass = 'min-h-12 w-full rounded-lg border border-[var(--game-border)] bg-[var(--game-page)] px-4 py-3 text-[var(--game-text)] outline-none transition placeholder:text-[var(--game-muted)]/70 focus:border-[var(--game-green)] focus:ring-2 focus:ring-[var(--game-green)]/20';
   const activeTabClass = 'min-h-11 flex-1 rounded-md bg-[var(--game-surface-raised)] px-3 text-sm font-semibold text-[var(--game-text)] shadow-sm';
   const inactiveTabClass = 'min-h-11 flex-1 rounded-md px-3 text-sm font-medium text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]';
 
   return (
-    <div className="auth-screen app-atmosphere flex min-h-screen items-center justify-center bg-[var(--game-page)] p-3 font-sans text-[var(--game-text)] sm:p-6">
-      <main className="game-card grid w-full max-w-5xl overflow-hidden rounded-2xl shadow-[var(--game-shadow)] md:min-h-[620px] md:grid-cols-[1.05fr_0.95fr]">
-        <section className="flex flex-col justify-center border-b border-[var(--game-border)] bg-[var(--game-surface-raised)] p-5 sm:p-8 md:border-b-0 md:border-r md:p-10" aria-labelledby="auth-brand-title">
-          <div className="mx-auto w-full max-w-xl">
-            <div className="overflow-hidden rounded-xl border border-[var(--game-border)] bg-[#050907] shadow-lg">
-              {logoLoaded ? <img src={logoImage} alt="Sandbox Secure cybersecurity training" onError={() => setLogoLoaded(false)} className="block h-auto w-full object-contain" /> : <div className="flex aspect-video items-center justify-center text-[var(--game-green)]"><Shield size={64} aria-hidden="true" /></div>}
-            </div>
-            <div className="mt-6">
-              <p className="game-eyebrow">Cybersecurity training simulation</p>
-              <h1 id="auth-brand-title" className="mt-2 text-2xl font-bold leading-tight text-[var(--game-text)] sm:text-3xl">Learn security by doing.</h1>
-              <p className="mt-3 max-w-lg text-sm leading-6 text-[var(--game-muted)]">Build confidence through guided investigations, simulated tools, and clear explanations of each decision.</p>
-            </div>
-            <div className="mt-6 grid gap-2 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3">
-              {[['01', 'Learn the tools'], ['02', 'Investigate evidence'], ['03', 'Explain your findings']].map(([number, label]) => <div key={number} className="flex items-center gap-3 rounded-lg border border-[var(--game-border)] bg-[var(--game-surface)]/70 px-3 py-3"><span className="font-mono text-xs font-bold text-[var(--game-green)]">{number}</span><span className="text-xs font-medium text-[var(--game-text)]">{label}</span></div>)}
-            </div>
-          </div>
-        </section>
-
-        <section className="flex flex-col justify-center p-5 sm:p-8 md:p-10" aria-labelledby="auth-form-title">
-          <div className="mb-6 flex items-center justify-between gap-3">
-            <div><p className="game-eyebrow">Operator access</p><h2 id="auth-form-title" className="mt-1 text-xl font-bold text-[var(--game-text)]">{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h2></div>
-            <button type="button" onClick={onToggleTheme} className="min-h-11 rounded-lg border border-[var(--game-border)] px-3 py-2 text-xs font-semibold text-[var(--game-text)] transition hover:bg-[var(--game-track)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            </button>
+    <div className="auth-screen app-atmosphere relative isolate flex min-h-[100svh] items-center justify-center overflow-x-hidden bg-[var(--game-page)] px-4 py-5 font-sans text-[var(--game-text)] sm:px-6 sm:py-7" onPointerDownCapture={enableAuthVideoAudio} onKeyDownCapture={enableAuthVideoAudio}>
+      <video ref={authVideoRef} className="auth-background-video pointer-events-none fixed inset-0 z-0 h-full w-full object-cover" src={loginBackgroundLoop} autoPlay muted loop playsInline preload="auto" aria-hidden="true" />
+      <div className="auth-background-overlay pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(135deg,rgba(3,8,12,0.32),rgba(5,16,18,0.18)_50%,rgba(2,7,11,0.4))]" aria-hidden="true" />
+      <button type="button" onClick={onToggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} className="fixed right-4 top-4 z-20 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--game-border)] bg-[var(--game-surface)]/90 text-sm font-black text-[var(--game-text)] shadow-lg backdrop-blur transition hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+        {theme === 'dark' ? 'L' : 'D'}
+      </button>
+      <main data-auth-mode={authMode} className="auth-card game-card auth-panel-frame relative z-10 my-auto w-full max-w-[520px] overflow-hidden rounded-2xl shadow-[var(--game-shadow)] backdrop-blur-xl">
+        <section className="p-4 sm:p-6" aria-labelledby="auth-form-title">
+          <div className="auth-header mb-4 flex min-w-0 items-start">
+            <div className="min-w-0"><p className="auth-brandmark max-w-full font-black text-[var(--game-text)]">SANDBOX<span className="text-[var(--game-green)]">_SECURE</span></p><p className="game-eyebrow mt-2">Operator access</p><h1 id="auth-form-title" className="mt-1 text-xl font-bold text-[var(--game-text)] sm:text-2xl">{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h1></div>
           </div>
 
           <div role="tablist" aria-label="Account access options" onKeyDown={event => {
@@ -367,32 +385,32 @@ export const AuthScreen = ({
             const nextIndex = (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
             tabs[nextIndex]?.focus();
             tabs[nextIndex]?.click();
-          }} className="mb-6 flex gap-1 rounded-lg border border-[var(--game-border)] bg-[var(--game-page)] p-1">
+          }} className="mb-4 flex gap-1 rounded-lg border border-[var(--game-border)] bg-[var(--game-page)] p-1">
             <button id="auth-tab-login" type="button" role="tab" tabIndex={authMode === 'login' ? 0 : -1} aria-selected={authMode === 'login'} aria-controls="auth-form-panel" onClick={() => setAuthMode('login')} className={authMode === 'login' ? activeTabClass : inactiveTabClass}>Sign in</button>
             <button id="auth-tab-register" type="button" role="tab" tabIndex={authMode === 'register' ? 0 : -1} aria-selected={authMode === 'register'} aria-controls="auth-form-panel" onClick={() => setAuthMode('register')} className={authMode === 'register' ? activeTabClass : inactiveTabClass}>Create account</button>
           </div>
 
-          {authMode === 'login' && <p className="mb-4 text-xs leading-5 text-[var(--game-muted)]">Email and password accounts must verify their email address before signing in. Check your inbox and spam folder for the verification link.</p>}
+          {authMode === 'login' && <p className="mb-3 text-xs leading-5 text-[var(--game-muted)]">Email and password accounts must verify their email address before signing in. Check your inbox and spam folder for the verification link.</p>}
 
           <div id="auth-form-panel" role="tabpanel" aria-labelledby={authMode === 'login' ? 'auth-tab-login' : 'auth-tab-register'}>
-            {authMode === 'login' ? <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
-              <div><label htmlFor="login-email" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Email address</label><input id="login-email" name="email" autoComplete="email" required type="email" value={regEmail} onChange={event => setRegEmail(event.target.value)} className={fieldClass} placeholder="operator@example.com" /></div>
-              <div><label htmlFor="login-password" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Password</label><div className="relative"><input id="login-password" name="password" autoComplete="current-password" required value={regPassword} onChange={event => setRegPassword(event.target.value)} type={showPassword ? 'text' : 'password'} className={`${fieldClass} pr-12`} placeholder="Enter your password" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-1 right-1 inline-flex w-10 items-center justify-center rounded-md text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
-              <button type="submit" className="auth-primary-button min-h-12 w-full rounded-lg bg-[var(--game-green)] px-4 py-3 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Sign in</button>
-              <button type="button" onClick={() => void handlePasswordReset()} className="min-h-10 text-left text-sm font-semibold text-[var(--game-cyan)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Forgot password?</button>
+            {authMode === 'login' ? <form className="auth-login-form grid grid-cols-1 gap-y-2.5" onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
+              <div><label htmlFor="login-email" className="auth-login-label mb-1.5 block text-sm font-medium text-[var(--game-text)]">Email address</label><input id="login-email" name="email" autoComplete="email" required type="email" value={regEmail} onChange={event => setRegEmail(event.target.value)} className={`${fieldClass} auth-login-input`} placeholder="operator@example.com" /></div>
+              <div><label htmlFor="login-password" className="auth-login-label mb-1.5 block text-sm font-medium text-[var(--game-text)]">Password</label><div className="relative"><input id="login-password" name="password" autoComplete="current-password" required value={regPassword} onChange={event => setRegPassword(event.target.value)} type={showPassword ? 'text' : 'password'} className={`${fieldClass} auth-login-input pr-12`} placeholder="Enter your password" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-1 right-1 inline-flex w-10 items-center justify-center rounded-md text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
+              <button type="submit" className="auth-primary-button min-h-11 w-full rounded-lg bg-[var(--game-green)] px-4 py-2.5 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Sign in</button>
+              <button type="button" onClick={() => void handlePasswordReset()} className="min-h-9 text-left text-sm font-semibold text-[var(--game-cyan)] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Forgot password?</button>
               <div className="flex items-center gap-3 py-1" aria-hidden="true"><span className="h-px flex-1 bg-[var(--game-border)]" /><span className="text-xs text-[var(--game-muted)]">or</span><span className="h-px flex-1 bg-[var(--game-border)]" /></div>
-              <button type="button" onClick={() => void handleGoogleLogin()} className="min-h-12 w-full rounded-lg border border-[var(--game-border)] px-4 py-3 text-sm font-semibold text-[var(--game-text)] transition hover:border-[var(--game-cyan)] hover:bg-[var(--game-track)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Continue with Google</button>
-            </form> : <form className="space-y-4" onSubmit={event => { event.preventDefault(); void handleRegister(); }}>
+              <button type="button" onClick={() => void handleGoogleLogin()} className="min-h-11 w-full rounded-lg border border-[var(--game-border)] px-4 py-2.5 text-sm font-semibold text-[var(--game-text)] transition hover:border-[var(--game-cyan)] hover:bg-[var(--game-track)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Continue with Google</button>
+            </form> : <form className="grid grid-cols-1 gap-y-2.5" onSubmit={event => { event.preventDefault(); void handleRegister(); }}>
               <div><label htmlFor="register-name" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Operator name</label><input id="register-name" name="name" autoComplete="nickname" required value={regUsername} onChange={event => setRegUsername(event.target.value)} className={fieldClass} placeholder="Choose a display name" /></div>
               <div><label htmlFor="register-email" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Email address</label><input id="register-email" name="email" autoComplete="email" required type="email" value={regEmail} onChange={event => setRegEmail(event.target.value)} className={fieldClass} placeholder="operator@example.com" /></div>
               <div><label htmlFor="register-password" className="mb-2 block text-sm font-medium text-[var(--game-text)]">Password</label><div className="relative"><input id="register-password" name="new-password" autoComplete="new-password" required minLength={6} value={regPassword} onChange={event => setRegPassword(event.target.value)} type={showPassword ? 'text' : 'password'} className={`${fieldClass} pr-12`} placeholder="At least 6 characters" /><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} className="absolute inset-y-1 right-1 inline-flex w-10 items-center justify-center rounded-md text-[var(--game-muted)] transition hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
-              <button type="submit" className="auth-primary-button min-h-12 w-full rounded-lg bg-[var(--game-green)] px-4 py-3 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Create account</button>
+              <button type="submit" className="auth-primary-button min-h-11 w-full rounded-lg bg-[var(--game-green)] px-4 py-2.5 font-bold text-black shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2">Create account</button>
             </form>}
           </div>
 
           {authError && <div className="mt-5 rounded-lg border border-[var(--game-red)]/40 bg-[var(--game-red)]/10 p-3 text-sm text-[var(--game-red)]" role="alert">{authError}</div>}
           {authSuccess && <div className="mt-5 rounded-lg border border-[var(--game-green)]/40 bg-[var(--game-green)]/10 p-3 text-sm text-[var(--game-text)]" role="status">{authSuccessMessage}</div>}
-          <p className="mt-6 border-t border-[var(--game-border)] pt-4 text-center text-xs leading-5 text-[var(--game-muted)]">Authorized training environment · Commands are simulated for learning.</p>
+          <p className="mt-4 border-t border-[var(--game-border)] pt-3 text-center text-xs leading-5 text-[var(--game-muted)]">Authorized training environment · Commands are simulated for learning.</p>
         </section>
       </main>
     </div>
@@ -431,7 +449,6 @@ interface DashboardScreenProps {
   onProgressionChange: (progression: PlayerProgression) => void;
   completedMissions: string[];
   progressLoadFailed?: boolean;
-  leaderboardOptIn: boolean;
 }
 
 export const DashboardScreen = ({
@@ -452,8 +469,7 @@ export const DashboardScreen = ({
   isLoadingProgress,
   onProgressionChange,
   completedMissions,
-  progressLoadFailed = false,
-  leaderboardOptIn
+  progressLoadFailed = false
 }: DashboardScreenProps) => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardUnavailable, setLeaderboardUnavailable] = useState(false);
@@ -485,15 +501,13 @@ export const DashboardScreen = ({
     const type = activeMoreTab === 'accuracyLeaderboard' ? 'accuracy' : 'timeAttack';
     const load = async () => {
       try {
-        if (userId && leaderboardOptIn) {
+        if (userId) {
           const result = await retryDailyLeaderboardEntry(userId, dailyTrialDate, type);
           if (!cancelled) {
             setLeaderboardSubmitMessage(result === 'no-saved-attempt'
               ? 'No saved completed trial was found to submit.'
-              : result === 'submitted' ? '' : 'Opt in from Profile before completing a trial to submit it to the leaderboard.');
+              : '');
           }
-        } else if (!leaderboardOptIn && !cancelled) {
-          setLeaderboardSubmitMessage('Opt in from Profile before completing a trial to submit it to the leaderboard.');
         }
         const entries = type === 'accuracy'
           ? await getDailyAccuracyEntries(dailyTrialDate)
@@ -505,7 +519,7 @@ export const DashboardScreen = ({
       } catch (error) {
         console.warn(`Could not refresh the daily ${type} leaderboard:`, error);
         if (!cancelled) {
-          setLeaderboardSubmitMessage('Could not submit a saved trial. Check the Firestore create rules and your leaderboard opt-in setting.');
+          setLeaderboardSubmitMessage('Could not submit a saved trial. Check the Firestore rules for daily leaderboard entries.');
           if (type === 'accuracy') setAccuracyLeaderboardUnavailable(true);
           else setLeaderboardUnavailable(true);
         }
@@ -518,7 +532,7 @@ export const DashboardScreen = ({
     };
     void load();
     return () => { cancelled = true; };
-  }, [userId, dailyTrialDate, dailyChallengeAvailable, activeMoreTab, leaderboardRefreshKey, leaderboardOptIn]);
+  }, [userId, dailyTrialDate, dailyChallengeAvailable, activeMoreTab, leaderboardRefreshKey]);
 
   const refreshLeaderboard = (type: 'timeAttack' | 'accuracy') => {
     if (type === 'timeAttack') setLeaderboardLoading(true);
@@ -605,8 +619,8 @@ export const DashboardScreen = ({
     : nextMission?.learningGoal ?? `Complete the ${currentTier} post-test to finish this certification tier.`;
 
   return (
-    <div className="game-screen mx-auto min-h-full w-full max-w-6xl space-y-7 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-      <GameCard className="continue-hero relative isolate overflow-hidden p-5 sm:p-8 lg:p-10">
+    <div className="game-screen dashboard-layout mx-auto min-h-full w-full max-w-7xl space-y-7 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+      <GameCard className="continue-hero dashboard-command-center relative isolate overflow-hidden p-5 sm:p-8 lg:p-10">
         <img src={dashboardHeroImage} alt="" aria-hidden="true" loading="lazy" decoding="async" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right opacity-100" />
         {!isNewUser && SECURITY_BRIEF_ITEMS.length > 0 && <div className="absolute right-6 top-6 z-10 hidden w-72 xl:block"><SecurityBrief /></div>}
         <div className="relative z-10">
@@ -668,7 +682,8 @@ export const DashboardScreen = ({
             <AnimatePresence mode="wait" initial={false}>{activeMoreTab && visibleMoreTabs.some(tab => tab.id === activeMoreTab) && <motion.div key={activeMoreTab} id="dashboard-more-panel" role="tabpanel" aria-labelledby={`dashboard-tab-${activeMoreTab}`} tabIndex={0} initial={reduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduceMotion ? 0 : 0.16 }} className="max-h-96 overflow-y-auto overscroll-contain pr-1">
               {activeMoreTab === 'progress' && hasScoreData && <div id="dashboard-progress-details" className="space-y-4">
                 <div><h2 className="text-base font-bold text-[var(--game-text)]">Assessment results</h2><p className="mt-1 text-sm text-[var(--game-muted)]">Pre-test and post-test scores are shown for each tier.</p></div>
-                <div className="space-y-3">{(['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).filter(tier => userScores[tier]?.preTestScore !== undefined || userScores[tier]?.finalScore !== undefined).map(tier => { const data = userScores[tier]; const gain = gainForTier(data); return <div key={tier} className="grid gap-2 rounded-md border border-[var(--game-border)] p-3 text-sm sm:grid-cols-[100px_1fr_1fr_1fr] sm:items-center"><span className="font-semibold text-[var(--game-text)]">{tier}</span><span className="text-[var(--game-muted)]">Pre-test: {data?.preTestScore !== undefined ? `${data.preTestScore}/${data.preTestTotal ?? 0}` : 'Not taken'}</span><span className="text-[var(--game-muted)]">Post-test (best): {data?.finalScore !== undefined ? `${data.finalScore}/${data.finalTotal ?? 0}` : 'Not taken'}</span>{showLearningGain && gain !== null && <span className="font-semibold text-[var(--game-text)]">Gain (first attempts): {gain > 0 ? '+' : ''}{gain} pp</span>}</div>; })}</div>
+                <div className="space-y-3">{(['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).filter(tier => userScores[tier]?.preTestScore !== undefined || userScores[tier]?.finalScore !== undefined).map(tier => { const data = userScores[tier]; const gain = gainForTier(data); const prePercent = data?.preTestScore !== undefined ? Math.round(((data.preTestFirstScore ?? data.preTestScore) / Math.max(1, data.preTestFirstTotal ?? data.preTestTotal ?? 1)) * 100) : null; const postPercent = data?.finalScore !== undefined ? Math.round(((data.firstFinalScore ?? data.finalScore) / Math.max(1, data.firstFinalTotal ?? data.finalTotal ?? 1)) * 100) : null; return <div key={tier} className="grid gap-3 rounded-md border border-[var(--game-border)] p-3 text-sm sm:grid-cols-[100px_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center"><span className="font-semibold text-[var(--game-text)]">{tier}</span><div className="space-y-2"><div className="flex justify-between gap-2 text-xs"><span className="text-[var(--game-muted)]">Pre-test · first attempt</span><span className="font-semibold text-[var(--game-text)]">{prePercent === null ? 'Not taken' : `${prePercent}%`}</span></div><div className="relative h-2 overflow-visible bg-[var(--game-track)]" role="img" aria-label={prePercent === null ? 'Pre-test not taken' : `First-attempt pre-test score ${prePercent} percent; pass reference 70 percent`}><span className="absolute inset-y-0 left-[70%] z-[1] border-l border-dashed border-[var(--game-amber)]" aria-hidden="true" /><motion.span initial={reduceMotion ? false : { width: 0 }} animate={{ width: `${prePercent ?? 0}%` }} transition={{ duration: reduceMotion ? 0 : 0.7, ease: 'easeOut' }} className="block h-full bg-[var(--game-cyan)]" /></div></div><div className="space-y-2"><div className="flex justify-between gap-2 text-xs"><span className="text-[var(--game-muted)]">Post-test · first attempt</span><span className="font-semibold text-[var(--game-text)]">{postPercent === null ? 'Not taken' : `${postPercent}%`}</span></div><div className="relative h-2 overflow-visible bg-[var(--game-track)]" role="img" aria-label={postPercent === null ? 'Post-test not taken' : `First-attempt post-test score ${postPercent} percent; pass reference 70 percent`}><span className="absolute inset-y-0 left-[70%] z-[1] border-l border-dashed border-[var(--game-amber)]" aria-hidden="true" /><motion.span initial={reduceMotion ? false : { width: 0 }} animate={{ width: `${postPercent ?? 0}%` }} transition={{ duration: reduceMotion ? 0 : 0.7, delay: reduceMotion ? 0 : 0.12, ease: 'easeOut' }} className="block h-full bg-[var(--game-green)]" /></div></div>{showLearningGain && gain !== null && <span className="font-semibold text-[var(--game-text)]">{gain > 0 ? '+' : ''}{gain} pp</span>}</div>; })}</div>
+                <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--game-muted)]"><span><span className="mr-1 inline-block h-2 w-2 bg-[var(--game-cyan)]" />Pre-test</span><span><span className="mr-1 inline-block h-2 w-2 bg-[var(--game-green)]" />Post-test</span><span><span className="mr-1 inline-block h-3 border-l border-dashed border-[var(--game-amber)] align-middle" />70% pass reference</span><span>First attempts shown for comparison.</span></p>
                 <p className="text-xs leading-5 text-[var(--game-muted)]">Gain compares first pre-test and first post-test attempts when recorded; older records use their saved scores. This is descriptive and does not change certification scoring.</p>
                 <button type="button" onClick={() => setScreen('profile')} className="min-h-11 text-sm font-semibold text-[var(--game-text)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View all results in Profile</button>
               </div>}
@@ -678,7 +693,7 @@ export const DashboardScreen = ({
                 <button type="button" onClick={() => setScreen('profile')} className="min-h-11 text-sm font-semibold text-[var(--game-text)] underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View all badges in Profile</button>
               </div>}
               {activeMoreTab === 'leaderboard' && <div id="dashboard-leaderboard" className="space-y-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-bold text-[var(--game-text)]">Today’s Time Attack leaderboard</h2><p className="text-sm text-[var(--game-muted)]">{dailyTrialDate} · {dailyTimeAttackMissionTitle}</p></div><div className="flex items-center gap-3"><p className="text-xs text-[var(--game-muted)]">Opt-in players use randomly generated aliases.</p><button type="button" onClick={() => refreshLeaderboard('timeAttack')} disabled={leaderboardLoading} className="min-h-10 rounded-md border border-[var(--game-border)] px-3 text-xs font-semibold text-[var(--game-text)] hover:border-[var(--game-green)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] disabled:opacity-60">{leaderboardLoading ? 'Refreshing…' : 'Refresh'}</button></div></div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-bold text-[var(--game-text)]">Today’s Time Attack leaderboard</h2><p className="text-sm text-[var(--game-muted)]">{dailyTrialDate} · {dailyTimeAttackMissionTitle}</p></div><div className="flex items-center gap-3"><p className="text-xs text-[var(--game-muted)]">Daily clears appear automatically with your profile name. Email stays private.</p><button type="button" onClick={() => refreshLeaderboard('timeAttack')} disabled={leaderboardLoading} className="min-h-10 rounded-md border border-[var(--game-border)] px-3 text-xs font-semibold text-[var(--game-text)] hover:border-[var(--game-green)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] disabled:opacity-60">{leaderboardLoading ? 'Refreshing…' : 'Refresh'}</button></div></div>
                 {leaderboardSubmitMessage && <p className="mt-2 text-xs text-[var(--game-muted)]" role="status">{leaderboardSubmitMessage}</p>}
                 <p className="text-xs text-[var(--game-muted)]">Speed is a challenge only; certification progress rewards evidence and accuracy.</p>
                 {leaderboardLoading ? <p className="text-sm text-[var(--game-muted)]">Loading entries…</p> : leaderboardUnavailable ? <p className="text-sm text-[var(--game-muted)]">Could not load entries. Check sign-in and the dailyTimeAttackEntries read rule.</p> : leaderboard.length === 0 ? <p className="text-sm text-[var(--game-muted)]">No one has completed today’s Time Attack yet.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-left text-sm"><thead className="text-xs text-[var(--game-muted)]"><tr><th className="pb-2 pr-3">Rank</th><th className="pb-2 pr-3">Player</th><th className="pb-2">Clear time</th></tr></thead><tbody>{leaderboard.map((entry, index) => <tr key={`${entry.uid}-${index}`} className="border-t border-[var(--game-border)] text-[var(--game-text)]"><td className="py-2 pr-3 font-semibold">#{index + 1}</td><td className="py-2 pr-3"><div className="flex items-center gap-2">{entry.avatarId ? <Avatar avatarId={entry.avatarId} alt={`${entry.nickname}'s avatar: ${getAvatarById(entry.avatarId).label}`} /> : <span role="img" aria-label="No avatar selected" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--game-border)] bg-[var(--game-track)] text-lg font-bold text-[var(--game-muted)]">?</span>}<span>{entry.nickname}{entry.uid === userId ? ' · YOU' : ''}</span></div></td><td className="py-2 font-semibold">{Math.floor(entry.clearTimeSeconds / 60)}:{String(entry.clearTimeSeconds % 60).padStart(2, '0')}</td></tr>)}</tbody></table></div>}
@@ -787,6 +802,13 @@ interface AcademyScreenProps {
   completedMissions: string[];
   progression: PlayerProgression;
   activeSession?: Record<string, unknown> | null;
+  campaignProgress: CampaignProgress;
+  assessmentProgress: Record<Tier, { preTestComplete: boolean; postTestComplete: boolean }>;
+  unlockedTiers: Record<Tier, boolean>;
+  skipStoryScenes: boolean;
+  progressLoadFailed: boolean;
+  onCompleteCampaignNode: (nodeId: string) => void;
+  onCompleteStoryActivity: (nodeId: string, result: ActivityResult) => Promise<{ rewarded: boolean; xp: number; coins: number }>;
 }
 
 export const AcademyScreen = ({
@@ -798,7 +820,14 @@ export const AcademyScreen = ({
   onStartMission,
   completedMissions,
   progression,
-  activeSession
+  activeSession,
+  campaignProgress,
+  assessmentProgress,
+  unlockedTiers,
+  skipStoryScenes,
+  progressLoadFailed,
+  onCompleteCampaignNode,
+  onCompleteStoryActivity
 }: AcademyScreenProps) => {
   if (
     activeTier &&
@@ -886,6 +915,13 @@ export const AcademyScreen = ({
           userScores
         }
         activeSession={activeSession}
+        campaignProgress={campaignProgress}
+        assessmentProgress={assessmentProgress}
+        unlockedTiers={unlockedTiers}
+        skipStoryScenes={skipStoryScenes}
+        progressLoadFailed={progressLoadFailed}
+        onCompleteCampaignNode={onCompleteCampaignNode}
+        onCompleteStoryActivity={onCompleteStoryActivity}
       />
     );
   }
@@ -961,7 +997,7 @@ export const AcademyScreen = ({
 
       </div>
 
-      <div className="grid gap-6">
+      <div className="academy-tier-route grid gap-6 lg:grid-cols-3" aria-label="Certification chapter route">
 
         {academyTiers.map(
           tier => {
@@ -1007,7 +1043,7 @@ export const AcademyScreen = ({
                   tier.id
                 }
                 data-tier={tier.id.toLowerCase()}
-                className={`academy-tier-card relative isolate min-h-44 overflow-hidden border ${tier.border} bg-black/60 p-6`}
+                className={`academy-tier-card relative isolate min-h-44 overflow-hidden border ${tier.border} bg-black/60 p-5 sm:p-6 lg:min-h-[560px]`}
               >
 
                 {TIER_CARD_IMAGES[tier.id] && (
@@ -1022,7 +1058,7 @@ export const AcademyScreen = ({
                   />
                 )}
 
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                <div className="relative z-10 flex h-full flex-col gap-6 md:flex-row md:items-center md:justify-between lg:flex-col lg:items-stretch lg:justify-between">
 
                   <div className="flex min-w-0 flex-1 gap-4">
 
@@ -1034,12 +1070,12 @@ export const AcademyScreen = ({
                       }
                     </div>
 
-                    <div className="min-w-0 md:max-w-[72%]">
+                    <div className="min-w-0 flex-1 lg:max-w-none">
 
                       <h2
                         data-glitch-text={`${tier.title} CERTIFICATION`}
                         aria-label={`${tier.title} Certification`}
-                        className={`academy-tier-title text-2xl font-black ${tier.color}`}
+                        className={`academy-tier-title text-xl font-black sm:text-2xl ${tier.color}`}
                       >
                         {
                           tier.title
@@ -1141,7 +1177,7 @@ export const AcademyScreen = ({
                           tier.id
                         )
                       }
-                      className={`border ${tier.border} bg-[var(--game-surface)]/95 px-6 py-3 text-xs font-black uppercase ${tier.color} hover:bg-white hover:text-black transition-colors whitespace-nowrap`}
+                      className={`w-full border ${tier.border} bg-[var(--game-surface)]/95 px-4 py-3 text-xs font-black uppercase ${tier.color} transition-colors hover:bg-white hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] lg:mt-auto`}
                     >
                       {score
                         ? 'Continue Tier'
@@ -1185,9 +1221,9 @@ export const MissionsScreen = ({
   const completedCount = missions.filter(mission => completedMissions.includes(mission.id)).length;
 
   return (
-    <div className="game-screen mx-auto min-h-full w-full max-w-[1480px] space-y-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+    <div className="game-screen operations-layout mx-auto min-h-full w-full max-w-[1480px] space-y-6 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
 
-      <section className="border border-green-500/20 bg-[#08100c] p-6">
+      <section className="operations-header border border-green-500/20 bg-[#08100c] p-6">
 
         <div className="flex items-center gap-3">
 
@@ -1213,7 +1249,7 @@ export const MissionsScreen = ({
 
       </section>
 
-      <div className="flex flex-wrap gap-2" aria-label="Filter practice missions">
+      <div className="operations-filters flex flex-wrap gap-2" aria-label="Filter practice missions">
         {([
           ['all', 'ALL PRACTICE'],
           ['files', 'FILES'],
@@ -1231,7 +1267,7 @@ export const MissionsScreen = ({
         ))}
       </div>
 
-      <div className="space-y-4">
+      <div className="operations-list space-y-4">
 
         {missions.map(
           (
@@ -1270,7 +1306,7 @@ export const MissionsScreen = ({
 
                 <div className="relative z-10">
 
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                <div className="mission-art-card-layout flex min-w-0 flex-col gap-5">
 
                   <div className="flex items-start gap-4">
 
@@ -1292,7 +1328,7 @@ export const MissionsScreen = ({
 
                     </div>
 
-                    <div>
+                    <div className="mission-art-card-content min-w-0 flex-1">
 
                       <p className="game-eyebrow">CASE FILE · {String(index + 1).padStart(2, '0')} · {mission.category ?? 'practice'}</p>
                       <h2 data-glitch-text={mission.title} className="mission-art-title mt-1 text-lg font-bold text-[var(--game-text)]">
@@ -1347,7 +1383,7 @@ export const MissionsScreen = ({
 
                   </div>
 
-                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
+                  <div className="mission-art-card-actions flex w-full min-w-0 flex-col gap-2 sm:flex-row lg:w-auto lg:shrink-0">
                     <button
                       type="button"
                       onClick={() => setFieldGuideTier(mission.tier)}
@@ -1475,6 +1511,7 @@ export const TerminalScreen = ({
 }: TerminalScreenProps) => {
   const [command, setCommand] =
     useState('');
+  const [introDismissed, setIntroDismissed] = useState(false);
 
   const [history, setHistory] =
     useState<string[]>([
@@ -1483,7 +1520,13 @@ export const TerminalScreen = ({
       ''
     ]);
   const terminalViewportRef = useRef<HTMLDivElement>(null);
+  const commandInputRef = useRef<HTMLInputElement>(null);
   const shouldFollowTerminalRef = useRef(true);
+  const missionIntroActive = Boolean(activeMission.intro.trim()) && msg === activeMission.intro && !introDismissed;
+
+  useEffect(() => {
+    if (!missionIntroActive) commandInputRef.current?.focus();
+  }, [missionIntroActive]);
 
   useEffect(() => {
     const viewport = terminalViewportRef.current;
@@ -1737,6 +1780,7 @@ export const TerminalScreen = ({
 
   const executeCommand =
     () => {
+      if (missionIntroActive) return;
       const trimmed =
         command.trim();
 
@@ -1777,6 +1821,10 @@ export const TerminalScreen = ({
   const handleKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>
   ) => {
+    if (missionIntroActive) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === 'Tab') {
       const source = event.currentTarget.value;
       const tokens = splitTerminalArgs(source);
@@ -1990,7 +2038,16 @@ export const TerminalScreen = ({
 
             {msg && (
               <div className="mt-2 text-green-300 whitespace-pre-wrap">
-                <TypewriterText key={sysNonce} text={msg} />
+                {msg === activeMission.intro ? (
+                  introDismissed ? null : <DialogueBox
+                    key={`terminal-intro-${activeMission.id}-${sysNonce}`}
+                    sceneLabel="Mission introduction from Nova"
+                    className="text-left"
+                    modal
+                    onComplete={() => setIntroDismissed(true)}
+                    beats={[{ id: `terminal-intro-${activeMission.id}`, speaker: 'Nova', role: 'Senior analyst · your mentor', pose: 'talking', text: msg.replace(/^HANDLER:\s*/i, '') }]}
+                  />
+                ) : <TypewriterText key={sysNonce} text={msg} />}
               </div>
             )}
 
@@ -2007,9 +2064,11 @@ export const TerminalScreen = ({
               </span>
 
               <input
+                ref={commandInputRef}
                 value={
                   command
                 }
+                disabled={missionIntroActive}
                 onChange={e =>
                   setCommand(
                     e.target.value
@@ -2022,7 +2081,7 @@ export const TerminalScreen = ({
                 aria-label="Enter a simulated terminal command"
                 title="Press Tab to complete a command or file path. After typing report and a space, press Tab to complete the current finding."
                 placeholder="type a command…"
-                className="min-w-0 flex-1 bg-transparent outline-none text-green-300 placeholder:text-green-900"
+                className="min-w-0 flex-1 bg-transparent outline-none text-green-300 placeholder:text-green-900 disabled:cursor-not-allowed disabled:opacity-50"
                 autoCapitalize="off"
                 autoCorrect="off"
                 inputMode="text"
@@ -2033,7 +2092,8 @@ export const TerminalScreen = ({
               <button
                 type="button"
                 onClick={executeCommand}
-                className="ml-3 border border-green-800 px-3 py-1 text-[10px] font-bold text-green-400 hover:border-green-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+                disabled={missionIntroActive}
+                className="ml-3 border border-green-800 px-3 py-1 text-[10px] font-bold text-green-400 hover:border-green-400 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
               >
                 RUN
               </button>
@@ -2063,11 +2123,6 @@ export const TerminalScreen = ({
               <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.min(100, (questStep / activeMission.steps.length) * 100)}%` }} />
             </div>
             <p className="mt-2 text-[10px] text-green-600">{questStep} of {activeMission.steps.length} objectives complete</p>
-            {currentStep?.requiredCommands && <div className="mt-3 border-t border-green-900/60 pt-3">
-              <p className="text-[9px] uppercase tracking-widest text-cyan-500">Useful tools · checks can be done in any order</p>
-              <ul className="mt-2 space-y-1 text-[10px] text-cyan-200">{[...new Set(currentStep.requiredCommands.map(check => splitTerminalArgs(check)[0]?.toLowerCase()).filter(Boolean))].map(name => <li key={name}>› <span className="font-mono font-bold">{name}</span> — {commandLessons[name] ?? 'Use this simulated tool to inspect the evidence requested in the objective.'}</li>)}</ul>
-            </div>}
-
           </div>
 
           {currentStep?.decision && <div className="border border-cyan-700/40 bg-[#071014] p-4" aria-label="Evidence based decision">
@@ -2089,12 +2144,12 @@ export const TerminalScreen = ({
           </div>}
 
           {activeMission.evidence && activeMission.evidence.length > 0 && (
-            <div className="border border-blue-500/20 bg-[#071014] p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="text-xs text-blue-300 tracking-widest">INVESTIGATION BOARD</div>
-                <span className="text-[10px] text-blue-700">Select a clue to inspect</span>
-              </div>
-              <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            <details className="border border-blue-500/30 bg-[#071014]">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-bold tracking-widest text-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+                <span>INVESTIGATION BOARD</span>
+                <span className="text-[11px] font-normal tracking-normal text-blue-300">{activeMission.evidence.length} clues · expand to inspect</span>
+              </summary>
+              <div className="max-h-72 space-y-2 overflow-y-auto border-t border-blue-900/60 p-4 pr-3">
                 {activeMission.evidence.map(item => {
                   const inspected = inspectedEvidence.includes(item.id);
                   const isObjective = currentStep?.inspectEvidenceId === item.id;
@@ -2117,39 +2172,23 @@ export const TerminalScreen = ({
                   );
                 })}
               </div>
-            </div>
+            </details>
           )}
 
-          <div className="border border-green-500/20 bg-[#08100c] p-5">
-
-            <div className="text-xs text-green-500/40 tracking-widest mb-3">
-              {activeMission.difficulty === 'guided' ? 'COMMAND GUIDE' : 'COMMAND TOOLBOX'}
-            </div>
-
-            <div className="border border-green-500/10 bg-black p-3 font-mono text-xs text-green-400 break-all">
-              {currentStep
-                ? currentStep.inspectEvidenceId
-                  ? `Select “${activeMission.evidence?.find(item => item.id === currentStep.inspectEvidenceId)?.label ?? 'the highlighted clue'}” on the investigation board.`
-                  : activeMission.difficulty === 'guided'
-                  ? `Tool: ${splitTerminalArgs(currentStep.cmd)[0]}. Use the hint and field guide to select the right arguments.`
-                  : 'Choose a command that supports the objective. Type help for available tools.'
-                : 'MISSION COMPLETE'}
-            </div>
-
-          </div>
-
-          <div className={`grid ${isCertificationMission ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
+          <details className="border border-green-500/30 bg-[#08100c]">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-bold tracking-widest text-green-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400">
+              <span>MISSION TOOLS</span>
+              <span className="text-[11px] font-normal tracking-normal text-green-300">Hint · Map · Commands · Guides</span>
+            </summary>
+            <div className="grid grid-cols-2 gap-2 border-t border-green-900/60 p-3 sm:grid-cols-3">
 
             <button
               onClick={
                 showCurrentHint
               }
-              className="border border-green-500/20 bg-[#08100c] p-3 text-xs text-green-400 hover:border-green-500/50"
+              className="inline-flex min-h-10 items-center justify-center gap-2 border border-green-500/30 bg-black/30 px-3 py-2 text-xs font-semibold text-green-300 hover:border-green-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
             >
-              <HelpCircle
-                size={16}
-                className="mx-auto mb-1"
-              />
+              <HelpCircle size={15} aria-hidden="true" />
               HINT
             </button>
 
@@ -2159,60 +2198,51 @@ export const TerminalScreen = ({
                   true
                 )
               }
-              className="border border-green-500/20 bg-[#08100c] p-3 text-xs text-green-400 hover:border-green-500/50"
+              className="inline-flex min-h-10 items-center justify-center gap-2 border border-green-500/30 bg-black/30 px-3 py-2 text-xs font-semibold text-green-300 hover:border-green-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
             >
-              <Wifi
-                size={16}
-                className="mx-auto mb-1"
-              />
+              <Wifi size={15} aria-hidden="true" />
               MAP
             </button>
 
             <button
               onClick={showCommandHelp}
-              className="border border-green-500/20 bg-[#08100c] p-3 text-xs text-green-400 hover:border-green-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+              className="inline-flex min-h-10 items-center justify-center gap-2 border border-green-500/30 bg-black/30 px-3 py-2 text-xs font-semibold text-green-300 hover:border-green-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
             >
-              <BookOpen size={16} className="mx-auto mb-1" />
+              <BookOpen size={15} aria-hidden="true" />
               HELP
             </button>
 
             {isCertificationMission && <button
               onClick={() => setShowCommandGuide(true)}
-              className="min-w-0 break-words border border-cyan-500/70 bg-cyan-950/30 p-3 text-center text-[10px] font-bold leading-4 text-cyan-200 transition-colors hover:border-cyan-300 hover:bg-cyan-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+              className="inline-flex min-h-10 min-w-0 items-center justify-center gap-2 border border-cyan-500/60 bg-cyan-950/30 px-3 py-2 text-center text-xs font-bold leading-4 text-cyan-200 transition-colors hover:border-cyan-300 hover:bg-cyan-900/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
-              <BookOpen size={16} className="mx-auto mb-1" />
-              COMMAND GUIDE · RECOMMENDED
+              <BookOpen size={15} aria-hidden="true" />
+              COMMAND GUIDE
             </button>}
 
             {isCertificationMission && <button
               onClick={onShowMissionGuide}
-              className="border border-cyan-700/50 bg-[#071014] p-3 text-xs text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+              className="inline-flex min-h-10 items-center justify-center gap-2 border border-cyan-700/50 bg-[#071014] px-3 py-2 text-xs font-semibold text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
-              <HelpCircle size={16} className="mx-auto mb-1" />
+              <HelpCircle size={15} aria-hidden="true" />
               SCREEN GUIDE
             </button>}
 
             {activeMission.primer && <button
               onClick={() => setShowMissionPrimer(true)}
-              className="border border-cyan-700/50 bg-[#071014] p-3 text-xs text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+              className="inline-flex min-h-10 items-center justify-center gap-2 border border-cyan-700/50 bg-[#071014] px-3 py-2 text-xs font-semibold text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
-              <BookOpen size={16} className="mx-auto mb-1" />
+              <BookOpen size={15} aria-hidden="true" />
               GLOSSARY
             </button>}
 
-          </div>
-
-          {isCertificationMission && <p className="border-l-2 border-cyan-700 bg-cyan-950/10 px-3 py-2 text-[11px] leading-5 text-cyan-200">
-            Suggested workflow: read the objective, check the Command Guide for a suitable tool, then use a hint if you still need a clue.
-          </p>}
-
-          <div className="border border-green-500/20 bg-[#08100c] p-4">
-
-            <div className="text-[10px] text-green-500/30 tracking-widest mb-3">
-              SYSTEM STATUS
             </div>
+          </details>
 
-            <div className="space-y-2 text-xs">
+          <details className="border border-green-500/20 bg-[#08100c]">
+            <summary className="min-h-11 cursor-pointer px-4 py-3 text-xs font-bold tracking-widest text-green-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400">SYSTEM STATUS</summary>
+
+            <div className="space-y-2 border-t border-green-900/60 p-4 text-xs">
 
               <div className="flex justify-between">
 
@@ -2264,7 +2294,7 @@ export const TerminalScreen = ({
 
             </div>
 
-          </div>
+          </details>
 
           <div className="hidden">
 
@@ -2338,11 +2368,8 @@ interface ProfileScreenProps {
   cosmetics: PlayerCosmetics;
   onPurchaseCosmetic: (kind: CosmeticKind, itemId: string) => Promise<void>;
   onEquipCosmetic: (kind: CosmeticKind, itemId: string) => Promise<void>;
-  leaderboardOptIn: boolean;
-  leaderboardAlias: string;
   progressLoadFailed: boolean;
   onSaveAvatarChoice: (avatarId: AvatarId) => Promise<void>;
-  onSaveLeaderboardOptIn: (enabled: boolean) => Promise<void>;
   certificates: UserCertificate[];
   onViewCertificate: (certificate: UserCertificate) => void;
 
@@ -2359,14 +2386,12 @@ export const ProfileScreen = ({
   cosmetics,
   onPurchaseCosmetic,
   onEquipCosmetic,
-  leaderboardOptIn,
-  leaderboardAlias,
   progressLoadFailed,
   onSaveAvatarChoice,
-  onSaveLeaderboardOptIn,
   certificates,
   onViewCertificate
 }: ProfileScreenProps) => {
+  const reduceMotion = useReducedMotion();
   const [exportMessage, setExportMessage] = useState('');
   const [archive, setArchive] = useState<MissionAttemptRecord[]>([]);
   const [allMissionAttempts, setAllMissionAttempts] = useState<MissionAttemptRecord[]>([]);
@@ -2376,12 +2401,10 @@ export const ProfileScreen = ({
   const [localAvatar, setLocalAvatar] = useState<{ uid: string; id: AvatarId } | null>(null);
   const [savingAvatar, setSavingAvatar] = useState(false);
   const [avatarMessage, setAvatarMessage] = useState('');
-  const [savingLeaderboardSetting, setSavingLeaderboardSetting] = useState(false);
-  const [leaderboardSettingMessage, setLeaderboardSettingMessage] = useState('');
   const [artworkPreview, setArtworkPreview] = useState<{ title: string; src: string; alt: string } | null>(null);
   const [cosmeticMessage, setCosmeticMessage] = useState('');
   const [cosmeticBusyId, setCosmeticBusyId] = useState('');
-  const [activeProfileSection, setActiveProfileSection] = useState<'overview' | 'progress' | 'skills' | 'achievements' | 'certificates' | 'archive' | 'data' | 'leaderboards'>('overview');
+  const [activeProfileSection, setActiveProfileSection] = useState<'overview' | 'progress' | 'skills' | 'achievements' | 'certificates' | 'leaderboards'>('overview');
   const avatarOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedAvatarId = localAvatar?.uid === user?.uid ? localAvatar?.id ?? getAvatarById(avatarId).id : getAvatarById(avatarId).id;
   const equippedCosmeticId = (kind: CosmeticKind) => kind === 'frame' ? cosmetics.equippedFrameId : kind === 'palette' ? cosmetics.equippedPaletteId : cosmetics.equippedTitleId;
@@ -2450,7 +2473,7 @@ export const ProfileScreen = ({
       setArchiveCompletionCounts(completionCounts);
       setAllMissionAttempts(attempts);
       setArchive([...latestByMission.values()].sort((a, b) => b.completedAt.localeCompare(a.completedAt)));
-    }).catch(error => console.warn('Could not load case archive:', error));
+    }).catch(error => console.warn('Could not load mission history:', error));
     void getAssessmentAttempts(user.uid).then(attempts => {
       if (!cancelled) setAssessmentAttemptCount(attempts.length);
     }).catch(error => console.warn('Could not load assessment attempts:', error));
@@ -2518,7 +2541,13 @@ export const ProfileScreen = ({
   );
   const learningGainEntries = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const)
     .map(tier => ({ tier, data: userScores[tier], gain: userScores[tier] ? profileLearningGain(userScores[tier]) : null }))
-    .filter((entry): entry is { tier: Tier; data: TierScoreLike; gain: number } => Boolean(entry.data && entry.gain !== null));
+    .filter((entry): entry is { tier: Tier; data: TierScoreLike; gain: number | null } => Boolean(
+      entry.data && (entry.data.preTestScore !== undefined || entry.data.finalScore !== undefined)
+    ));
+  const certificationsPassed = (['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).filter(tier => {
+    const score = userScores[tier];
+    return Boolean(score?.finalTotal && (score.finalScore ?? 0) / score.finalTotal >= 0.7);
+  }).length;
 
   const exportLearningData = async () => {
     if (!user) return;
@@ -2588,9 +2617,9 @@ export const ProfileScreen = ({
   };
 
   return (
-    <div className="game-screen mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+    <div className="game-screen profile-layout mx-auto min-h-full w-full max-w-[1480px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
 
-      {view === 'profile' && <section className="border border-green-500/20 bg-[#08100c] p-6">
+      {view === 'profile' && <section className="profile-identity-panel border border-green-500/20 bg-[#08100c] p-6">
 
         <div className="flex flex-col md:flex-row items-center md:items-start gap-5">
 
@@ -2642,16 +2671,38 @@ export const ProfileScreen = ({
       </section>}
 
       {view === 'profile' && <>
-        <div role="tablist" aria-label="Profile sections" className="flex gap-2 overflow-x-auto border-b border-[var(--game-border)] pb-2">
+        <div role="tablist" aria-label="Profile sections" className="profile-section-tabs flex gap-2 overflow-x-auto border-b border-[var(--game-border)] pb-2">
           {([
-            ['overview', 'Overview'], ['progress', 'Progress'], ['skills', 'Skill practice'], ['achievements', 'Rank & achievements'], ['certificates', 'Certificates'], ['archive', 'Case archive'], ['data', 'Learning data'], ['leaderboards', 'Leaderboards']
+            ['overview', 'Overview'], ['progress', 'Progress'], ['skills', 'Skill practice'], ['achievements', 'Rank & achievements'], ['certificates', 'Certificates'], ['leaderboards', 'Leaderboards']
           ] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={activeProfileSection === id} onClick={() => setActiveProfileSection(id)} className={`min-h-11 shrink-0 border px-4 py-2 text-sm font-bold ${activeProfileSection === id ? 'border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 text-[var(--game-cyan)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:border-[var(--game-cyan)]'}`}>{label}</button>)}
         </div>
-        {activeProfileSection === 'overview' && <GameCard className="grid gap-4 p-5 sm:grid-cols-3 sm:p-6">
-          <div><p className="game-eyebrow">Current rank</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{rankProgress(progression.xp).current.name}</p></div>
-          <div><p className="game-eyebrow">Completed missions</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{new Set(completedMissions).size}</p></div>
-          <div><p className="game-eyebrow">Assessment attempts</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{assessmentAttemptCount}</p></div>
+        {activeProfileSection === 'overview' && <div className="space-y-5">
+        <GameCard className="profile-overview-stats grid gap-4 p-5 sm:grid-cols-3 sm:p-6">
+          <div><p className="game-eyebrow">Current rank</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{rankProgress(progression.xp).current.name}</p><ProgressBar value={rankProgress(progression.xp).percent} label="Rank progress" className="mt-3" /></div>
+          <div><p className="game-eyebrow">Completed missions</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{new Set(completedMissions).size}</p><p className="mt-2 text-sm text-[var(--game-muted)]">Across practice and certification missions</p></div>
+          <div><p className="game-eyebrow">Assessment attempts</p><p className="mt-2 text-xl font-bold text-[var(--game-text)]">{assessmentAttemptCount}</p><p className="mt-2 text-sm text-[var(--game-muted)]">Pre-tests and post-tests</p></div>
+        </GameCard>
+        {learningGainEntries.length > 0 && <GameCard className="profile-learning-chart p-5 sm:p-6">
+          <SectionHeader eyebrow="Learning analytics" title="Pre-test → post-test" detail="Compare your first recorded attempt in each assessment. The percentage-point change is descriptive and does not change certification scoring." />
+          <div className="mt-5 space-y-5">{learningGainEntries.map(({ tier, data, gain }) => {
+            const prePercent = data.preTestScore !== undefined ? Math.round(((data.preTestFirstScore ?? data.preTestScore) / Math.max(1, data.preTestFirstTotal ?? data.preTestTotal ?? 1)) * 100) : null;
+            const postPercent = data.finalScore !== undefined ? Math.round(((data.firstFinalScore ?? data.finalScore) / Math.max(1, data.firstFinalTotal ?? data.finalTotal ?? 1)) * 100) : null;
+            return <article key={tier} className="profile-score-comparison grid gap-3 border border-[var(--game-border)] p-4 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-center">
+              <h3 className="text-sm font-bold text-[var(--game-text)]">{tier}</h3>
+              <div className="space-y-3">
+                <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_3rem] items-center gap-2 text-xs"><span className="text-[var(--game-muted)]">Pre-test</span><div role="img" aria-label={prePercent === null ? 'Pre-test not taken' : `Pre-test score ${prePercent}%`} className="h-2 overflow-hidden bg-[var(--game-track)]"><motion.span initial={reduceMotion ? false : { width: 0 }} animate={{ width: `${prePercent ?? 0}%` }} transition={{ duration: reduceMotion ? 0 : 0.7, ease: 'easeOut' }} className="block h-full bg-[var(--game-cyan)]" /></div><span className="text-right font-semibold text-[var(--game-text)]">{prePercent === null ? '—' : `${prePercent}%`}</span></div>
+                <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_3rem] items-center gap-2 text-xs"><span className="text-[var(--game-muted)]">Post-test</span><div role="img" aria-label={postPercent === null ? 'Post-test not taken' : `Post-test score ${postPercent}%`} className="h-2 overflow-hidden bg-[var(--game-track)]"><motion.span initial={reduceMotion ? false : { width: 0 }} animate={{ width: `${postPercent ?? 0}%` }} transition={{ duration: reduceMotion ? 0 : 0.7, delay: reduceMotion ? 0 : 0.12, ease: 'easeOut' }} className="block h-full bg-[var(--game-green)]" /></div><span className="text-right font-semibold text-[var(--game-text)]">{postPercent === null ? '—' : `${postPercent}%`}</span></div>
+              </div>
+              <p className="text-sm font-bold text-[var(--game-green)] sm:text-right">{gain === null ? 'Post-test pending' : `${gain > 0 ? '+' : ''}${gain} pp`}</p>
+            </article>;
+          })}</div>
+          <p className="mt-3 text-xs leading-5 text-[var(--game-muted)]">Older records without first-attempt fields use their saved assessment scores.</p>
         </GameCard>}
+        <GameCard className="p-5 sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><SectionHeader eyebrow="Your records" title="Learning data" detail="Download your mission and assessment summaries, including detailed attempt rows." />{exportMessage && <p className="mt-2 text-sm text-[var(--game-cyan)]" role="status">{exportMessage}</p>}</div><button type="button" onClick={exportLearningData} disabled={!user || progressLoadFailed} className="min-h-11 border border-[var(--game-cyan)] px-4 py-2 text-sm font-bold text-[var(--game-cyan)] hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-50">Export learning data</button></div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="border border-[var(--game-border)] p-4"><p className="game-eyebrow">Best post-test points</p><p className="mt-2 text-2xl font-bold text-[var(--game-text)]">{totalScore}{totalPossible > 0 ? ` / ${totalPossible}` : ''}</p></div><div className="border border-[var(--game-border)] p-4"><p className="game-eyebrow">Best-score average</p><p className="mt-2 text-2xl font-bold text-[var(--game-text)]">{percentage}%</p></div><div className="border border-[var(--game-border)] p-4"><p className="game-eyebrow">Certifications passed</p><p className="mt-2 text-2xl font-bold text-[var(--game-text)]">{certificationsPassed} / 3</p></div></div>
+        </GameCard>
+        </div>}
       </>}
 
       {view === 'shop' && <GameCard className="p-5 sm:p-6">
@@ -2694,20 +2745,8 @@ export const ProfileScreen = ({
       </GameCard>}
 
       {view === 'profile' && activeProfileSection === 'leaderboards' && <GameCard className="p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div><h2 className="text-base font-bold text-[var(--game-text)]">Leaderboards</h2><p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--game-muted)]">Opt in to share your daily challenge result under a randomly generated alias. Your email and account name are not shown. Opt-in is off by default.</p>{leaderboardOptIn && <p className="mt-2 text-sm font-semibold text-[var(--game-green)]">Leaderboard alias: {leaderboardAlias}</p>}{leaderboardSettingMessage && <p className="mt-2 text-sm text-[var(--game-muted)]" role="status">{leaderboardSettingMessage}</p>}</div>
-          <label className="flex min-h-11 shrink-0 items-center gap-3 rounded-md border border-[var(--game-border)] px-4 py-2 text-sm font-semibold text-[var(--game-text)]">
-            <input type="checkbox" checked={leaderboardOptIn} disabled={!user || progressLoadFailed || savingLeaderboardSetting} onChange={async event => {
-              const enabled = event.target.checked;
-              setSavingLeaderboardSetting(true);
-              setLeaderboardSettingMessage('');
-              try { await onSaveLeaderboardOptIn(enabled); setLeaderboardSettingMessage(enabled ? 'You are opted in.' : 'You are opted out.'); }
-              catch (error) { setLeaderboardSettingMessage(error instanceof Error ? error.message : 'Could not save this setting.'); }
-              finally { setSavingLeaderboardSetting(false); }
-            }} className="h-5 w-5 accent-[var(--game-green)] disabled:cursor-not-allowed" />
-            Show me on leaderboards
-          </label>
-        </div>
+        <SectionHeader eyebrow="Daily challenges" title="Leaderboards" detail="When you complete a daily challenge, your result is submitted automatically using your chosen profile name and avatar. Your email address is never shown." />
+        <p className="mt-4 border border-[var(--game-border)] bg-[var(--game-surface)] p-4 text-sm leading-6 text-[var(--game-muted)]">Entries are limited to one per account per daily challenge. You can view the current Time Attack and Accuracy Trial standings on the Dashboard.</p>
       </GameCard>}
 
       {view === 'profile' && activeProfileSection === 'achievements' && <GameCard className="p-5 sm:p-6">
@@ -2742,162 +2781,10 @@ export const ProfileScreen = ({
         {certificates.length ? <div className="mt-4 space-y-3">{certificates.map(certificate => <article key={certificate.id} className="flex flex-col gap-3 rounded-md border border-[var(--game-border)] bg-[var(--game-surface)] p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-[var(--game-text)]">{certificate.tier} Security Certification</p><p className="mt-1 text-sm text-[var(--game-muted)]">Awarded {new Date(certificate.issuedAt).toLocaleDateString()} · {certificate.score}/{certificate.total}</p></div><button type="button" onClick={() => onViewCertificate(certificate)} className="min-h-11 rounded-md border border-[var(--game-green)] px-4 py-2 text-sm font-semibold text-[var(--game-green)] hover:bg-[var(--game-green)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]">View / Print</button></article>)}</div> : <p className="mt-4 text-sm text-[var(--game-muted)]">Pass a certification post-test after completing its missions to earn your first certificate.</p>}
       </GameCard>}
 
-      {view === 'profile' && activeProfileSection === 'progress' && <div className="space-y-5">{learningGainEntries.length > 0 && <GameCard className="p-5 sm:p-6">
-        <SectionHeader eyebrow="Assessment progress" title="Learning gain · first attempts" detail="Percentage-point change between the first pre-test and post-test attempts." />
-        <div className="mt-4 space-y-2">{learningGainEntries.map(({ tier, gain }) => <div key={tier} className="flex items-center justify-between gap-3 rounded-md border border-[var(--game-border)] p-3 text-sm"><span className="font-semibold text-[var(--game-text)]">{tier}</span><span className="font-bold text-[var(--game-text)]">{gain > 0 ? '+' : ''}{gain} pp</span></div>)}</div>
-        <p className="mt-3 text-xs leading-5 text-[var(--game-muted)]">Older records without first-attempt fields use their saved assessment scores. Total score and average below reflect best saved post-test scores.</p>
+      {view === 'profile' && activeProfileSection === 'progress' && <GameCard className="p-5 sm:p-6">
+        <SectionHeader eyebrow="Mission history" title="Completed cases" detail="One latest completion per mission, with its learning takeaway and replay count. Detailed attempts remain available in the learning data export." />
+        {archive.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] border-collapse text-left text-sm"><thead><tr className="border-b border-[var(--game-border)] text-xs uppercase tracking-wide text-[var(--game-muted)]"><th scope="col" className="px-3 py-3">Mission</th><th scope="col" className="px-3 py-3">What you practiced</th><th scope="col" className="px-3 py-3">Completions</th><th scope="col" className="px-3 py-3">Last completed</th></tr></thead><tbody>{archive.map(attempt => <tr key={attempt.missionId} className="border-b border-[var(--game-border)] last:border-0"><th scope="row" className="px-3 py-3 font-semibold text-[var(--game-text)]">{attempt.missionTitle}</th><td className="px-3 py-3 text-[var(--game-muted)]">{attempt.concept}</td><td className="px-3 py-3 text-[var(--game-text)]">{archiveCompletionCounts[attempt.missionId] ?? 1}</td><td className="px-3 py-3 text-[var(--game-muted)]">{new Date(attempt.completedAt).toLocaleDateString()}</td></tr>)}</tbody></table></div> : <div className="empty-state">No completed missions yet. Finish a mission and your history will appear here.</div>}
       </GameCard>}
-
-      </div>}
-
-      {view === 'profile' && activeProfileSection === 'archive' && <GameCard className="p-5 sm:p-6">
-        <SectionHeader eyebrow="Resolved case files" title="Case Archive" detail="One latest completion per case, with its learning takeaway. Replays are included in exported attempt data." />
-        {archive.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] border-collapse text-left text-sm"><thead><tr className="border-b border-[var(--game-border)] text-xs uppercase tracking-wide text-[var(--game-muted)]"><th scope="col" className="px-3 py-3">Mission</th><th scope="col" className="px-3 py-3">What you practiced</th><th scope="col" className="px-3 py-3">Completions</th><th scope="col" className="px-3 py-3">Last completed</th></tr></thead><tbody>{archive.map(attempt => <tr key={attempt.missionId} className="border-b border-[var(--game-border)] last:border-0"><th scope="row" className="px-3 py-3 font-semibold text-[var(--game-text)]">{attempt.missionTitle}</th><td className="px-3 py-3 text-[var(--game-muted)]">{attempt.concept}</td><td className="px-3 py-3 text-[var(--game-text)]">{archiveCompletionCounts[attempt.missionId] ?? 1}</td><td className="px-3 py-3 text-[var(--game-muted)]">{new Date(attempt.completedAt).toLocaleDateString()}</td></tr>)}</tbody></table></div> : <div className="empty-state">No resolved cases yet. Complete a mission to start your archive.</div>}
-      </GameCard>}
-
-      {view === 'profile' && activeProfileSection === 'data' && <div className="space-y-5">
-      <section className="flex flex-col gap-3 border border-cyan-900/60 bg-[#071014] p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-xs font-bold uppercase tracking-widest text-cyan-300">Learning data</p><p className="mt-1 text-xs text-gray-400">Download mission and assessment summaries plus detailed attempt rows for this account as CSV.</p>{exportMessage && <p className="mt-2 text-xs text-cyan-200" role="status">{exportMessage}</p>}</div>
-        <button type="button" onClick={exportLearningData} className="border border-cyan-700 px-4 py-2 text-xs font-bold uppercase text-cyan-300 hover:border-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">Export my learning data</button>
-      </section>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-        <div className="border border-green-500/20 bg-[#08100c] p-5">
-
-          <div className="flex items-center gap-3">
-
-            <Award
-              className="text-green-400"
-              size={20}
-            />
-
-            <span className="text-xs text-green-500/50">
-              BEST POST-TEST SCORE
-            </span>
-
-          </div>
-
-          <div className="text-3xl font-bold text-green-300 mt-3">
-            {
-              totalScore
-            }
-          </div>
-
-        </div>
-
-        <div className="border border-green-500/20 bg-[#08100c] p-5">
-
-          <div className="flex items-center gap-3">
-
-            <BarChart3
-              className="text-green-400"
-              size={20}
-            />
-
-            <span className="text-xs text-green-500/50">
-              BEST-SCORE AVERAGE
-            </span>
-
-          </div>
-
-          <div className="text-3xl font-bold text-green-300 mt-3">
-            {
-              percentage
-            }%
-          </div>
-
-        </div>
-
-        <div className="border border-green-500/20 bg-[#08100c] p-5">
-
-          <div className="flex items-center gap-3">
-
-            <Database
-              className="text-green-400"
-              size={20}
-            />
-
-            <span className="text-xs text-green-500/50">
-              ASSESSMENT ATTEMPTS
-            </span>
-
-          </div>
-
-          <div className="text-3xl font-bold text-green-300 mt-3">
-            {
-              assessmentAttemptCount
-            }
-          </div>
-
-        </div>
-
-      </div>
-
-      <section className="border border-green-500/20 bg-[#08100c] p-6">
-
-        <div className="flex items-center gap-3 mb-5">
-
-          <User
-            size={20}
-            className="text-green-400"
-          />
-
-          <h2 className="font-bold text-green-300 tracking-widest">
-            ACCOUNT INFORMATION
-          </h2>
-
-        </div>
-
-        <div className="space-y-3 text-sm">
-
-          <div className="flex justify-between gap-4 border-b border-green-500/10 pb-3">
-
-            <span className="text-green-500/40">
-              EMAIL
-            </span>
-
-            <span className="text-green-300 text-right break-all">
-              {
-                user?.email ||
-                'N/A'
-              }
-            </span>
-
-          </div>
-
-          <div className="flex justify-between gap-4 border-b border-green-500/10 pb-3">
-
-            <span className="text-green-500/40">
-              USER ID
-            </span>
-
-            <span className="text-green-300 text-right max-w-[60%] truncate">
-              {
-                user?.uid ||
-                'N/A'
-              }
-            </span>
-
-          </div>
-
-          <div className="flex justify-between gap-4">
-
-            <span className="text-green-500/40">
-              ACCESS LEVEL
-            </span>
-
-            <span className="text-green-300">
-              OPERATOR
-            </span>
-
-          </div>
-
-        </div>
-
-      </section>
-
-      </div>}
 
       <ArtworkPreviewDialog artwork={artworkPreview} onClose={() => setArtworkPreview(null)} />
     </div>

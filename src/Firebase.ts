@@ -35,6 +35,7 @@ import { CONTENT_VERSION } from './data/contentVersion';
 import { AVATARS, DEFAULT_AVATAR_ID, getAvatarById, type AvatarId } from './data/avatars';
 import { ASSESSMENT_TIME_LIMIT_SECONDS } from './data/assessmentTiming';
 import { CERTIFICATION_CLEAR_COIN_REWARD, COSMETIC_CATALOG, DEFAULT_COSMETICS, getCosmeticReward, normalizeCosmetics, type CosmeticKind, type PlayerCosmetics } from './data/cosmetics';
+import { ACTIVITY_REWARD_COINS, ACTIVITY_REWARD_XP } from './data/activities';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA9loc7wpdtyRrKmwGago1S0so7j3KTj1c",
@@ -420,8 +421,7 @@ export const getUserProgress = async (
       cosmetics: { ...DEFAULT_COSMETICS },
       avatarId: DEFAULT_AVATAR_ID,
       preferences: {},
-      leaderboardOptIn: false,
-      leaderboardAlias: '',
+      campaign: { completedNodeIds: [], rewardedActivityIds: [] },
       certificates: [] as UserCertificate[]
     };
   }
@@ -442,8 +442,11 @@ export const getUserProgress = async (
     cosmetics: normalizeCosmetics(data.cosmetics),
     avatarId: getAvatarById(data.avatarId).id,
     preferences: data.preferences && typeof data.preferences === 'object' ? data.preferences as Record<string, unknown> : {},
-    leaderboardOptIn: data.leaderboardOptIn === true,
-    leaderboardAlias: typeof data.leaderboardAlias === 'string' ? data.leaderboardAlias : '',
+    campaign: {
+      completedNodeIds: Array.isArray(data.campaign?.completedNodeIds) ? data.campaign.completedNodeIds.filter((id: unknown): id is string => typeof id === 'string') : [],
+      rewardedActivityIds: Array.isArray(data.campaign?.rewardedActivityIds) ? data.campaign.rewardedActivityIds.filter((id: unknown): id is string => typeof id === 'string') : [],
+      ...(typeof data.campaign?.storySkipped === 'boolean' ? { storySkipped: data.campaign.storySkipped } : {})
+    },
     certificates: Array.isArray(data.certificates) ? data.certificates.filter(isUserCertificate) : []
   };
 };
@@ -639,10 +642,88 @@ export const saveUserPreference = async (userId: string, key: string, value: unk
   await setDoc(doc(db, 'users', userId), { preferences: { [key]: value } }, { merge: true });
 };
 
-export const saveLeaderboardProfile = async (userId: string, optIn: boolean, alias: string) => {
-  const safeAlias = normalizeLeaderboardNickname(alias);
-  await setDoc(doc(db, 'users', userId), { leaderboardOptIn: optIn, leaderboardAlias: safeAlias }, { merge: true });
-  return safeAlias;
+export interface CampaignProgress {
+  completedNodeIds: string[];
+  rewardedActivityIds: string[];
+  storySkipped?: boolean;
+}
+
+export interface ActivityAttempt {
+  activityId: string;
+  deck: string;
+  score: number;
+  stars: number;
+  mistakes: number;
+  durationSeconds: number;
+  contentVersion: string;
+}
+
+export interface ActivityCompletionResult {
+  campaign: CampaignProgress;
+  progression: PlayerProgression;
+  cosmetics: PlayerCosmetics;
+  rewarded: boolean;
+  xp: number;
+  coins: number;
+}
+
+/** Save an optional activity attempt and its first-clear reward atomically. */
+export const completeStoryActivity = async (
+  userId: string,
+  nodeId: string,
+  attempt: ActivityAttempt,
+  progressLoadFailed = false
+): Promise<ActivityCompletionResult> => {
+  if (progressLoadFailed) throw new Error('Saved progress is unavailable. Reload progress before completing this activity.');
+  const userRef = doc(db, 'users', userId);
+  const attemptRef = doc(collection(db, 'users', userId, 'activityAttempts'));
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(userRef);
+    const data = snapshot.data() ?? {};
+    const existingCampaign = data.campaign ?? {};
+    const stringList = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+    const alreadyRewarded = stringList(existingCampaign.rewardedActivityIds).includes(attempt.activityId);
+    const xp = alreadyRewarded ? 0 : ACTIVITY_REWARD_XP;
+    const coins = alreadyRewarded ? 0 : ACTIVITY_REWARD_COINS;
+    const progression = normalizeProgression({
+      ...data.progression,
+      xp: normalizeProgression(data.progression).xp + xp
+    });
+    const cosmetics = normalizeCosmetics(data.cosmetics);
+    const nextCosmetics = coins > 0 ? { ...cosmetics, coins: cosmetics.coins + coins } : cosmetics;
+    const campaign: CampaignProgress = {
+      completedNodeIds: [...new Set([...stringList(existingCampaign.completedNodeIds), nodeId])],
+      rewardedActivityIds: [...new Set([...stringList(existingCampaign.rewardedActivityIds), ...(alreadyRewarded ? [] : [attempt.activityId])])],
+      ...(typeof existingCampaign.storySkipped === 'boolean' ? { storySkipped: existingCampaign.storySkipped } : {})
+    };
+    transaction.set(userRef, { campaign, progression, cosmetics: nextCosmetics }, { merge: true });
+    transaction.set(attemptRef, { ...attempt, completedAt: serverTimestamp() });
+    return { campaign, progression, cosmetics: nextCosmetics, rewarded: !alreadyRewarded, xp, coins };
+  });
+};
+
+/** Merge campaign IDs transactionally so saving this feature cannot overwrite other user progress. */
+export const saveCampaignProgress = async (
+  userId: string,
+  update: Partial<CampaignProgress>,
+  progressLoadFailed = false
+): Promise<CampaignProgress | null> => {
+  if (progressLoadFailed) return null;
+  const userRef = doc(db, 'users', userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(userRef);
+    const existing = snapshot.data()?.campaign ?? {};
+    const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+    const campaign: CampaignProgress = {
+      completedNodeIds: [...new Set([...strings(existing.completedNodeIds), ...strings(update.completedNodeIds)])],
+      rewardedActivityIds: [...new Set([...strings(existing.rewardedActivityIds), ...strings(update.rewardedActivityIds)])],
+      ...(typeof update.storySkipped === 'boolean'
+        ? { storySkipped: update.storySkipped }
+        : typeof existing.storySkipped === 'boolean' ? { storySkipped: existing.storySkipped } : {})
+    };
+    transaction.set(userRef, { campaign }, { merge: true });
+    return campaign;
+  });
 };
 
 export const markDailyTrialUsed = async (userId: string, key: string) => {
@@ -895,12 +976,12 @@ export interface MissionAttemptRecord {
 }
 
 const normalizeLeaderboardNickname = (value: unknown) => {
-  if (typeof value !== 'string') return 'Participant';
+  if (typeof value !== 'string') return 'Operator';
   const nickname = value.split('').filter(character => {
     const code = character.charCodeAt(0);
     return code > 31 && code !== 127;
-  }).join('').trim().slice(0, 24).trim();
-  return nickname || 'Participant';
+  }).join('').trim().slice(0, 60).trim();
+  return nickname || 'Operator';
 };
 
 // The participant prompt explicitly authorizes this named top-level leaderboard.
@@ -929,10 +1010,8 @@ const submitLeaderboardAttempt = async (userId: string, attempt: MissionAttemptR
   if (attempt.outcome !== 'completed' || !attempt.dailyChallengeType || !attempt.dailyChallengeDate) return;
   const profileSnapshot = await getDoc(doc(db, 'users', userId));
   const profile = profileSnapshot.data();
-  if (profile?.leaderboardOptIn !== true || typeof profile.leaderboardAlias !== 'string') return;
-  const alias = normalizeLeaderboardNickname(profile.leaderboardAlias);
-  if (alias !== profile.leaderboardAlias) await saveLeaderboardProfile(userId, true, alias);
-  const avatar = isPresetAvatarId(profile.avatarId) ? { avatarId: profile.avatarId } : {};
+  const alias = normalizeLeaderboardNickname(profile?.username);
+  const avatar = isPresetAvatarId(profile?.avatarId) ? { avatarId: profile.avatarId } : {};
   const wrongCommands = Object.values(attempt.wrongCommandsByStep ?? {}).reduce((total, count) => total + Math.max(0, Number(count) || 0), 0);
   if (attempt.dailyChallengeType === 'timeAttack') {
     const leaderboardRef = doc(db, 'dailyTimeAttackEntries', `${userId}_${attempt.dailyChallengeDate}`);
@@ -969,23 +1048,21 @@ export const saveMissionAttempt = async (userId: string, attempt: MissionAttempt
   try {
     await addDoc(collection(db, 'users', userId, 'missionAttempts'), attemptRecord);
   } catch (error) {
-    // Keep a denied telemetry write from preventing the separate, opted-in
-    // leaderboard write below from being attempted.
+    // Keep a denied telemetry write from preventing the separate leaderboard
+    // write below from being attempted.
     console.warn('Mission completed, but its private attempt record could not be saved:', error);
   }
 
   try {
     await submitLeaderboardAttempt(userId, attempt);
   } catch (error) {
-    console.warn('Attempt saved, but its opt-in leaderboard entry could not be created:', error);
+    console.warn('Attempt saved, but its leaderboard entry could not be created:', error);
   }
 };
 
 // A leaderboard write can be retried from the saved private attempt when the
 // leaderboard panel is opened. The deterministic entry ID makes retries safe.
 export const retryDailyLeaderboardEntry = async (userId: string, date: string, type: 'timeAttack' | 'accuracy') => {
-  const profileSnapshot = await getDoc(doc(db, 'users', userId));
-  if (profileSnapshot.data()?.leaderboardOptIn !== true) return 'opted-out' as const;
   const attempts = await getMissionAttempts(userId);
   const attempt = attempts.find(item => item.outcome === 'completed'
     && item.dailyChallengeDate === date
