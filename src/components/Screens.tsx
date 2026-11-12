@@ -366,7 +366,11 @@ export const AuthScreen = ({
       <video ref={authVideoRef} className="auth-background-video pointer-events-none fixed inset-0 z-0 h-full w-full object-cover" src={loginBackgroundLoop} autoPlay muted loop playsInline preload="auto" aria-hidden="true" />
       <div className="auth-background-overlay pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(135deg,rgba(3,8,12,0.32),rgba(5,16,18,0.18)_50%,rgba(2,7,11,0.4))]" aria-hidden="true" />
       <button type="button" onClick={onToggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} className="fixed right-4 top-4 z-20 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--game-border)] bg-[var(--game-surface)]/90 text-sm font-black text-[var(--game-text)] shadow-lg backdrop-blur transition hover:border-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)]" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-        {theme === 'dark' ? 'L' : 'D'}
+        <span className="flex items-center gap-0.5" aria-hidden="true">
+          <span className={`rounded px-1 ${theme === 'light' ? 'bg-[var(--game-cyan)] text-[var(--game-page)]' : 'text-[var(--game-muted)]'}`}>L</span>
+          <span className="text-[var(--game-muted)]">/</span>
+          <span className={`rounded px-1 ${theme === 'dark' ? 'bg-[var(--game-cyan)] text-[var(--game-page)]' : 'text-[var(--game-muted)]'}`}>D</span>
+        </span>
       </button>
       <main data-auth-mode={authMode} className="auth-card game-card auth-panel-frame relative z-10 my-auto w-full max-w-[520px] overflow-hidden rounded-2xl shadow-[var(--game-shadow)] backdrop-blur-xl">
         <section className="p-4 sm:p-6" aria-labelledby="auth-form-title">

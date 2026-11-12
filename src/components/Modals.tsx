@@ -163,9 +163,9 @@ export const VictoryModal = ({ show, onClose, mission, caseNotes = [], confidenc
   const [debriefTab, setDebriefTab] = useState<'summary' | 'learning' | 'evidence'>('summary');
   if (!show) return null;
   return (
-    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 animate-in fade-in duration-300">
-      <div className="border-2 border-green-500 bg-black p-8 max-w-xl w-full mx-4 text-center shadow-[0_0_50px_rgba(34,197,94,0.5)] relative overflow-y-auto max-h-[90vh]">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 pointer-events-none bg-[length:100%_4px,3px_100%]"></div>
+    <div className="victory-modal fixed inset-0 bg-black/90 flex items-center justify-center z-50 animate-in fade-in duration-300">
+      <div className="victory-modal-panel border-2 border-green-500 bg-black p-8 max-w-xl w-full mx-4 text-center shadow-[0_0_50px_rgba(34,197,94,0.5)] relative overflow-y-auto max-h-[90vh]">
+        <div className="victory-modal-scanlines absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-10 pointer-events-none bg-[length:100%_4px,3px_100%]"></div>
         <h2 className="text-4xl font-black text-green-500 mb-2 tracking-tighter relative z-20">MISSION ACCOMPLISHED</h2>
         <div className="h-1 w-full bg-green-500 mb-6 relative z-20"></div>
         <p className="text-white text-lg mb-1 relative z-20">Operation: <span className="text-green-400 font-bold">{mission?.title ?? 'Training exercise'}</span></p>

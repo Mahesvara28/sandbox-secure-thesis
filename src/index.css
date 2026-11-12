@@ -1402,3 +1402,38 @@ body[data-theme='light'] .activity-answer-card { background-color: color-mix(in 
 body[data-theme='light'] .auth-screen .auth-card {
   background-color: color-mix(in srgb, #f4f8f6 78%, transparent) !important;
 }
+
+/* The completion panel keeps its CRT scanline finish in dark mode. In light
+   mode, use the regular theme palette so the texture cannot wash over text. */
+body[data-theme='light'] .victory-modal {
+  background-color: rgb(15 28 36 / 58%);
+}
+body[data-theme='light'] .victory-modal-panel {
+  border-color: var(--game-green);
+  background-color: var(--game-surface) !important;
+  color: var(--game-text);
+  box-shadow: 0 18px 55px rgb(18 43 53 / 28%);
+}
+body[data-theme='light'] .victory-modal-scanlines {
+  display: none;
+}
+body[data-theme='light'] .victory-modal-panel [class*='text-white'],
+body[data-theme='light'] .victory-modal-panel [class*='text-gray-'] {
+  color: var(--game-text) !important;
+}
+body[data-theme='light'] .victory-modal-panel [class*='text-green-'] {
+  color: var(--game-green) !important;
+}
+body[data-theme='light'] .victory-modal-panel [class*='text-cyan-'] {
+  color: var(--game-cyan) !important;
+}
+body[data-theme='light'] .victory-modal-panel [class*='border-green-'],
+body[data-theme='light'] .victory-modal-panel [class*='border-cyan-'],
+body[data-theme='light'] .victory-modal-panel [class*='border-blue-'] {
+  border-color: var(--game-border) !important;
+}
+body[data-theme='light'] .victory-modal-panel [class*='bg-green-950'],
+body[data-theme='light'] .victory-modal-panel [class*='bg-cyan-950'],
+body[data-theme='light'] .victory-modal-panel [class*='bg-blue-950'] {
+  background-color: var(--game-surface-raised) !important;
+}
