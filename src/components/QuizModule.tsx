@@ -21,6 +21,8 @@ export interface Question {
 export interface QuizModuleProps {
   title: string;
   questions: Question[];
+  /** Full tier/test bank used to restore the saved 10-question set after reload. */
+  questionBank?: Question[];
   onComplete: (
     score: number,
     total: number,
@@ -38,6 +40,7 @@ export interface QuizModuleProps {
 export const QuizModule = ({
   title,
   questions,
+  questionBank,
   onComplete,
   onExit,
   showReviewAfterComplete = false,
@@ -119,17 +122,22 @@ export const QuizModule = ({
     void startOrResumeAssessmentSession(auth.currentUser.uid, id, clientId, key, tier, testType, questions.map(question => String(question.id)))
       .then(({ session, serverOffsetMs: measuredOffset }) => {
         if (cancelled) return;
-        const byId = new Map(questions.map(question => [String(question.id), question]));
+        // A resumed attempt may have questions that are not in this render's
+        // newly randomized 10-question selection. Resolve its saved order from
+        // the full bank so answers and the timer stay attached to the same test.
+        const restoreSource = questionBank?.length ? questionBank : questions;
+        const byId = new Map(restoreSource.map(question => [String(question.id), question]));
         const restoredOrder = session.questionOrder.map(questionId => byId.get(questionId)).filter((question): question is Question => Boolean(question));
-        if (restoredOrder.length === questions.length) setActiveQuestions(restoredOrder);
+        const hasCompleteSavedOrder = restoredOrder.length > 0 && restoredOrder.length === session.questionOrder.length;
+        if (hasCompleteSavedOrder) setActiveQuestions(restoredOrder);
         const restoredAnswers = session.answers ?? {};
-        const restoredQuestions = restoredOrder.length ? restoredOrder : questions;
+        const restoredQuestions = hasCompleteSavedOrder ? restoredOrder : questions;
         setAnswers(restoredQuestions.map(question => {
           const answer = restoredAnswers[String(question.id)];
           const index = typeof answer === 'string' ? question.options.indexOf(answer) : -1;
           return index >= 0 ? index : null;
         }));
-        setCurrentIndex(Math.max(0, Math.min(session.currentIndex ?? 0, questions.length - 1)));
+        setCurrentIndex(Math.max(0, Math.min(session.currentIndex ?? 0, restoredQuestions.length - 1)));
         revisionRef.current = Number(session.revision ?? 0);
         const restoredCurrent = restoredQuestions[session.currentIndex ?? 0];
         const restoredCurrentAnswer = restoredCurrent ? restoredAnswers[String(restoredCurrent.id)] : null;
@@ -145,7 +153,7 @@ export const QuizModule = ({
       })
       .catch(error => { if (!cancelled) setSessionError(error instanceof Error ? error.message : 'Could not load the saved test session.'); });
     return () => { cancelled = true; };
-  }, [title, questions, reviewAnswers, clientId, onSessionReady]);
+  }, [title, questions, questionBank, reviewAnswers, clientId, onSessionReady]);
 
   useEffect(() => {
     if (!ready || !sessionId || startedAtMs === null || isFinished) return;

@@ -135,18 +135,18 @@ export function StoryCampaignScreen({ tier, completedMissions, assessmentProgres
     {selected && unlockedTiers[activeTier] && (selected.type === 'story' || selected.type === 'debrief') && selected.beats && createPortal(
       <section className="story-scene-backdrop fixed inset-0 z-[160] flex min-h-[100svh] flex-col overflow-y-auto bg-black/85 p-3 sm:p-5 lg:p-8" style={{ backgroundImage: `linear-gradient(110deg, rgba(3, 10, 14, .55), rgba(3, 10, 14, .35)), url("${sceneImage}")` }} aria-label={`${selected.title} presentation`}>
         <div className="mx-auto flex min-h-[calc(100svh-1.5rem)] w-full max-w-[1440px] flex-1 flex-col sm:min-h-[calc(100svh-2.5rem)] lg:min-h-[calc(100svh-4rem)]">
-          <div className="mb-3 flex shrink-0 items-center justify-between gap-4 text-sm"><p className="game-eyebrow border border-white/30 bg-black/35 px-3 py-2 text-white">{activeTier} · {selected.title}</p><button type="button" onClick={() => setSelectedId(null)} className="min-h-10 border border-white/50 bg-black/45 px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Return to path</button></div>
-          {isChapterIntro && startedIntroId !== selected.id ? <section className="mx-auto my-auto w-full max-w-5xl overflow-hidden border border-white/35 bg-[#0b141b]/95 shadow-2xl" aria-labelledby="chapter-opening-title">
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-4 text-sm"><p className="game-eyebrow border border-[var(--game-border)] bg-black/35 px-3 py-2 text-white">{activeTier} · {selected.title}</p><button type="button" onClick={() => setSelectedId(null)} className="min-h-10 border border-[var(--game-border)] bg-black/45 px-4 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Return to path</button></div>
+          {isChapterIntro && startedIntroId !== selected.id ? <section className="mx-auto my-auto w-full max-w-5xl overflow-hidden border border-[var(--game-border)] bg-[#0b141b]/95 shadow-2xl" aria-labelledby="chapter-opening-title">
             {castIntroId !== selected.id ? <>
-              <img src={sceneImage} alt={chapterOpening[activeTier].scene} className="h-[36svh] min-h-56 max-h-[460px] w-full border-b border-white/20 object-cover object-center sm:h-[42svh]" />
+              <img src={sceneImage} alt={chapterOpening[activeTier].scene} className="h-[36svh] min-h-56 max-h-[460px] w-full object-cover object-center sm:h-[42svh]" />
               <div className="p-5 sm:p-7">
                 <p className="game-eyebrow text-cyan-200">Story chapter {activeTier === 'BEGINNER' ? '01' : activeTier === 'INTERMEDIATE' ? '02' : '03'} · {activeTier} certification</p>
                 <h2 id="chapter-opening-title" className="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">{activeChapter.title}</h2>
                 <p className="mt-2 text-sm font-semibold text-cyan-200">{activeChapter.subtitle}</p>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-100">{chapterOpening[activeTier].intro}</p>
-                <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-white/20 pt-4">
-                  <button type="button" onClick={() => setSelectedId(null)} className="min-h-11 border border-white/40 px-4 py-2 text-sm font-bold text-white hover:border-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Return to story path</button>
-                  <button type="button" onClick={() => setCastIntroId(selected.id)} className="min-h-11 border border-cyan-300 bg-cyan-300 px-5 py-2 text-sm font-black text-slate-950 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Meet the characters</button>
+                <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-[var(--game-border)] pt-4">
+                  <button type="button" onClick={() => setSelectedId(null)} className="min-h-11 border border-[var(--game-border)] px-4 py-2 text-sm font-bold text-white hover:border-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Return to story path</button>
+                  <button type="button" onClick={() => setCastIntroId(selected.id)} className="min-h-11 border border-cyan-300 bg-cyan-300 px-5 py-2 text-sm font-black text-slate-950 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Meet the characters</button>
                 </div>
               </div>
             </> : <div className="p-5 sm:p-8">
@@ -154,14 +154,14 @@ export function StoryCampaignScreen({ tier, completedMissions, assessmentProgres
               <h2 id="chapter-opening-title" className="mt-2 text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">Meet the Harborview team</h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-200">These are the people you’ll work with in this chapter. Nova will guide the investigation; the Harborview team will share what they observed.</p>
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                {chapterCast.map(person => <div key={person.name} className="flex min-w-0 items-center gap-4 border border-white/20 bg-black/25 p-4">
+                {chapterCast.map(person => <div key={person.name} className="flex min-w-0 items-center gap-4 border border-[var(--game-border)] bg-black/25 p-4">
                   <Handler pose={person.pose} size={82} speaking={false} character={person.character} />
                   <div className="min-w-0"><p className="font-bold text-white">{person.name}</p><p className="mt-1 text-xs leading-5 text-gray-300">{person.role}</p></div>
                 </div>)}
               </div>
-              <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-white/20 pt-4">
-                <button type="button" onClick={() => setCastIntroId(null)} className="min-h-11 border border-white/40 px-4 py-2 text-sm font-bold text-white hover:border-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Back to scene</button>
-                <button type="button" onClick={() => setStartedIntroId(selected.id)} className="min-h-11 border border-cyan-300 bg-cyan-300 px-5 py-2 text-sm font-black text-slate-950 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Start chapter dialogue</button>
+              <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-[var(--game-border)] pt-4">
+                <button type="button" onClick={() => setCastIntroId(null)} className="min-h-11 border border-[var(--game-border)] px-4 py-2 text-sm font-bold text-white hover:border-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Back to scene</button>
+                <button type="button" onClick={() => setStartedIntroId(selected.id)} className="min-h-11 border border-cyan-300 bg-cyan-300 px-5 py-2 text-sm font-black text-slate-950 hover:bg-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">Start chapter dialogue</button>
               </div>
             </div>}
           </section> : <DialogueBox beats={selected.beats} sceneLabel={selected.title} className="story-dialogue-box" onComplete={() => completeScene(selected)} />}
@@ -170,7 +170,22 @@ export function StoryCampaignScreen({ tier, completedMissions, assessmentProgres
       document.body
     )}
 
-    {selected?.type === 'assessment' && unlockedTiers[activeTier] && <section className="game-card p-5" aria-live="polite"><h2 className="text-xl font-black uppercase text-[var(--game-text)]">{selected.title}</h2><p className="mt-2 text-sm leading-6 text-[var(--game-muted)]">{selected.summary} Your score and timer use the existing Academy assessment.</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => onAssessment(activeTier, selected.assessmentKind ?? 'pre')} className="min-h-11 border border-[var(--game-green)] bg-[var(--game-green)] px-4 py-2 font-bold text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Open assessment</button><button type="button" onClick={() => setSelectedId(null)} className="min-h-11 border border-[var(--game-border)] px-4 py-2 font-semibold text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Back to journey</button></div></section>}
+    {selected?.type === 'assessment' && unlockedTiers[activeTier] && (() => {
+      const kind = selected.assessmentKind ?? 'pre';
+      const completed = kind === 'pre' ? activeAssessment.preTestComplete : activeAssessment.postTestComplete;
+      const score = assessmentScores[kind];
+      const percent = score.score !== null && score.total > 0 ? Math.round((score.score / score.total) * 100) : null;
+      return <section className="game-card p-5" aria-live="polite">
+        <h2 className="text-xl font-black uppercase text-[var(--game-text)]">{selected.title}</h2>
+        <p className="mt-2 text-sm leading-6 text-[var(--game-muted)]">{selected.summary} Your score and timer use the existing Academy assessment.</p>
+        {completed && <p className="mt-3 border border-[var(--game-green)]/60 bg-[var(--game-green)]/10 p-3 text-sm font-semibold text-[var(--game-green)]">{kind === 'pre' ? 'Pre-test completed. This baseline can only be taken once.' : 'Assessment completed.'}{percent !== null && ` Recorded score: ${score.score}/${score.total} (${percent}%).`}</p>}
+        <div className="mt-4 flex flex-wrap gap-3">
+          {!(kind === 'pre' && completed) && <button type="button" onClick={() => onAssessment(activeTier, kind)} className="min-h-11 border border-[var(--game-green)] bg-[var(--game-green)] px-4 py-2 font-bold text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">{kind === 'post' && completed ? 'Retake assessment' : 'Open assessment'}</button>}
+          {completed && <button type="button" onClick={() => onReviewAssessment(kind)} className="min-h-11 border border-[var(--game-cyan)] px-4 py-2 font-semibold text-[var(--game-cyan)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Review answers</button>}
+          <button type="button" onClick={() => setSelectedId(null)} className="min-h-11 border border-[var(--game-border)] px-4 py-2 font-semibold text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Back to journey</button>
+        </div>
+      </section>;
+    })()}
 
     {selected?.type === 'mission' && selected.missionId && unlockedTiers[activeTier] && <section className="game-card p-5" aria-live="polite"><p className="game-eyebrow">Academy mission · existing flow</p><h2 className="mt-2 text-xl font-black uppercase text-[var(--game-text)]">{selected.title}</h2><p className="mt-2 text-sm leading-6 text-[var(--game-muted)]">{selected.summary} Mission steps, timer, hints, scoring, and saved progress stay in the existing Academy mission flow.</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => onStartMission(selected.missionId!)} className="min-h-11 border border-[var(--game-green)] bg-[var(--game-green)] px-4 py-2 font-bold text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">{isDone(selected) ? 'Replay mission' : 'Start mission'}</button><button type="button" onClick={() => setSelectedId(null)} className="min-h-11 border border-[var(--game-border)] px-4 py-2 font-semibold text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Back to story</button></div></section>}
 
@@ -198,12 +213,12 @@ export function StoryCampaignScreen({ tier, completedMissions, assessmentProgres
               {!unlocked && !node.optional && <p className="mt-2 text-xs font-semibold text-[var(--game-amber)]">Complete the previous required step to unlock this part of the journey.</p>}
             </div>
             <div className="flex shrink-0 flex-col gap-2">
-            <button type="button" disabled={!unlocked} onClick={() => {
+            <button type="button" disabled={!unlocked || (assessmentKind === 'pre' && activeAssessment.preTestComplete)} onClick={() => {
               if (node.type === 'mission' && node.missionId) onStartMission(node.missionId);
               else if (assessmentKind) onAssessment(activeTier, assessmentKind);
               else selectNode(node);
             }} className="min-h-10 shrink-0 border border-[var(--game-border)] px-3 py-2 text-xs font-bold text-[var(--game-text)] hover:border-[var(--game-cyan)] hover:text-[var(--game-cyan)] disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">
-              {node.type === 'mission' ? done ? 'Replay' : unlocked ? 'Start mission' : 'Locked' : assessmentKind ? done ? 'Retake test' : unlocked ? 'Open test' : 'Locked' : done ? 'Replay' : unlocked ? <><Play size={13} className="mr-1 inline" />Open</> : 'Locked'}
+              {node.type === 'mission' ? done ? 'Replay' : unlocked ? 'Start mission' : 'Locked' : assessmentKind ? assessmentKind === 'pre' && done ? 'Completed · one attempt' : done ? 'Retake test' : unlocked ? 'Open test' : 'Locked' : done ? 'Replay' : unlocked ? <><Play size={13} className="mr-1 inline" />Open</> : 'Locked'}
             </button>
             {assessmentKind && done && <button type="button" onClick={() => onReviewAssessment(assessmentKind)} className="min-h-10 border border-[var(--game-cyan)] px-3 py-2 text-xs font-bold text-[var(--game-cyan)] hover:bg-[var(--game-cyan)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Review answers</button>}
             </div>

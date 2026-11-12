@@ -72,8 +72,30 @@ export const ensureUserProfile = async (user: User, preferredName?: string) => {
       email: user.email ?? '',
       createdAt: new Date().toISOString(),
       scores: {},
-      completedMissions: []
+      completedMissions: [],
+      cosmetics: { ...DEFAULT_COSMETICS, welcomeRewardClaimed: false }
     });
+  });
+};
+
+/** Claims the one-time welcome terminal theme without changing existing balances. */
+export const claimWelcomeReward = async (userId: string): Promise<PlayerCosmetics> => {
+  const userRef = doc(db, 'users', userId);
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(userRef);
+    if (!snapshot.exists()) throw new Error('Your player profile could not be found.');
+    const cosmetics = normalizeCosmetics(snapshot.data()?.cosmetics);
+    if (cosmetics.welcomeRewardClaimed) return cosmetics;
+    const welcomeTheme = COSMETIC_CATALOG.palette.find(item => item.id === 'palette-harborview');
+    if (!welcomeTheme) throw new Error('The welcome theme is unavailable right now.');
+    const nextCosmetics: PlayerCosmetics = {
+      ...cosmetics,
+      ownedPaletteIds: [...new Set([...cosmetics.ownedPaletteIds, welcomeTheme.id])],
+      equippedPaletteId: welcomeTheme.id,
+      welcomeRewardClaimed: true
+    };
+    transaction.set(userRef, { cosmetics: nextCosmetics }, { merge: true });
+    return nextCosmetics;
   });
 };
 
@@ -933,6 +955,15 @@ export const savePreTestScore = async (
     typeof previous === "object"
       ? previous
       : {};
+
+  // The pre-test is a one-time baseline. Keep legacy score records protected too.
+  if (
+    existingTierData.preTestScore !== undefined ||
+    existingTierData.score !== undefined ||
+    Number(existingTierData.preTestAttemptCount ?? 0) > 0
+  ) {
+    return;
+  }
 
   const attemptNumber = Number(existingTierData.preTestAttemptCount ?? 0) + 1;
   try {

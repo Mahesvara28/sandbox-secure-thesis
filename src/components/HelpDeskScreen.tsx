@@ -8,6 +8,7 @@ interface HelpDeskScreenProps {
   userId: string;
   username: string;
   currentMission?: string;
+  onReportIssue: () => void;
 }
 
 type SuggestionCategory = PlayerFeatureSuggestion['category'];
@@ -47,7 +48,7 @@ const answerPoses: Record<string, HandlerPose> = {
 };
 
 /** Curated in-game guidance for common player questions. */
-export default function HelpDeskScreen({ userId, username, currentMission }: HelpDeskScreenProps) {
+export default function HelpDeskScreen({ userId, username, currentMission, onReportIssue }: HelpDeskScreenProps) {
   const [ready, setReady] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [showSuggestionForm, setShowSuggestionForm] = useState(false);
@@ -111,6 +112,7 @@ export default function HelpDeskScreen({ userId, username, currentMission }: Hel
             <div className="flex flex-wrap items-center gap-3">
               {ready && <span className="help-desk-status"><span /> Assistant ready</span>}
               <button type="button" onClick={() => { setShowSuggestionForm(value => !value); setSuggestionError(''); setSuggestionSent(false); }} className="help-desk-secondary inline-flex min-h-10 items-center justify-center gap-2 px-3 py-2 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]"><Lightbulb size={15} aria-hidden="true" />Suggest a feature</button>
+              <button type="button" onClick={onReportIssue} className="inline-flex min-h-10 items-center justify-center gap-2 border border-amber-600 px-3 py-2 text-sm font-bold text-[var(--game-text)] hover:bg-amber-600/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"><LifeBuoy size={15} aria-hidden="true" />Report an issue</button>
             </div>
           </div>
 

@@ -83,7 +83,7 @@ export function Handler({ pose, size, speaking, character = 'nova' }: HandlerPro
 
   return (
     <div
-      className="relative shrink-0 overflow-hidden rounded-t-full border-x border-t border-[var(--game-cyan)]/60 bg-[radial-gradient(ellipse_at_50%_70%,color-mix(in_srgb,var(--game-cyan)_18%,transparent),transparent_70%)] drop-shadow-[0_0_16px_color-mix(in_srgb,var(--game-cyan)_25%,transparent)]"
+      className="relative shrink-0 overflow-hidden bg-[radial-gradient(ellipse_at_50%_70%,color-mix(in_srgb,var(--game-cyan)_18%,transparent),transparent_70%)] drop-shadow-[0_0_16px_color-mix(in_srgb,var(--game-cyan)_25%,transparent)]"
       style={{ width: size, height: Math.round(size * 1.35) }}
     >
       <AnimatePresence mode="sync" initial={false}>

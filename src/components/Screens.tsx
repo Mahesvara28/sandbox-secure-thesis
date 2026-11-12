@@ -348,9 +348,6 @@ export const AuthScreen = ({
     });
     return () => {
       video.pause();
-      video.currentTime = 0;
-      video.removeAttribute('src');
-      video.load();
     };
   }, []);
   const enableAuthVideoAudio = () => {
@@ -419,6 +416,8 @@ export const AuthScreen = ({
 
 interface DashboardScreenProps {
   user: FirebaseUser | null;
+  cosmetics: PlayerCosmetics;
+  onClaimWelcomeReward: () => Promise<PlayerCosmetics>;
 
   userScores: Record<
     string,
@@ -453,6 +452,8 @@ interface DashboardScreenProps {
 
 export const DashboardScreen = ({
   user,
+  cosmetics,
+  onClaimWelcomeReward,
   userScores,
   setScreen,
   onShowGuide,
@@ -471,6 +472,9 @@ export const DashboardScreen = ({
   completedMissions,
   progressLoadFailed = false
 }: DashboardScreenProps) => {
+  const [welcomeRewardBusy, setWelcomeRewardBusy] = useState(false);
+  const [welcomeRewardError, setWelcomeRewardError] = useState('');
+  const [welcomeRewardSuccess, setWelcomeRewardSuccess] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardUnavailable, setLeaderboardUnavailable] = useState(false);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -633,6 +637,32 @@ export const DashboardScreen = ({
         <div className="mt-6 flex flex-wrap gap-3"><button type="button" onClick={onContinue} className="min-h-12 rounded-md bg-[var(--game-green)] px-6 py-3 text-sm font-bold text-black shadow-md transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2">{resumeActivityLabel ?? (currentTierScore?.preTestScore === undefined ? 'Start pre-test' : 'Continue training')} <ChevronRight size={16} className="ml-1 inline" /></button>{resumeActivityLabel === 'Resume replay' && onContinueNextMission && nextMission && <button type="button" onClick={onContinueNextMission} className="min-h-12 rounded-md border border-[var(--game-cyan)] px-5 py-3 text-sm font-bold text-[var(--game-cyan)] hover:bg-[var(--game-cyan)] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]">Continue to next mission</button>}</div>
         </div>
       </GameCard>
+
+      {user && !cosmetics.welcomeRewardClaimed && !isLoadingProgress && !progressLoadFailed && <GameCard className="welcome-theme-gift flex flex-col gap-4 border-[var(--game-cyan)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="min-w-0">
+          <p className="game-eyebrow text-[var(--game-cyan)]">A welcome gift from Nova</p>
+          <h2 className="mt-1 text-xl font-black text-[var(--game-text)]">Your Harborview Night terminal theme is ready</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--game-muted)]">Claim your free Harborview Night palette. It will be added to your collection and equipped right away; you can change it later in the Shop.</p>
+          {welcomeRewardError && <p className="mt-2 text-sm text-[var(--game-red)]" role="alert">{welcomeRewardError}</p>}
+        </div>
+        <button type="button" disabled={welcomeRewardBusy} onClick={() => {
+          setWelcomeRewardBusy(true);
+          setWelcomeRewardError('');
+          setWelcomeRewardSuccess(false);
+          void onClaimWelcomeReward()
+            .then(() => setWelcomeRewardSuccess(true))
+            .catch(error => setWelcomeRewardError(error instanceof Error ? error.message : 'The welcome gift could not be claimed. Please try again.'))
+            .finally(() => setWelcomeRewardBusy(false));
+        }} className="min-h-11 shrink-0 border border-[var(--game-cyan)] bg-[var(--game-cyan)]/10 px-5 py-3 text-sm font-black text-[var(--game-cyan)] transition hover:bg-[var(--game-cyan)] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] disabled:cursor-wait disabled:opacity-60">{welcomeRewardBusy ? 'Claiming gift…' : 'Claim & equip theme'}</button>
+      </GameCard>}
+
+      {welcomeRewardSuccess && <div className="game-card flex items-start justify-between gap-4 border-[var(--game-green)] p-4" role="status" aria-live="polite">
+        <div>
+          <p className="font-bold text-[var(--game-green)]">Welcome gift unlocked!</p>
+          <p className="mt-1 text-sm text-[var(--game-text)]">Harborview Night is now in your collection and equipped as your terminal theme. Find it anytime in the Shop.</p>
+        </div>
+        <button type="button" onClick={() => setWelcomeRewardSuccess(false)} className="shrink-0 px-2 py-1 text-sm font-bold text-[var(--game-muted)] hover:text-[var(--game-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)]" aria-label="Dismiss welcome gift confirmation">Dismiss</button>
+      </div>}
 
       {user && <DailyQuickDrill key={`${user.uid}-${dailyTrialDate}`} uid={user.uid} dateKey={dailyTrialDate} />}
 
@@ -1238,10 +1268,10 @@ export const MissionsScreen = ({
               OPERATIONS
             </h1>
 
-            <p className="text-sm text-green-500/40 mt-1">
+            <p className="mt-1 text-sm text-[var(--game-muted)]">
               Practice with standalone missions. Certification training missions are kept in the Academy.
             </p>
-            <p className="mt-3 text-xs text-green-300">{`${completedCount} of ${missions.length} shown missions completed`}</p>
+            <p className="mt-3 text-sm text-[var(--game-green)]">{`${completedCount} of ${missions.length} shown missions completed`}</p>
 
           </div>
 
@@ -1260,7 +1290,7 @@ export const MissionsScreen = ({
             key={filter}
             onClick={() => setMissionFilter(filter)}
             aria-pressed={missionFilter === filter}
-            className={`border px-3 py-2 text-[10px] font-bold tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 ${missionFilter === filter ? 'border-green-400 bg-green-500/10 text-green-300' : 'border-green-900 text-green-700 hover:border-green-600 hover:text-green-400'}`}
+            className={`min-h-11 border px-4 py-2 text-xs font-bold tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] ${missionFilter === filter ? 'border-[var(--game-green)] bg-[var(--game-green)]/10 text-[var(--game-green)]' : 'border-[var(--game-border)] text-[var(--game-muted)] hover:border-[var(--game-green)] hover:text-[var(--game-text)]'}`}
           >
             {label}
           </button>
@@ -1343,15 +1373,15 @@ export const MissionsScreen = ({
                         }
                       </p>
 
-                      <p className="text-sm text-green-500/50 mt-3">
+                      <p className="mt-3 text-sm leading-6 text-[var(--game-muted)]">
                         {mission.learningGoal}
                       </p>
 
-                      {completed && <span className="mt-3 inline-block rotate-[-2deg] border border-green-500/50 px-2 py-1 text-[10px] font-bold tracking-[0.18em] text-green-300">RESOLVED</span>}
+                      {completed && <span className="mt-3 inline-block rotate-[-2deg] border border-[var(--game-green)]/60 px-2 py-1 text-xs font-bold tracking-[0.12em] text-[var(--game-green)]">RESOLVED</span>}
 
-                      <div className="flex flex-wrap gap-4 mt-4 text-xs text-green-500/40">
+                      <div className="mt-4 flex flex-wrap gap-3 text-xs text-[var(--game-muted)] sm:gap-4">
 
-                        <span className="border border-green-900 px-2 py-1 uppercase tracking-wider">
+                        <span className="border border-[var(--game-border)] px-2 py-1 uppercase tracking-wider">
                           {mission.category ?? 'practice'} · {mission.difficulty}
                         </span>
 
@@ -1388,7 +1418,7 @@ export const MissionsScreen = ({
                       type="button"
                       onClick={() => setFieldGuideTier(mission.tier)}
                       aria-label={`Open ${mission.tier.toLowerCase()} command field guide for ${mission.title}`}
-                      className="flex min-h-11 items-center justify-center gap-2 border border-cyan-700 px-4 py-2 text-xs font-bold uppercase text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-950/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                      className="flex min-h-11 items-center justify-center gap-2 border border-[var(--game-cyan)] px-4 py-2 text-xs font-bold uppercase text-[var(--game-cyan)] transition hover:border-[var(--game-cyan)] hover:bg-[var(--game-cyan)] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-cyan)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--game-bg)]"
                     >
                       <BookOpen size={14} />
                       Command field guide
@@ -1396,7 +1426,7 @@ export const MissionsScreen = ({
                     <button
                       type="button"
                       onClick={() => startMission(mission)}
-                      className="flex min-h-11 items-center justify-center gap-2 border border-green-500 px-5 py-2 text-xs font-bold uppercase text-green-300 transition hover:-translate-y-0.5 hover:bg-green-500 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                      className="flex min-h-11 items-center justify-center gap-2 border border-[var(--game-green)] px-5 py-2 text-xs font-bold uppercase text-[var(--game-green)] transition hover:-translate-y-0.5 hover:bg-[var(--game-green)] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--game-green)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--game-bg)]"
                     >
                       <Play size={13} />
                       {completed ? 'Replay' : 'Deploy'}
@@ -2727,9 +2757,9 @@ export const ProfileScreen = ({
                 const busy = cosmeticBusyId === item.id;
                 return <article key={item.id} className="flex min-w-0 flex-col border border-[var(--game-border)] bg-[var(--game-surface)] p-4">
                   <div className="mb-3 flex min-h-12 items-center gap-3">
-                    {kind === 'frame' && <span data-avatar-frame={item.id} className="avatar-cosmetic-frame h-10 w-10 shrink-0 rounded-full border-2 border-[var(--game-border)] bg-[var(--game-track)]" aria-hidden="true" />}
-                    {kind === 'palette' && <span data-palette-preview={item.id} className="h-10 w-10 shrink-0 border border-[var(--game-border)]" aria-hidden="true"><span className="block h-2 w-full bg-current" /></span>}
-                    {kind === 'title' && <span className="flex h-10 min-w-10 items-center justify-center border border-[var(--game-cyan)] px-2 text-xs font-black text-[var(--game-cyan)]" aria-hidden="true">ID</span>}
+                    {kind === 'frame' && <span data-avatar-frame={item.id} className="avatar-cosmetic-frame flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-[var(--game-border)] bg-[var(--game-track)] text-xs font-black text-[var(--game-text)]" aria-hidden="true">OP</span>}
+                    {kind === 'palette' && <span data-palette-preview={item.id} className="palette-cosmetic-preview flex h-12 w-16 shrink-0 flex-col overflow-hidden border border-[var(--game-border)]" aria-hidden="true"><span className="h-2 w-full bg-current opacity-80" /><span className="flex flex-1 items-center gap-1 px-1.5"><i className="h-1 w-4 bg-current opacity-90" /><i className="h-1 w-5 bg-current opacity-50" /></span><span className="mx-1.5 mb-1 h-1 border border-current opacity-70" /></span>}
+                    {kind === 'title' && <span className="flex min-h-10 max-w-36 items-center justify-center border border-[var(--game-cyan)] px-2 text-center text-xs font-black leading-tight text-[var(--game-cyan)]" aria-hidden="true">{item.name}</span>}
                     <div className="min-w-0"><p className="break-words text-sm font-bold text-[var(--game-text)]">{item.name}</p><p className="mt-1 text-xs text-[var(--game-muted)]">{owned ? equipped ? 'Equipped' : 'Owned' : `${item.price} coins`}</p></div>
                   </div>
                   <p className="mb-4 flex-1 text-sm leading-5 text-[var(--game-muted)]">{item.description}</p>

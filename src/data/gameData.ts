@@ -1,4 +1,9 @@
 import type { Question } from '../components/QuizModule';
+import {
+  BEGINNER_PRETEST_EXTRA, BEGINNER_POSTTEST_EXTRA,
+  INTERMEDIATE_PRETEST_EXTRA, INTERMEDIATE_POSTTEST_EXTRA,
+  EXPERT_PRETEST_EXTRA, EXPERT_POSTTEST_EXTRA
+} from './assessmentQuestionPools';
 
 export type Tier = 'BEGINNER' | 'INTERMEDIATE' | 'EXPERT';
 
@@ -1386,9 +1391,9 @@ const balanceAnswerPositions = (questions: Question[]): Question[] => {
 };
 
 export const TIERS: TierConfig[] = [
-  { id: 'BEGINNER', levels: [{ id: 'b1', title: 'System and Network Foundations', description: 'Navigate the simulated system, read basic evidence, and learn what hosts, addresses, ports, and services represent. Standalone practice missions are optional.' }], preTest: balanceAnswerPositions(BEGINNER_PRETEST), postTest: balanceAnswerPositions(BEGINNER_POSTTEST) },
-  { id: 'INTERMEDIATE', levels: [{ id: 'i1', title: 'Evidence and Containment', description: 'Start with three guided bridge lessons on processes, service baselines, and web logs. Then inspect certification cases, take scoped response actions, and verify their effects.' }], preTest: balanceAnswerPositions(INTERMEDIATE_PRETEST), postTest: balanceAnswerPositions(INTERMEDIATE_POSTTEST) },
-  { id: 'EXPERT', levels: [{ id: 'e1', title: 'Incident Correlation and Response', description: 'Build a timeline from mixed evidence, communicate uncertainty, investigate persistence, and plan a verified response.' }], preTest: balanceAnswerPositions(EXPERT_PRETEST), postTest: balanceAnswerPositions(EXPERT_POSTTEST) },
+  { id: 'BEGINNER', levels: [{ id: 'b1', title: 'System and Network Foundations', description: 'Navigate the simulated system, read basic evidence, and learn what hosts, addresses, ports, and services represent. Standalone practice missions are optional.' }], preTest: balanceAnswerPositions([...BEGINNER_PRETEST, ...BEGINNER_PRETEST_EXTRA]), postTest: balanceAnswerPositions([...BEGINNER_POSTTEST, ...BEGINNER_POSTTEST_EXTRA]) },
+  { id: 'INTERMEDIATE', levels: [{ id: 'i1', title: 'Evidence and Containment', description: 'Start with three guided bridge lessons on processes, service baselines, and web logs. Then inspect certification cases, take scoped response actions, and verify their effects.' }], preTest: balanceAnswerPositions([...INTERMEDIATE_PRETEST, ...INTERMEDIATE_PRETEST_EXTRA]), postTest: balanceAnswerPositions([...INTERMEDIATE_POSTTEST, ...INTERMEDIATE_POSTTEST_EXTRA]) },
+  { id: 'EXPERT', levels: [{ id: 'e1', title: 'Incident Correlation and Response', description: 'Build a timeline from mixed evidence, communicate uncertainty, investigate persistence, and plan a verified response.' }], preTest: balanceAnswerPositions([...EXPERT_PRETEST, ...EXPERT_PRETEST_EXTRA]), postTest: balanceAnswerPositions([...EXPERT_POSTTEST, ...EXPERT_POSTTEST_EXTRA]) },
 ];
 
 export const CHEAT_SHEET = [

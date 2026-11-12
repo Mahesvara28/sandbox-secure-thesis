@@ -42,7 +42,8 @@ import {
   isEnabledAdmin,
   submitIssueReport,
   saveCampaignProgress,
-  completeStoryActivity
+  completeStoryActivity,
+  claimWelcomeReward
 } from './Firebase';
 import type { CampaignProgress, UserCertificate } from './Firebase';
 import { getMissionXp, normalizeProgression, rankProgress, type PlayerProgression } from './data/progression';
@@ -2265,6 +2266,13 @@ function App() {
           'dashboard' && (
           <DashboardScreen
             user={user}
+            cosmetics={cosmetics}
+            onClaimWelcomeReward={async () => {
+              if (!user || progressLoadFailedRef.current) throw new Error('Saved profile is unavailable.');
+              const nextCosmetics = await claimWelcomeReward(user.uid);
+              setCosmetics(normalizeCosmetics(nextCosmetics));
+              return nextCosmetics;
+            }}
             userScores={
               userScores
             }
@@ -2393,6 +2401,7 @@ function App() {
           userId={user.uid}
           username={user.displayName?.trim() || user.email?.split('@')[0] || 'Operator'}
           currentMission={activeMission?.title}
+          onReportIssue={() => { setIssueReportText(''); setIssueReportError(''); setIssueReportSent(false); setShowIssueReport(true); }}
         />}
 
         {activeMission && (

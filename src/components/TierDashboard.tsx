@@ -85,7 +85,7 @@ const shuffledQuestions = (questions: Question[]): Question[] => {
     }
     question.correctAnswer = options.indexOf(answer);
   }
-  return copy;
+  return copy.slice(0, 10);
 };
 
 export const TierDashboard = ({
@@ -108,7 +108,7 @@ export const TierDashboard = ({
   onCompleteStoryActivity
 }: TierDashboardProps) => {
 
-  const [assessmentQuestions] = useState(() => ({
+  const [assessmentQuestions, setAssessmentQuestions] = useState(() => ({
     pre: shuffledQuestions(preTestQuestions),
     post: shuffledQuestions(postTestQuestions)
   }));
@@ -201,7 +201,19 @@ export const TierDashboard = ({
       progressLoadFailed={progressLoadFailed}
       onCompleteNode={onCompleteCampaignNode}
       onStartMission={onStartMission}
-      onAssessment={(_tier, kind) => setStage(kind === 'pre' ? 'pretest' : 'finaltest')}
+      onAssessment={(_tier, kind) => {
+        // A completed pre-test is a one-time baseline and cannot be restarted.
+        // In-progress pre-tests still resume through the saved assessment session above.
+        if (kind === 'pre' && assessmentProgress[tierName].preTestComplete) return;
+
+        // Pick a fresh 10-question set for every new attempt. If a test is
+        // already in progress, QuizModule restores the saved question order.
+        setAssessmentQuestions(current => ({
+          ...current,
+          [kind]: shuffledQuestions(kind === 'pre' ? preTestQuestions : postTestQuestions)
+        }));
+        setStage(kind === 'pre' ? 'pretest' : 'finaltest');
+      }}
       onReviewAssessment={kind => {
         if (kind === 'post' && finalAnswers) openPostAnswerReview();
         else openAnswerKey(kind, 'campaign');
@@ -218,6 +230,7 @@ export const TierDashboard = ({
         questions={
           activePreTestQuestions
         }
+        questionBank={preTestQuestions}
         showReviewAfterComplete={
           true
         }
@@ -262,6 +275,7 @@ export const TierDashboard = ({
         questions={
           activePostTestQuestions
         }
+        questionBank={postTestQuestions}
         continueLabel="Choose Review"
         onComplete={(
           score: number,
