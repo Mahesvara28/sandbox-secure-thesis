@@ -21,6 +21,7 @@ import {
   savePreTestScore,
   getUserProgress,
   saveMissionAttempt,
+  getMissionAttempts,
   saveProgression,
   saveAvatarChoice,
   ensureUserProfile,
@@ -46,6 +47,7 @@ import {
   claimWelcomeReward
 } from './Firebase';
 import type { CampaignProgress, UserCertificate } from './Firebase';
+import type { ReturningProgressReportData } from './components/Screens';
 import { getMissionXp, normalizeProgression, rankProgress, type PlayerProgression } from './data/progression';
 import { CONTENT_VERSION } from './data/contentVersion';
 import { ASSESSMENT_TIME_LIMIT_SECONDS } from './data/assessmentTiming';
@@ -56,6 +58,7 @@ import {
   BootScreen,
   AuthScreen,
   DashboardScreen,
+  ReturningProgressReportDialog,
   AcademyScreen,
   MissionsScreen,
   TerminalScreen,
@@ -262,6 +265,10 @@ function App() {
 
   const [user, setUser] =
     useState<FirebaseUser | null>(null);
+  const [authSessionToken, setAuthSessionToken] = useState('');
+  const [returningProgressReport, setReturningProgressReport] = useState<ReturningProgressReportData | null>(null);
+  const processedProgressReportTokenRef = useRef('');
+  const lastAuthenticatedUidRef = useRef<string | null>(null);
   const [adminAccess, setAdminAccess] = useState(false);
 
   const [userScores, setUserScores] =
@@ -703,6 +710,11 @@ function App() {
               void logOut().catch(error => console.error('Could not sign out an unverified account:', error));
               return;
             }
+            if (lastAuthenticatedUidRef.current !== currentUser.uid) {
+              lastAuthenticatedUidRef.current = currentUser.uid;
+              setAuthSessionToken(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+              setReturningProgressReport(null);
+            }
             try {
               // Firebase may restore a cached user before its verified-email
               // claim is current. Refresh before profile reads and rule checks.
@@ -917,6 +929,7 @@ function App() {
               setProgressLoadFailed(true);
             }
           } else {
+            lastAuthenticatedUidRef.current = null;
             setAdminAccess(false);
             progressLoadFailedRef.current = false;
             setProgressLoadFailed(false);
@@ -957,6 +970,106 @@ function App() {
       unsub();
     };
   }, [progressLoadRetryCount, tabSessionId]);
+
+  useEffect(() => {
+    if (!user || !authSessionToken || processedProgressReportTokenRef.current === authSessionToken || isLoadingAuth || bootStage !== 'authenticated' || progressLoadFailed) return;
+    processedProgressReportTokenRef.current = authSessionToken;
+    const storageKey = `sandbox-secure-login-progress:${user.uid}`;
+    const now = Date.now();
+    const toPercent = (earned?: number, total?: number) => earned !== undefined && total && total > 0 ? Math.round(earned / total * 100) : null;
+    const baseSnapshot = {
+      loginAt: now,
+      xp: playerProgression.xp,
+      rank: rankProgress(playerProgression.xp).current.name,
+      completedMissionCount: new Set(completedMissions).size,
+      completedMissionIds: [...new Set(completedMissions)],
+      missionCompletionCount: Object.values(playerProgression.missionStats).reduce((sum, stat) => sum + Math.max(0, Number(stat.completions) || 0), 0),
+      missionCompletions: Object.fromEntries(Object.entries(playerProgression.missionStats).map(([id, stat]) => [id, Math.max(0, Number(stat.completions) || 0)])),
+      badgeCount: playerProgression.badges.length,
+      streak: playerProgression.streak.current,
+      scores: Object.fromEntries((['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const).map(tier => {
+        const score = userScores[tier];
+        return [tier, { pre: toPercent(score?.preTestScore, score?.preTestTotal), post: toPercent(score?.finalScore ?? score?.score, score?.finalTotal ?? score?.total) }];
+      })) as Record<string, { pre: number | null; post: number | null }>
+    };
+
+    void (async () => {
+      let localSnapshot: (typeof baseSnapshot & { missionAttemptCompletions?: Record<string, number> }) | null = null;
+      try {
+        const saved = localStorage.getItem(storageKey);
+        localSnapshot = saved ? JSON.parse(saved) as typeof baseSnapshot : null;
+      } catch { /* The cloud profile remains the primary snapshot store. */ }
+      const cloudSnapshot = userPreferences.loginProgressSnapshot as (typeof baseSnapshot & { missionAttemptCompletions?: Record<string, number> }) | undefined;
+      const validSnapshots = [cloudSnapshot, localSnapshot].filter((item): item is typeof baseSnapshot => Boolean(item && Number.isFinite(item.loginAt)));
+      const previous = validSnapshots.sort((left, right) => right.loginAt - left.loginAt)[0] ?? null;
+      // Mission-attempt records are the event history, so they can recover activity
+      // even when a certification's aggregate counters lag behind the mission save.
+      let completedAttempts: Awaited<ReturnType<typeof getMissionAttempts>> = [];
+      try {
+        completedAttempts = (await getMissionAttempts(user.uid)).filter(attempt => attempt.outcome === 'completed');
+      } catch (error) {
+        console.warn('Could not load mission history for the returning-player report:', error);
+      }
+      const missionAttemptCompletions = completedAttempts.reduce<Record<string, number>>((counts, attempt) => {
+        counts[attempt.missionId] = (counts[attempt.missionId] ?? 0) + 1;
+        return counts;
+      }, {});
+      const snapshot = { ...baseSnapshot, missionAttemptCompletions };
+      // Temporary one-minute return window makes tomorrow's test account login qualify.
+      if (previous && Number.isFinite(previous.loginAt) && now - previous.loginAt >= 60_000) {
+        const changes: string[] = [];
+        const missionTitles = new Map([...MISSIONS, ...BRIDGE_MISSIONS, ...TUTORIAL_MISSIONS].map(mission => [mission.id, mission.title]));
+        const previousMissionIds = new Set(previous.completedMissionIds ?? []);
+        const newlyCompletedMissionIds = snapshot.completedMissionIds.filter(missionId => !previousMissionIds.has(missionId));
+        const completedSinceLastLogin = completedAttempts.filter(attempt => {
+          const completedAt = Date.parse(attempt.completedAt);
+          return Number.isFinite(completedAt) && completedAt > previous.loginAt && completedAt <= now;
+        });
+        if (completedSinceLastLogin.length > 0) {
+          const missionNames = [...new Set(completedSinceLastLogin.map(attempt => attempt.missionTitle || missionTitles.get(attempt.missionId) || 'Mission'))];
+          const named = missionNames.slice(0, 3).map(title => `“${title}”`).join(', ');
+          changes.push(`${completedSinceLastLogin.length} mission${completedSinceLastLogin.length === 1 ? '' : 's'} completed: ${named}${missionNames.length > 3 ? `, and ${missionNames.length - 3} more` : ''}`);
+        } else {
+          const previousMissionCount = Number(previous.missionCompletionCount ?? previous.completedMissionCount) || 0;
+          const missionDelta = snapshot.missionCompletionCount - previousMissionCount;
+          if (missionDelta > 0 && newlyCompletedMissionIds.length === 0) changes.push(`${missionDelta} mission completion${missionDelta === 1 ? '' : 's'} recorded`);
+          for (const missionId of newlyCompletedMissionIds) changes.push(`${missionTitles.get(missionId) ?? 'Mission'} completed`);
+          for (const [missionId, count] of Object.entries(snapshot.missionCompletions)) {
+            const oldCount = Number(previous.missionCompletions?.[missionId]) || 0;
+            if (count > oldCount && !newlyCompletedMissionIds.includes(missionId)) changes.push(`${missionTitles.get(missionId) ?? 'Mission'} replayed`);
+          }
+          if (missionDelta === 0 && newlyCompletedMissionIds.length === 0) {
+            const uniqueMissionDelta = snapshot.completedMissionCount - (Number(previous.completedMissionCount) || 0);
+            if (uniqueMissionDelta > 0) changes.push(`${uniqueMissionDelta} new mission${uniqueMissionDelta === 1 ? '' : 's'} completed`);
+          }
+        }
+        const xpDelta = snapshot.xp - (Number(previous.xp) || 0);
+        if (xpDelta > 0) changes.push(`${xpDelta} XP earned`);
+        if (snapshot.rank !== previous.rank) changes.push(`Rank advanced from ${previous.rank} to ${snapshot.rank}`);
+        const badgeDelta = snapshot.badgeCount - (Number(previous.badgeCount) || 0);
+        if (badgeDelta > 0) changes.push(`${badgeDelta} new badge${badgeDelta === 1 ? '' : 's'} earned`);
+        const streakDelta = snapshot.streak - (Number(previous.streak) || 0);
+        if (streakDelta > 0) changes.push(`Learning streak increased to ${snapshot.streak} days`);
+        for (const tier of ['BEGINNER', 'INTERMEDIATE', 'EXPERT'] as const) {
+          const oldScores = previous.scores?.[tier];
+          const newScores = snapshot.scores[tier];
+          for (const kind of ['pre', 'post'] as const) {
+            const oldValue = oldScores?.[kind] ?? null;
+            const newValue = newScores[kind];
+            if (newValue !== null && newValue !== oldValue) {
+              const label = `${tier[0]}${tier.slice(1).toLowerCase()} ${kind}-test`;
+              changes.push(oldValue === null ? `${label} recorded at ${newValue}%` : `${label} changed from ${oldValue}% to ${newValue}% (${newValue - oldValue > 0 ? '+' : ''}${newValue - oldValue} points)`);
+            }
+          }
+        }
+        window.setTimeout(() => setReturningProgressReport({ previousLoginAt: previous.loginAt, changes }), 0);
+      }
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(snapshot));
+      } catch { /* Cloud snapshot remains available when browser storage is blocked. */ }
+    void saveUserPreference(user.uid, 'loginProgressSnapshot', snapshot).catch(error => console.warn('Could not save the returning-player progress snapshot:', error));
+    })();
+  }, [user, authSessionToken, isLoadingAuth, bootStage, progressLoadFailed, playerProgression, completedMissions, userScores, userPreferences]);
 
   useEffect(() => {
     const bootLines = [
@@ -2503,6 +2616,8 @@ function App() {
         )}
 
       </main>
+
+      <ReturningProgressReportDialog report={returningProgressReport} onClose={() => setReturningProgressReport(null)} onViewAnalytics={() => { setReturningProgressReport(null); setScreen('profile'); }} />
 
       {user && screen !== 'help' && <NovaCompanion onOpenHelp={() => setScreen('help')} />}
 

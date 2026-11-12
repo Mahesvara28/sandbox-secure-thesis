@@ -1215,7 +1215,7 @@ export const getDailyTimeAttackEntries = async (challengeDate: string): Promise<
 };
 
 export const getMissionAttempts = async (userId: string): Promise<MissionAttemptRecord[]> => {
-  const snapshot = await getDocs(collection(db, 'users', userId, 'missionAttempts'));
+  const snapshot = await getDocsFromServer(collection(db, 'users', userId, 'missionAttempts'));
   return snapshot.docs.map(item => item.data() as MissionAttemptRecord);
 };
 
